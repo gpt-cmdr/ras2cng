@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rascmdr-parquet-cli"
+version = "0.1.0"
+description = "CLI tool for exporting HEC-RAS geometry/results to GeoParquet and PMTiles using ras-commander"
+readme = "README.md"
+license = "MIT"
+authors = [
+  {name = "William M. Katzenmeyer, P.E., C.F.M.", email = "bill@clbengineering.com"}
+]
+requires-python = ">=3.10"
+dependencies = [
+  "ras-commander>=0.89.0",
+  "typer>=0.9.0",
+  "rich>=13.0.0",
+  "pandas>=2.0.0",
+  "geopandas>=0.14.0",
+  "pyarrow>=14.0.0",
+]
+
+[project.optional-dependencies]
+duckdb = [
+  "duckdb>=1.0.0",
+]
+postgis = [
+  "sqlalchemy>=2.0.0",
+  "geoalchemy2>=0.14.0",
+  "psycopg2-binary>=2.9.0",
+]
+pmtiles = [
+  # Note: tippecanoe + pmtiles + gdal are CLIs and must be installed separately.
+  # This extra just pulls common Python deps used by the module.
+  "rasterio>=1.3.0",
+]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+]
+all = [
+  "duckdb>=1.0.0",
+  "sqlalchemy>=2.0.0",
+  "geoalchemy2>=0.14.0",
+  "psycopg2-binary>=2.9.0",
+  "rasterio>=1.3.0",
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+rascmdr-parquet = "rascmdr_parquet.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/gpt-cmdr/rascmdr-parquet-cli"
+Repository = "https://github.com/gpt-cmdr/rascmdr-parquet-cli"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+markers = [
+    "integration: Full extraction tests against real HEC-RAS models (requires I: and L: drives)",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rascmdr_parquet*"]

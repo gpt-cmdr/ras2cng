@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+.env
+.pytest_cache/
+outputs/
+agent_tasks/
+*.parquet
