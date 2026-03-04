@@ -1,4 +1,4 @@
-"""rascmdr-parquet: CLI for exporting HEC-RAS geometry/results to GeoParquet and PMTiles."""
+"""ras2cng: CLI for exporting HEC-RAS geometry/results to Cloud Native GIS formats."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def export_geometry(
 ):
     """Export HEC-RAS geometry to GeoParquet."""
 
-    from rascmdr_parquet.geometry import export_geometry_layers
+    from ras2cng.geometry import export_geometry_layers
 
     console.print(f"[bold blue]Exporting geometry:[/bold blue] {geom_file}")
     try:
@@ -60,7 +60,7 @@ def export_results(
 ):
     """Export HEC-RAS 2D mesh summary results to GeoParquet."""
 
-    from rascmdr_parquet.results import export_all_variables, export_results_layer
+    from ras2cng.results import export_all_variables, export_results_layer
 
     console.print(f"[bold blue]Exporting results:[/bold blue] {plan_hdf}")
     try:
@@ -88,7 +88,7 @@ def query_parquet(
 ):
     """Query GeoParquet files using DuckDB SQL."""
 
-    from rascmdr_parquet.duckdb_session import query_parquet as _query
+    from ras2cng.duckdb_session import query_parquet as _query
 
     console.print(f"[bold blue]Querying:[/bold blue] {input_file}")
     try:
@@ -118,7 +118,7 @@ def generate_pmtiles(
 ):
     """Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster)."""
 
-    from rascmdr_parquet.pmtiles import generate_pmtiles_from_input
+    from ras2cng.pmtiles import generate_pmtiles_from_input
 
     console.print(f"[bold blue]Generating PMTiles:[/bold blue] {input_file}")
     try:
@@ -149,7 +149,7 @@ def sync_to_postgis(
 ):
     """Sync GeoParquet data to PostGIS."""
 
-    from rascmdr_parquet.postgis_sync import sync_to_postgres
+    from ras2cng.postgis_sync import sync_to_postgres
 
     console.print(f"[bold blue]Syncing to PostGIS:[/bold blue] {schema}.{table_name}")
     try:

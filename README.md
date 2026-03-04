@@ -1,178 +1,127 @@
-# rascmdr-parquet-cli
+# ras2cng — RAS to Cloud Native GIS
 
-CLI tool for exporting HEC-RAS **geometry** and **results** to **GeoParquet**, querying with **DuckDB**, generating **PMTiles**, and syncing to **PostGIS**.
+[![PyPI version](https://badge.fury.io/py/ras2cng.svg)](https://badge.fury.io/py/ras2cng)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Built on top of [`ras-commander`](https://github.com/gpt-cmdr/ras-commander).
+CLI tool for exporting HEC-RAS **geometry** and **results** to cloud-native GIS formats:
+**GeoParquet**, **DuckDB**, **PMTiles**, and **PostGIS**.
 
-## Extractable Data Types
-
-### Geometry Layers
-
-| Layer | Description | Geometry Type | Source Files |
-|---|---|---|---|
-| `mesh_cells` | 2D mesh cell polygons; falls back to cell center points if polygons are unavailable | Polygon (or Point fallback) | HDF geometry only (`*.g??.hdf`) |
-| `cross_sections` | 1D cross-section cut lines | LineString | HDF geometry (`*.g??.hdf`) and text geometry (`*.g??`) |
-| `centerlines` | River/reach centerlines | LineString | HDF geometry (`*.g??.hdf`) and text geometry (`*.g??`) |
-
-Source file type detection is suffix-based:
-- `*.g??.hdf` -- HDF geometry (supports all three layers including mesh cells)
-- `*.g??` -- Text geometry (supports `cross_sections` and `centerlines` only)
-
-### Results / Summary Variables
-
-Results are exported from plan HDF files (`*.p??.hdf`). The tool reads **2D mesh summary output variables** dynamically from the HDF file structure, so any variable present in the model output can be exported. Common examples include:
-
-- Maximum Depth
-- Maximum Velocity
-- Maximum Water Surface Elevation
-- Minimum Water Surface Elevation
-- Maximum Face Velocity
-- Cell Volume
-
-Use `--all` to export every available summary variable to separate GeoParquet files in a directory. The actual variables available depend on what was computed during the HEC-RAS simulation.
-
-Results geometry:
-- By default, results are exported as **cell center points** (as returned by ras-commander).
-- When a polygon geometry GeoParquet is provided via `--geometry`, results are **spatially joined onto polygons** by matching `mesh_name` and `cell_id`, producing polygon-based output suitable for mapping.
-
-Column names are normalized to **snake_case** by ras-commander (e.g., "Maximum Depth" becomes `maximum_depth`).
-
-### Output Formats
-
-| Format | Description | Requirements |
-|---|---|---|
-| **GeoParquet** | Primary output format, snappy compression | None (built-in) |
-| **Vector PMTiles** | Vector tiles from GeoParquet via tippecanoe | `tippecanoe` on PATH |
-| **Raster PMTiles** | Raster tiles from GeoTIFF via gdal_translate | `gdal_translate` and `pmtiles` on PATH |
-| **PostGIS** | Sync to PostgreSQL/PostGIS table with automatic spatial index creation | PostgreSQL with PostGIS extension |
-| **CSV** | Query output can be saved as CSV | None (built-in) |
-
-### Query Capabilities
-
-DuckDB SQL queries on any GeoParquet file with the spatial extension auto-loaded:
-- WKB geometry columns are automatically converted to DuckDB GEOMETRY type
-- Full support for `ST_*` spatial functions (e.g., `ST_Intersects`, `ST_Area`, `ST_Buffer`)
-- Use `_` as the table name placeholder in queries
-- Query output can be saved as GeoParquet or CSV
+Built on [`ras-commander`](https://github.com/gpt-cmdr/ras-commander) for HEC-RAS file parsing.
 
 ## Installation
 
 ```bash
-# Base installation (GeoParquet export)
-pip install rascmdr-parquet-cli
+# Core (geometry + results export)
+pip install ras2cng
 
-# All features (duckdb + postgis + pmtiles helpers + dev deps)
-pip install "rascmdr-parquet-cli[all]"
+# All optional extras (DuckDB analytics, PostGIS sync, PMTiles rasterio)
+pip install "ras2cng[all]"
+
+# Individual extras
+pip install "ras2cng[duckdb]"    # DuckDB SQL analytics
+pip install "ras2cng[postgis]"   # PostGIS sync
+pip install "ras2cng[pmtiles]"   # rasterio (PMTiles also needs tippecanoe + pmtiles CLIs)
 ```
 
-## Quick Start (CLI)
-
-### Export Geometry
+## Quick Start
 
 ```bash
-# Geometry HDF
-rascmdr-parquet geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
+# Export mesh cell geometry from HDF
+ras2cng geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
 
-# Text geometry
-rascmdr-parquet geometry model.g01 cross_sections.parquet --layer cross_sections
+# Export max depth results joined to polygon geometry
+ras2cng results model.p01.hdf max_depth.parquet \
+  --geometry mesh_cells.parquet --var "Maximum Depth"
 
-# River centerlines
-rascmdr-parquet geometry model.g01 centerlines.parquet --layer centerlines
-```
+# Query with DuckDB (use _ as table name)
+ras2cng query max_depth.parquet \
+  "SELECT mesh_name, AVG(maximum_depth) FROM _ GROUP BY mesh_name"
 
-### Export Results
+# Generate PMTiles (requires tippecanoe + pmtiles on PATH)
+ras2cng pmtiles max_depth.parquet flood_depth.pmtiles --layer flood --min-zoom 8 --max-zoom 14
 
-```bash
-# Max depth (usually exported as points unless you join polygons)
-rascmdr-parquet results model.p01.hdf max_depth.parquet --var "Maximum Depth"
-
-# Join results to polygon mesh cells (recommended for mapping)
-rascmdr-parquet results model.p01.hdf max_depth_poly.parquet \
-  --var "Maximum Depth" \
-  --geometry mesh_cells.parquet
-
-# Export all available summary variables into a directory
-rascmdr-parquet results model.p01.hdf ./results_out --all --geometry mesh_cells.parquet
-```
-
-Notes:
-- ras-commander normalizes output column names to snake_case. Example: "Maximum Depth" -> `maximum_depth`.
-
-### Query with DuckDB
-
-```bash
-# Filter by depth threshold
-rascmdr-parquet query max_depth_poly.parquet \
-  "SELECT * FROM _ WHERE maximum_depth > 3 ORDER BY maximum_depth DESC"
-
-# Save results
-rascmdr-parquet query max_depth_poly.parquet \
-  "SELECT * FROM _ WHERE maximum_depth > 3" \
-  --output deep_flooding.parquet
-```
-
-### Generate PMTiles
-
-Vector tiles require **tippecanoe** installed and on PATH.
-
-```bash
-rascmdr-parquet pmtiles mesh_cells.parquet mesh_cells.pmtiles \
-  --layer mesh_cells \
-  --min-zoom 8 \
-  --max-zoom 16
-```
-
-Raster tiles require **gdal_translate** and **pmtiles** CLIs.
-
-```bash
-rascmdr-parquet pmtiles depth.tif depth.pmtiles --min-zoom 10 --max-zoom 18
-```
-
-### Sync to PostGIS
-
-```bash
-rascmdr-parquet sync mesh_cells.parquet \
-  "postgresql://user:pass@your-host:5432/gis_data" \
-  ras_mesh_cells \
-  --schema public
-```
-
-## Tickfaw Model (CLB01)
-
-Example workflow used for validation on CLB01 (paths will vary):
-
-```bash
-# 1) Find files (PowerShell)
-Get-ChildItem C:\GH\ras-commander\test_models -Recurse -Include *.g??,*.g??.hdf,*.p??.hdf,*.prj | Select-Object -First 50
-
-# 2) Export mesh cells
-rascmdr-parquet geometry "<Tickfaw>\\*.g01.hdf" tickfaw_mesh_cells.parquet --layer mesh_cells
-
-# 3) Export max depth + join polygons
-rascmdr-parquet results "<Tickfaw>\\*.p01.hdf" tickfaw_max_depth.parquet --var "Maximum Depth" --geometry tickfaw_mesh_cells.parquet
-
-# 4) Generate PMTiles
-rascmdr-parquet pmtiles tickfaw_max_depth.parquet tickfaw_max_depth.pmtiles --layer max_depth
-
-# 5) Sync to PostGIS
-rascmdr-parquet sync tickfaw_max_depth.parquet "postgresql://user:pass@your-host:5432/gis_data" tickfaw_max_depth --schema public
+# Sync to PostGIS
+ras2cng sync max_depth.parquet "postgresql://user:pass@host/db" max_depth --schema hydraulics
 ```
 
 ## Python API
 
 ```python
-from rascmdr_parquet import export_geometry_layers, export_results_layer, DuckSession
+from ras2cng import (
+    export_geometry_layers,
+    export_results_layer,
+    export_all_variables,
+    DuckSession,
+    query_parquet,
+    generate_pmtiles_from_input,
+    sync_to_postgres,
+)
+from pathlib import Path
 
-export_geometry_layers("model.g01.hdf", "mesh_cells.parquet", layer="mesh_cells")
+# Export geometry
+export_geometry_layers(Path("model.g01.hdf"), Path("mesh_cells.parquet"), layer="mesh_cells")
+
+# Export results joined to polygon geometry
 export_results_layer(
-    "model.p01.hdf",
-    "max_depth.parquet",
+    plan_hdf=Path("model.p01.hdf"),
+    output=Path("max_depth.parquet"),
     variable="Maximum Depth",
-    geom_file="mesh_cells.parquet",
+    geom_file=Path("mesh_cells.parquet"),
 )
 
-df = DuckSession().register_parquet("max_depth.parquet").query(
-    "SELECT * FROM _ WHERE maximum_depth > 3"
-)
-print(df.head())
+# DuckDB query (table alias is always _)
+df = query_parquet(Path("max_depth.parquet"), "SELECT * FROM _ WHERE maximum_depth > 3.0")
+
+# Advanced DuckDB session with spatial
+with DuckSession() as duck:
+    duck.register_parquet("max_depth.parquet")
+    df = duck.query("SELECT mesh_name, MAX(maximum_depth) FROM _ GROUP BY mesh_name")
 ```
+
+## Extractable Data
+
+### Geometry Layers
+
+| Layer | Geometry | Source |
+|---|---|---|
+| `mesh_cells` | Polygon (Point fallback) | HDF geometry only (`*.g??.hdf`) |
+| `cross_sections` | LineString | HDF geometry + text geometry (`*.g??`) |
+| `centerlines` | LineString | HDF geometry + text geometry |
+
+### Results Variables
+
+Exported from plan HDF files (`*.p??.hdf`). Common 2D mesh summary variables:
+
+- `Maximum Depth` → `maximum_depth`
+- `Maximum Water Surface` → `maximum_water_surface`
+- `Maximum Velocity` → `maximum_velocity`
+
+Column names are **snake_case** (ras-commander normalization). Use `--all` to export every available variable.
+
+### Output Formats
+
+| Format | Command | Requirements |
+|---|---|---|
+| GeoParquet | `geometry`, `results` | Built-in |
+| DuckDB SQL | `query` | `pip install "ras2cng[duckdb]"` |
+| Vector PMTiles | `pmtiles` | tippecanoe + pmtiles CLIs |
+| Raster PMTiles | `pmtiles` | gdal_translate + pmtiles CLIs |
+| PostGIS | `sync` | `pip install "ras2cng[postgis]"` |
+
+## External CLIs for PMTiles
+
+```bash
+# via conda-forge
+conda install -c conda-forge tippecanoe pmtiles
+```
+
+Or download from [felt/tippecanoe](https://github.com/felt/tippecanoe/releases) and [protomaps/go-pmtiles](https://github.com/protomaps/go-pmtiles/releases).
+
+## Documentation
+
+Full documentation: [https://gpt-cmdr.github.io/ras2cng/](https://gpt-cmdr.github.io/ras2cng/)
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.

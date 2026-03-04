@@ -2,7 +2,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from rascmdr_parquet.cli import app
+from ras2cng.cli import app
 
 
 runner = CliRunner()
@@ -16,7 +16,7 @@ def test_results_all_routes_to_export_all(monkeypatch, tmp_path: Path):
         assert Path(out_dir) == tmp_path
         return ["a", "b"]
 
-    monkeypatch.setattr("rascmdr_parquet.results.export_all_variables", fake_export_all)
+    monkeypatch.setattr("ras2cng.results.export_all_variables", fake_export_all)
 
     result = runner.invoke(app, ["results", "model.p01.hdf", str(tmp_path), "--all"])
     assert result.exit_code == 0

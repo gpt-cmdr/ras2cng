@@ -1,0 +1,103 @@
+site_name: ras2cng — RAS to Cloud Native GIS
+site_description: CLI for exporting HEC-RAS geometry/results to GeoParquet, PMTiles, DuckDB, and PostGIS
+site_author: William Katzenmeyer, P.E., C.F.M.
+site_url: https://gpt-cmdr.github.io/ras2cng/
+
+repo_name: gpt-cmdr/ras2cng
+repo_url: https://github.com/gpt-cmdr/ras2cng
+
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep-orange
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep-orange
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            members_order: source
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: date
+      enable_git_follow: false
+      fallback_to_build_date: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Cloud-Native GIS Stack: getting-started/cloud-native-stack.md
+  - User Guide:
+    - Overview: user-guide/overview.md
+    - Geometry Export: user-guide/geometry-export.md
+    - Results Export: user-guide/results-export.md
+    - DuckDB Queries: user-guide/duckdb-queries.md
+    - PMTiles Generation: user-guide/pmtiles.md
+    - PostGIS Sync: user-guide/postgis-sync.md
+  - Examples:
+    - Overview: examples/index.md
+    - 00 - Using RasExamples: examples/00_using_ras_examples.md
+    - 01 - Export Geometry: examples/01_export_geometry.md
+    - 02 - Export Results: examples/02_export_results.md
+    - 03 - DuckDB Queries: examples/03_duckdb_queries.md
+    - 04 - Generate PMTiles: examples/04_generate_pmtiles.md
+    - 05 - Cloud Native Stack: examples/05_cloud_native_stack.md
+  - Data Reference:
+    - Output Schema: reference/data-structure.md
+  - API Reference:
+    - Overview: api/index.md
+    - CLI: api/cli.md
+    - geometry: api/geometry.md
+    - results: api/results.md
+    - duckdb_session: api/duckdb_session.md
+    - pmtiles: api/pmtiles.md
+    - postgis_sync: api/postgis_sync.md
+  - About:
+    - Cloud-Native GIS Philosophy: about/cloud-native-gis.md
+    - Acknowledgments: about/acknowledgments.md

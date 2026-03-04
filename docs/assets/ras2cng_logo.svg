@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 300">
+  <!-- Background with gradient (same palette as hms-commander) -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#05386B" />
+      <stop offset="100%" stop-color="#0B93C7" />
+    </linearGradient>
+
+    <!-- Map tile grid pattern (replaces circuit pattern) -->
+    <pattern id="tile-pattern" patternUnits="userSpaceOnUse" width="40" height="40">
+      <rect width="40" height="40" fill="none" stroke="#5CDB95" stroke-width="0.4" stroke-opacity="0.25" />
+      <rect x="0" y="0" width="20" height="20" fill="none" stroke="#5CDB95" stroke-width="0.2" stroke-opacity="0.15" />
+      <rect x="20" y="20" width="20" height="20" fill="none" stroke="#5CDB95" stroke-width="0.2" stroke-opacity="0.15" />
+    </pattern>
+
+    <!-- Clipping mask for circle content -->
+    <clipPath id="circle-clip">
+      <circle cx="225" cy="150" r="98" />
+    </clipPath>
+  </defs>
+
+  <!-- Main background -->
+  <rect width="450" height="300" fill="url(#bg-gradient)" />
+
+  <!-- Map tile grid overlay -->
+  <rect width="450" height="300" fill="url(#tile-pattern)" opacity="0.3" />
+
+  <!-- Central circular emblem with horizontal rectangle overlay (same structure) -->
+  <circle cx="225" cy="150" r="100" fill="#05386B" stroke="#5CDB95" stroke-width="2" />
+  <rect x="55" y="185" width="340" height="50" fill="#05386B" stroke="#5CDB95" stroke-width="2" rx="2" ry="2" />
+
+  <!-- Cloud Native GIS motif inside the circle -->
+  <g clip-path="url(#circle-clip)" opacity="0.7">
+
+    <!-- Stylized map/terrain contour lines -->
+    <path d="M135,155 Q160,135 190,150 Q215,162 240,142 Q265,125 290,145 Q310,160 325,148"
+          fill="none" stroke="#5CDB95" stroke-width="1.5" stroke-linecap="round" />
+    <path d="M135,168 Q165,148 195,163 Q220,175 245,155 Q270,138 300,158 Q318,170 325,162"
+          fill="none" stroke="#5CDB95" stroke-width="1.2" stroke-linecap="round" />
+    <path d="M140,180 Q170,165 200,175 Q225,183 250,168 Q275,152 305,170 Q320,178 325,174"
+          fill="none" stroke="#5CDB95" stroke-width="0.9" stroke-linecap="round" opacity="0.6" />
+
+    <!-- GeoParquet / vector point markers on the map -->
+    <circle cx="175" cy="148" r="4" fill="#8EE4AF" stroke="#05386B" stroke-width="1" />
+    <circle cx="225" cy="140" r="4" fill="#8EE4AF" stroke="#05386B" stroke-width="1" />
+    <circle cx="270" cy="143" r="4" fill="#8EE4AF" stroke="#05386B" stroke-width="1" />
+    <circle cx="200" cy="162" r="3" fill="#8EE4AF" stroke="#05386B" stroke-width="0.8" opacity="0.7" />
+    <circle cx="250" cy="155" r="3" fill="#8EE4AF" stroke="#05386B" stroke-width="0.8" opacity="0.7" />
+
+    <!-- Small COG/tile grid in lower-left of circle -->
+    <g transform="translate(148,155)" opacity="0.45">
+      <rect x="0" y="0" width="10" height="10" fill="#5CDB95" stroke="#05386B" stroke-width="0.5" />
+      <rect x="11" y="0" width="10" height="10" fill="#8EE4AF" stroke="#05386B" stroke-width="0.5" />
+      <rect x="0" y="11" width="10" height="10" fill="#8EE4AF" stroke="#05386B" stroke-width="0.5" />
+      <rect x="11" y="11" width="10" height="10" fill="#5CDB95" stroke="#05386B" stroke-width="0.5" />
+    </g>
+
+    <!-- Small COG/tile grid in lower-right of circle -->
+    <g transform="translate(282,153)" opacity="0.45">
+      <rect x="0" y="0" width="10" height="10" fill="#8EE4AF" stroke="#05386B" stroke-width="0.5" />
+      <rect x="11" y="0" width="10" height="10" fill="#5CDB95" stroke="#05386B" stroke-width="0.5" />
+      <rect x="0" y="11" width="10" height="10" fill="#5CDB95" stroke="#05386B" stroke-width="0.5" />
+      <rect x="11" y="11" width="10" height="10" fill="#8EE4AF" stroke="#05386B" stroke-width="0.5" />
+    </g>
+
+    <!-- Cloud icon at top of circle (Cloud Native) -->
+    <g transform="translate(225,115)" opacity="0.85">
+      <path d="M-22,0 
+               C-22,-8 -16,-14 -8,-14 
+               C-7,-20 -1,-24 6,-24 
+               C14,-24 20,-18 20,-11 
+               C26,-10 30,-5 30,2 
+               C30,8 25,12 19,12 
+               L-15,12 
+               C-20,12 -24,8 -24,3 
+               C-24,1 -23,0 -22,0 Z"
+            fill="none" stroke="#5CDB95" stroke-width="1.8" />
+      <!-- Small upward arrow inside cloud (upload/convert) -->
+      <line x1="3" y1="6" x2="3" y2="-6" stroke="#8EE4AF" stroke-width="1.5" stroke-linecap="round" />
+      <polyline points="-2,-2 3,-7 8,-2" fill="none" stroke="#8EE4AF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+  </g>
+
+  <!-- Command line prompt at top of circle -->
+  <rect x="155" y="72" width="140" height="28" rx="5" ry="5" fill="#000" fill-opacity="0.85" />
+  <text x="225" y="91" font-family="Consolas, monospace" font-size="14" fill="#5CDB95" text-anchor="middle">$ uv run ras2cng</text>
+  <rect x="293" y="93" width="8" height="2" fill="#5CDB95">
+    <animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite" />
+  </rect>
+
+  <!-- Text elements -->
+  <text x="225" y="215" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#EDF5E1">HEC-RAS to Cloud Native GIS</text>
+  <text x="225" y="230" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#8EE4AF" opacity="0.85">via CLI</text>
+  <text x="225" y="265" font-family="Arial, sans-serif" font-size="16" font-style="italic" text-anchor="middle" fill="#8EE4AF">Convert • Transform • Map</text>
+</svg>

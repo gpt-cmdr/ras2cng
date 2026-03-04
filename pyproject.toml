@@ -1,15 +1,34 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "rascmdr-parquet-cli"
+name = "ras2cng"
 version = "0.1.0"
-description = "CLI tool for exporting HEC-RAS geometry/results to GeoParquet and PMTiles using ras-commander"
+description = "CLI for exporting HEC-RAS geometry/results to cloud-native GIS formats (GeoParquet, PMTiles, DuckDB, PostGIS)"
 readme = "README.md"
-license = "MIT"
+license = {file = "LICENSE"}
 authors = [
   {name = "William M. Katzenmeyer, P.E., C.F.M.", email = "bill@clbengineering.com"}
+]
+keywords = [
+  "hec-ras", "ras-commander", "geoparquet", "pmtiles", "duckdb", "postgis",
+  "cloud-native-gis", "flood-modeling", "hydraulics", "geospatial",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Topic :: Scientific/Engineering :: Hydrology",
+  "Topic :: Utilities",
+  "Environment :: Console",
+  "Operating System :: OS Independent",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -35,26 +54,22 @@ pmtiles = [
   # This extra just pulls common Python deps used by the module.
   "rasterio>=1.3.0",
 ]
-dev = [
-  "pytest>=7.0.0",
-  "pytest-cov>=4.0.0",
-]
 all = [
   "duckdb>=1.0.0",
   "sqlalchemy>=2.0.0",
   "geoalchemy2>=0.14.0",
   "psycopg2-binary>=2.9.0",
   "rasterio>=1.3.0",
-  "pytest>=7.0.0",
-  "pytest-cov>=4.0.0",
 ]
 
 [project.scripts]
-rascmdr-parquet = "rascmdr_parquet.cli:app"
+ras2cng = "ras2cng.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/gpt-cmdr/rascmdr-parquet-cli"
-Repository = "https://github.com/gpt-cmdr/rascmdr-parquet-cli"
+Homepage = "https://github.com/gpt-cmdr/ras2cng"
+Repository = "https://github.com/gpt-cmdr/ras2cng"
+Documentation = "https://gpt-cmdr.github.io/ras2cng/"
+"Bug Tracker" = "https://github.com/gpt-cmdr/ras2cng/issues"
 
 [tool.pytest.ini_options]
 addopts = "-q"
@@ -62,6 +77,17 @@ markers = [
     "integration: Full extraction tests against real HEC-RAS models (requires I: and L: drives)",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["rascmdr_parquet*"]
+[tool.hatch.build.targets.wheel]
+packages = ["ras2cng"]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+  "marimo>=0.9.0",
+  "mkdocs>=1.5.0",
+  "mkdocs-material>=9.5.0",
+  "mkdocstrings[python]>=0.24.0",
+  "mkdocs-git-revision-date-localized-plugin>=1.2.0",
+  "twine>=6.2.0",
+]

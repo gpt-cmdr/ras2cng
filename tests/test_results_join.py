@@ -3,7 +3,7 @@ from pathlib import Path
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 
-from rascmdr_parquet.results import export_results_layer
+from ras2cng.results import export_results_layer
 
 
 def test_results_join_points_to_polys(monkeypatch, tmp_path: Path):
@@ -22,7 +22,7 @@ def test_results_join_points_to_polys(monkeypatch, tmp_path: Path):
         return res
 
     monkeypatch.setattr(
-        "rascmdr_parquet.results.HdfResultsMesh.get_mesh_summary_output",
+        "ras2cng.results.HdfResultsMesh.get_mesh_summary_output",
         fake_get_mesh_summary_output,
     )
 

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import rascmdr_parquet.geometry as geom
+import ras2cng.geometry as geom
 
 
 def test_is_hdf_geometry():

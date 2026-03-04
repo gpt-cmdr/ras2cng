@@ -17,13 +17,13 @@ from pathlib import Path
 import geopandas as gpd
 import pytest
 
-from rascmdr_parquet.geometry import export_geometry_layers
-from rascmdr_parquet.results import (
+from ras2cng.geometry import export_geometry_layers
+from ras2cng.results import (
     export_all_variables,
     export_results_layer,
     list_available_summary_variables,
 )
-from rascmdr_parquet.duckdb_session import query_parquet
+from ras2cng.duckdb_session import query_parquet
 
 from conftest import (
     OUTPUTS_DIR,

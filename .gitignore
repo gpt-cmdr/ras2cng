@@ -9,5 +9,9 @@ build/
 .env
 .pytest_cache/
 outputs/
+out/
 agent_tasks/
 *.parquet
+*.pmtiles
+site/
+example_projects/

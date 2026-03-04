@@ -4,25 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CLI tool for exporting HEC-RAS geometry and results to GeoParquet, querying with DuckDB, generating PMTiles vector/raster tiles, and syncing to PostGIS. Built on [`ras-commander`](https://github.com/gpt-cmdr/ras-commander) for HEC-RAS file parsing.
+**ras2cng** (RAS to Cloud Native GIS) — CLI tool for exporting HEC-RAS geometry and results to GeoParquet, querying with DuckDB, generating PMTiles vector/raster tiles, and syncing to PostGIS. Built on [`ras-commander`](https://github.com/gpt-cmdr/ras-commander) for HEC-RAS file parsing.
 
 ## Build & Development Commands
 
 ```bash
-# Install with all optional dependencies
-pip install -e ".[all]"
+# Install with all optional dependencies (creates/updates .venv and uv.lock)
+uv sync --all-extras
 
 # Run tests
-pytest
+uv run pytest
 
 # Run a single test
-pytest tests/test_geometry_detection.py -v
+uv run pytest tests/test_geometry_detection.py -v
 
 # Run the CLI
-rascmdr-parquet --help
+uv run ras2cng --help
+
+# Build distributable wheel
+uv build
+
+# Add a runtime dependency
+uv add somepackage
+
+# Add a dev-only dependency
+uv add --dev somepackage
 ```
 
-Python >= 3.10 required. Virtual environment is in `.venv/`.
+Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is managed by uv in `.venv/`.
 
 ## Architecture
 
