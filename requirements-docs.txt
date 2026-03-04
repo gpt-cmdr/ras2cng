@@ -1,0 +1,13 @@
+mkdocs>=1.5.0
+mkdocs-material>=9.5.0
+mkdocstrings[python]>=0.24.0
+mkdocs-git-revision-date-localized-plugin>=1.2.0
+
+# Package deps so mkdocstrings can import modules
+pandas
+geopandas
+pyarrow
+typer
+rich
+duckdb>=1.0.0
+ras-commander>=0.89.0

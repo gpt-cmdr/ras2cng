@@ -1,0 +1,2889 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="CLI for exporting HEC-RAS geometry/results to GeoParquet, PMTiles, DuckDB, and PostGIS">
+      
+      
+        <meta name="author" content="William Katzenmeyer, P.E., C.F.M.">
+      
+      
+        <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/reference/data-structure/">
+      
+      
+        <link rel="prev" href="../../examples/05_cloud_native_stack/">
+      
+      
+        <link rel="next" href="../../api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+    
+    
+      
+        <title>Output Schema - ras2cng — RAS to Cloud Native GIS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#data-structure-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ras2cng — RAS to Cloud Native GIS" class="md-header__button md-logo" aria-label="ras2cng — RAS to Cloud Native GIS" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ras2cng — RAS to Cloud Native GIS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Output Schema
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/gpt-cmdr/ras2cng" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gpt-cmdr/ras2cng
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/overview/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../examples/" class="md-tabs__link">
+          
+  
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Data Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../about/cloud-native-gis/" class="md-tabs__link">
+          
+  
+  
+  About
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ras2cng — RAS to Cloud Native GIS" class="md-nav__button md-logo" aria-label="ras2cng — RAS to Cloud Native GIS" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ras2cng — RAS to Cloud Native GIS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/gpt-cmdr/ras2cng" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gpt-cmdr/ras2cng
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/cloud-native-stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cloud-Native GIS Stack
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/geometry-export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Geometry Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/results-export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Results Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/duckdb-queries/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DuckDB Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/pmtiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PMTiles Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/postgis-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PostGIS Sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/00_using_ras_examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 - Using RasExamples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_export_geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 - Export Geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_export_results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 - Export Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_duckdb_queries/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 - DuckDB Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_generate_pmtiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 - Generate PMTiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_cloud_native_stack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 - Cloud Native Stack
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Output Schema
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Output Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#example-project-baldeaglecrkmulti2d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Project: BaldEagleCrkMulti2D
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-files-from-a-full-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Files from a Full Extraction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mesh_cells-2d-flow-area-cell-polygons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mesh_cells — 2D Flow Area Cell Polygons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross_sections-1d-cross-section-cut-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cross_sections — 1D Cross Section Cut Lines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#centerlines-riverreach-centerlines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centerlines — River/Reach Centerlines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-2d-mesh-summary-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results — 2D Mesh Summary Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Results — 2D Mesh Summary Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schema-points-default-no-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema — Points (default, no --geometry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-polygons-with-geometry-mesh_cellsparquet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema — Polygons (with --geometry mesh_cells.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#all-available-variables-typical-2d-unsteady-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All Available Variables (typical 2D unsteady plan)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#geometry-encoding-crs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Geometry Encoding &amp; CRS
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Geometry Encoding &amp; CRS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#geoparquet-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GeoParquet Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#crs-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRS Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-in-duckdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading in DuckDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspecting-output-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspecting Output Schema
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspecting Output Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#with-geopandas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With geopandas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-pyarrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With pyarrow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-duckdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With DuckDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#full-extraction-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full Extraction Script
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/duckdb_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    duckdb_session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pmtiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pmtiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/postgis_sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    postgis_sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    About
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/cloud-native-gis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cloud-Native GIS Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/acknowledgments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acknowledgments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#example-project-baldeaglecrkmulti2d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Project: BaldEagleCrkMulti2D
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-files-from-a-full-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Files from a Full Extraction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mesh_cells-2d-flow-area-cell-polygons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mesh_cells — 2D Flow Area Cell Polygons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross_sections-1d-cross-section-cut-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cross_sections — 1D Cross Section Cut Lines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#centerlines-riverreach-centerlines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centerlines — River/Reach Centerlines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-2d-mesh-summary-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results — 2D Mesh Summary Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Results — 2D Mesh Summary Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schema-points-default-no-geometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema — Points (default, no --geometry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-polygons-with-geometry-mesh_cellsparquet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema — Polygons (with --geometry mesh_cells.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#all-available-variables-typical-2d-unsteady-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All Available Variables (typical 2D unsteady plan)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#geometry-encoding-crs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Geometry Encoding &amp; CRS
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Geometry Encoding &amp; CRS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#geoparquet-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GeoParquet Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#crs-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRS Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-in-duckdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading in DuckDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspecting-output-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspecting Output Schema
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspecting Output Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#with-geopandas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With geopandas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-pyarrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With pyarrow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-duckdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With DuckDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#full-extraction-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full Extraction Script
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="data-structure-reference">Data Structure Reference<a class="headerlink" href="#data-structure-reference" title="Permanent link">&para;</a></h1>
+<p>This page documents the exact output schema from a full ras2cng extraction, using
+the <code>BaldEagleCrkMulti2D</code> example project bundled with ras-commander.</p>
+<h2 id="example-project-baldeaglecrkmulti2d">Example Project: BaldEagleCrkMulti2D<a class="headerlink" href="#example-project-baldeaglecrkmulti2d" title="Permanent link">&para;</a></h2>
+<p>A multi-area 2D unsteady dam break model on Bald Eagle Creek, Pennsylvania.
+Contains 10 geometry configurations (<code>g01</code>–<code>g13</code>) and multiple plan configurations.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>BaldEagleCrkMulti2D/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── BaldEagleDamBrk.g01.hdf    5.0 MB  ← geometry HDF (mesh_cells)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── BaldEagleDamBrk.g06.hdf    1.0 MB  ← geometry HDF (cross_sections + centerlines)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── BaldEagleDamBrk.g01        2.9 MB  ← text geometry file (same geometry, ASCII)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── BaldEagleDamBrk.p01        7.6 KB  ← plan text file (no pre-run .p01.hdf)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ...
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>└── Terrain/Projection.prj            ← CRS source (EPSG:2271)
+</code></pre></div>
+<p><strong>CRS</strong>: EPSG:2271 — NAD83 / Pennsylvania North (US survey feet)</p>
+<hr />
+<h2 id="output-files-from-a-full-extraction">Output Files from a Full Extraction<a class="headerlink" href="#output-files-from-a-full-extraction" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>BaldEagleDamBrk.g01.hdf<span class="w">  </span>mesh_cells.parquet<span class="w">       </span>--layer<span class="w"> </span>mesh_cells
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>BaldEagleDamBrk.g06.hdf<span class="w">  </span>cross_sections.parquet<span class="w">   </span>--layer<span class="w"> </span>cross_sections
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>BaldEagleDamBrk.g06.hdf<span class="w">  </span>centerlines.parquet<span class="w">      </span>--layer<span class="w"> </span>centerlines
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># After running a plan in HEC-RAS:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>ras2cng<span class="w"> </span>results<span class="w">  </span>BaldEagleDamBrk.p01.hdf<span class="w">  </span>max_depth.parquet<span class="w">        </span>--geometry<span class="w"> </span>mesh_cells.parquet
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Output File</th>
+<th>Size</th>
+<th>Rows</th>
+<th>Geometry</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mesh_cells.parquet</code></td>
+<td>2.5 MB</td>
+<td>87,039</td>
+<td>Polygon</td>
+</tr>
+<tr>
+<td><code>cross_sections.parquet</code></td>
+<td>768 KB</td>
+<td>192</td>
+<td>LineString</td>
+</tr>
+<tr>
+<td><code>centerlines.parquet</code></td>
+<td>22 KB</td>
+<td>1</td>
+<td>LineString</td>
+</tr>
+<tr>
+<td><code>max_depth.parquet</code> (joined)</td>
+<td>~3.5 MB</td>
+<td>87,039</td>
+<td>Polygon</td>
+</tr>
+<tr>
+<td><code>max_depth.parquet</code> (points)</td>
+<td>~2.0 MB</td>
+<td>87,039</td>
+<td>Point</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mesh_cells-2d-flow-area-cell-polygons">mesh_cells — 2D Flow Area Cell Polygons<a class="headerlink" href="#mesh_cells-2d-flow-area-cell-polygons" title="Permanent link">&para;</a></h2>
+<p><strong>Source</strong>: <code>BaldEagleDamBrk.g01.hdf</code> via <code>HdfMesh.get_mesh_cell_polygons()</code></p>
+<p><strong>Real extraction</strong>: 87,039 cells, EPSG:2271, 2.5 MB</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+<th>Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mesh_name</code></td>
+<td><code>str</code></td>
+<td>Name of 2D flow area</td>
+<td><code>"BaldEagleCr"</code></td>
+</tr>
+<tr>
+<td><code>cell_id</code></td>
+<td><code>int64</code></td>
+<td>Cell index (0-based)</td>
+<td><code>0</code>, <code>1</code>, <code>2</code>, …</td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td><code>Polygon</code></td>
+<td>Cell polygon boundary</td>
+<td><code>POLYGON ((2083650 370850, …))</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mesh statistics for BaldEagleDamBrk.g01.hdf:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mesh Name</th>
+<th>Cell Count</th>
+<th>Min Cell Area (ft²)</th>
+<th>Max Cell Area (ft²)</th>
+<th>Mean Cell Area (ft²)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BaldEagleCr</code></td>
+<td>87,039</td>
+<td>1,441</td>
+<td>25,703</td>
+<td>~10,000</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Geometry fallback</p>
+<p>If the HDF file does not contain cell polygon data, <code>geometry</code> falls back to
+<code>Point</code> at the cell centroid. Both use the same <code>mesh_name</code>/<code>cell_id</code> keys.</p>
+</div>
+<p><strong>Read with geopandas:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># GeoDataFrame with 87039 rows, CRS=EPSG:2271</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">dtypes</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># mesh_name    ArrowDtype(string)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># cell_id      int64</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># geometry     geometry</span>
+</code></pre></div></p>
+<p><strong>Query with DuckDB:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1">-- Cell count per mesh area</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">mesh_name</span><span class="p">,</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">n_cells</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">mesh_name</span><span class="p">;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1">-- Cells with large area (&gt; 20,000 ft²)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">mesh_name</span><span class="p">,</span><span class="w"> </span><span class="n">cell_id</span><span class="p">,</span><span class="w"> </span><span class="n">ST_Area</span><span class="p">(</span><span class="n">geometry</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">area_ft2</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">FROM</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">ST_Area</span><span class="p">(</span><span class="n">geometry</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">20000</span><span class="p">;</span>
+</code></pre></div></p>
+<hr />
+<h2 id="cross_sections-1d-cross-section-cut-lines">cross_sections — 1D Cross Section Cut Lines<a class="headerlink" href="#cross_sections-1d-cross-section-cut-lines" title="Permanent link">&para;</a></h2>
+<p><strong>Source</strong>: <code>BaldEagleDamBrk.g06.hdf</code> via <code>HdfXsec.get_cross_sections()</code></p>
+<p><strong>Real extraction</strong>: 192 cross sections, river "Bald Eagle Cr.", reach "Lock Haven"</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+<th>Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>geometry</code></td>
+<td><code>LineString</code></td>
+<td>XS cut line polyline</td>
+<td><code>LINESTRING (2053610 …)</code></td>
+</tr>
+<tr>
+<td><code>River</code></td>
+<td><code>str</code></td>
+<td>River name</td>
+<td><code>"Bald Eagle Cr."</code></td>
+</tr>
+<tr>
+<td><code>Reach</code></td>
+<td><code>str</code></td>
+<td>Reach name</td>
+<td><code>"Lock Haven"</code></td>
+</tr>
+<tr>
+<td><code>RS</code></td>
+<td><code>str</code></td>
+<td>River station (ft)</td>
+<td><code>"137520"</code>, <code>"136948"</code></td>
+</tr>
+<tr>
+<td><code>Name</code></td>
+<td><code>str</code></td>
+<td>Cross-section name</td>
+<td><code>"Low Water Bridge"</code>, <code>""</code></td>
+</tr>
+<tr>
+<td><code>Description</code></td>
+<td><code>str</code></td>
+<td>Description</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>n_lob</code></td>
+<td><code>float64</code></td>
+<td>Left overbank Manning's n</td>
+<td><code>0.06</code></td>
+</tr>
+<tr>
+<td><code>n_channel</code></td>
+<td><code>float64</code></td>
+<td>Main channel Manning's n</td>
+<td><code>0.04</code></td>
+</tr>
+<tr>
+<td><code>n_rob</code></td>
+<td><code>float64</code></td>
+<td>Right overbank Manning's n</td>
+<td><code>0.08</code></td>
+</tr>
+<tr>
+<td><code>Left Bank</code></td>
+<td><code>float32</code></td>
+<td>Left bank station (ft)</td>
+<td><code>3149.24</code></td>
+</tr>
+<tr>
+<td><code>Right Bank</code></td>
+<td><code>float32</code></td>
+<td>Right bank station (ft)</td>
+<td><code>3627.56</code></td>
+</tr>
+<tr>
+<td><code>Len Left</code></td>
+<td><code>float32</code></td>
+<td>LOB reach length (ft)</td>
+<td><code>478.52</code></td>
+</tr>
+<tr>
+<td><code>Len Channel</code></td>
+<td><code>float32</code></td>
+<td>Channel reach length (ft)</td>
+<td><code>571.85</code></td>
+</tr>
+<tr>
+<td><code>Len Right</code></td>
+<td><code>float32</code></td>
+<td>ROB reach length (ft)</td>
+<td><code>590.29</code></td>
+</tr>
+<tr>
+<td><code>Friction Mode</code></td>
+<td><code>str</code></td>
+<td>Friction method</td>
+<td><code>"Basic Mann n"</code></td>
+</tr>
+<tr>
+<td><code>Contr</code></td>
+<td><code>float32</code></td>
+<td>Contraction coefficient</td>
+<td><code>0.1</code></td>
+</tr>
+<tr>
+<td><code>Expan</code></td>
+<td><code>float32</code></td>
+<td>Expansion coefficient</td>
+<td><code>0.3</code></td>
+</tr>
+<tr>
+<td><code>HP Count</code></td>
+<td><code>int32</code></td>
+<td>Hydraulic table entries</td>
+<td><code>100</code></td>
+</tr>
+<tr>
+<td><code>HP Start Elev</code></td>
+<td><code>float32</code></td>
+<td>Hydraulic table start elevation</td>
+<td><code>657.31</code></td>
+</tr>
+<tr>
+<td><code>HP Vert Incr</code></td>
+<td><code>float32</code></td>
+<td>Hydraulic table vertical increment</td>
+<td><code>1.0</code></td>
+</tr>
+<tr>
+<td><code>HP LOB Slices</code></td>
+<td><code>int32</code></td>
+<td>LOB hydraulic table slices</td>
+<td><code>5</code></td>
+</tr>
+<tr>
+<td><code>HP Chan Slices</code></td>
+<td><code>int32</code></td>
+<td>Channel hydraulic table slices</td>
+<td><code>5</code></td>
+</tr>
+<tr>
+<td><code>HP ROB Slices</code></td>
+<td><code>int32</code></td>
+<td>ROB hydraulic table slices</td>
+<td><code>5</code></td>
+</tr>
+<tr>
+<td><code>Left Levee Sta</code></td>
+<td><code>object</code></td>
+<td>Left levee station</td>
+<td><code>None</code></td>
+</tr>
+<tr>
+<td><code>Left Levee Elev</code></td>
+<td><code>object</code></td>
+<td>Left levee elevation</td>
+<td><code>None</code></td>
+</tr>
+<tr>
+<td><code>Right Levee Sta</code></td>
+<td><code>object</code></td>
+<td>Right levee station</td>
+<td><code>None</code></td>
+</tr>
+<tr>
+<td><code>Right Levee Elev</code></td>
+<td><code>object</code></td>
+<td>Right levee elevation</td>
+<td><code>None</code></td>
+</tr>
+<tr>
+<td><code>Ineff Block Mode</code></td>
+<td><code>int64</code></td>
+<td>Ineffective flow mode flag</td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>Obstr Block Mode</code></td>
+<td><code>int64</code></td>
+<td>Obstruction mode flag</td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>Default Centerline</code></td>
+<td><code>uint8</code></td>
+<td>Default centerline flag</td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>Last Edited</code></td>
+<td><code>str</code></td>
+<td>Last edit timestamp</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>station_elevation</code></td>
+<td><code>object</code></td>
+<td>Array: <code>[[station, elev], …]</code> shape <code>(N, 2)</code></td>
+<td><code>array([[0., 849.52], [6.44, 849.26], …])</code></td>
+</tr>
+<tr>
+<td><code>mannings_n</code></td>
+<td><code>object</code></td>
+<td>Dict: <code>{'Mann n': array, 'Station': array}</code></td>
+<td><code>{'Mann n': [0.06, 0.04, 0.08], 'Station': [0, 3149, 3627]}</code></td>
+</tr>
+<tr>
+<td><code>ineffective_blocks</code></td>
+<td><code>object</code></td>
+<td>List of ineffective flow blocks</td>
+<td><code>[]</code></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">River station range</p>
+<p>In BaldEagleCrkMulti2D g06, RS ranges from <code>-1867</code> to <code>137520</code> ft
+(negative stations are downstream of the model outlet).</p>
+</div>
+<p><strong>Text geometry cross sections</strong> (<code>*.g??</code>) have a simpler schema:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>geometry</code></td>
+<td><code>LineString</code></td>
+<td>XS cut line</td>
+</tr>
+<tr>
+<td><code>river</code></td>
+<td><code>str</code></td>
+<td>River name</td>
+</tr>
+<tr>
+<td><code>reach</code></td>
+<td><code>str</code></td>
+<td>Reach name</td>
+</tr>
+<tr>
+<td><code>station</code></td>
+<td><code>str</code></td>
+<td>River station</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="centerlines-riverreach-centerlines">centerlines — River/Reach Centerlines<a class="headerlink" href="#centerlines-riverreach-centerlines" title="Permanent link">&para;</a></h2>
+<p><strong>Source</strong>: <code>BaldEagleDamBrk.g06.hdf</code> via <code>HdfXsec.get_river_centerlines()</code></p>
+<p><strong>Real extraction</strong>: 1 reach, EPSG:2271, 140,133 ft long</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+<th>Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>River Name</code></td>
+<td><code>str</code></td>
+<td>River name</td>
+<td><code>"Bald Eagle Cr."</code></td>
+</tr>
+<tr>
+<td><code>Reach Name</code></td>
+<td><code>str</code></td>
+<td>Reach name</td>
+<td><code>"Lock Haven"</code></td>
+</tr>
+<tr>
+<td><code>US Type</code></td>
+<td><code>str</code></td>
+<td>Upstream boundary type</td>
+<td><code>"External"</code></td>
+</tr>
+<tr>
+<td><code>US Name</code></td>
+<td><code>str</code></td>
+<td>Upstream junction/boundary name</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>DS Type</code></td>
+<td><code>str</code></td>
+<td>Downstream boundary type</td>
+<td><code>"External"</code></td>
+</tr>
+<tr>
+<td><code>DS Name</code></td>
+<td><code>str</code></td>
+<td>Downstream junction/boundary name</td>
+<td><code>""</code></td>
+</tr>
+<tr>
+<td><code>DS XS to Junction</code></td>
+<td><code>float64</code></td>
+<td>Distance DS XS to junction</td>
+<td><code>NaN</code></td>
+</tr>
+<tr>
+<td><code>Junction to US XS</code></td>
+<td><code>float64</code></td>
+<td>Distance junction to US XS</td>
+<td><code>NaN</code></td>
+</tr>
+<tr>
+<td><code>length</code></td>
+<td><code>float64</code></td>
+<td>Total reach length (ft)</td>
+<td><code>140,133.5</code></td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td><code>LineString</code></td>
+<td>Reach centerline polyline</td>
+<td><code>LINESTRING (…)</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Text geometry centerlines</strong> (<code>*.g??</code>) have a simpler schema:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>geometry</code></td>
+<td><code>LineString</code></td>
+<td>Reach centerline</td>
+</tr>
+<tr>
+<td><code>river</code></td>
+<td><code>str</code></td>
+<td>River name</td>
+</tr>
+<tr>
+<td><code>reach</code></td>
+<td><code>str</code></td>
+<td>Reach name</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="results-2d-mesh-summary-output">Results — 2D Mesh Summary Output<a class="headerlink" href="#results-2d-mesh-summary-output" title="Permanent link">&para;</a></h2>
+<p><strong>Source</strong>: <code>*.p??.hdf</code> via <code>HdfResultsMesh.get_mesh_summary_output()</code></p>
+<div class="admonition info">
+<p class="admonition-title">BaldEagleCrkMulti2D note</p>
+<p>This example project does not include pre-run plan results (<code>.p??.hdf</code> files).
+Run the model in HEC-RAS to generate them, then use <code>ras2cng results</code>.</p>
+</div>
+<h3 id="schema-points-default-no-geometry">Schema — Points (default, no <code>--geometry</code>)<a class="headerlink" href="#schema-points-default-no-geometry" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+<th>Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mesh_name</code></td>
+<td><code>str</code></td>
+<td>Name of 2D flow area</td>
+<td><code>"BaldEagleCr"</code></td>
+</tr>
+<tr>
+<td><code>cell_id</code></td>
+<td><code>int64</code></td>
+<td>Cell index (0-based)</td>
+<td><code>0</code>, <code>1</code>, <code>2</code></td>
+</tr>
+<tr>
+<td><code>maximum_depth</code></td>
+<td><code>float64</code></td>
+<td>Maximum water depth (ft)</td>
+<td><code>4.237</code>, <code>0.0</code>, <code>12.51</code></td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td><code>Point</code></td>
+<td>Cell centroid</td>
+<td><code>POINT (2083650 370850)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="schema-polygons-with-geometry-mesh_cellsparquet">Schema — Polygons (with <code>--geometry mesh_cells.parquet</code>)<a class="headerlink" href="#schema-polygons-with-geometry-mesh_cellsparquet" title="Permanent link">&para;</a></h3>
+<p>Same as above but <code>geometry</code> is a <code>Polygon</code> (joined from <code>mesh_cells</code> on <code>mesh_name</code> + <code>cell_id</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mesh_name</code></td>
+<td><code>str</code></td>
+<td>Name of 2D flow area</td>
+</tr>
+<tr>
+<td><code>cell_id</code></td>
+<td><code>int64</code></td>
+<td>Cell index (0-based)</td>
+</tr>
+<tr>
+<td><code>maximum_depth</code></td>
+<td><code>float64</code></td>
+<td>Maximum water depth</td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td><code>Polygon</code></td>
+<td>Cell polygon (from mesh_cells join)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="all-available-variables-typical-2d-unsteady-plan">All Available Variables (typical 2D unsteady plan)<a class="headerlink" href="#all-available-variables-typical-2d-unsteady-plan" title="Permanent link">&para;</a></h3>
+<p>ras-commander normalizes all variable names to <strong>snake_case</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>HEC-RAS Variable</th>
+<th>Output Column</th>
+<th>Units</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Maximum Depth</code></td>
+<td><code>maximum_depth</code></td>
+<td>ft (or m)</td>
+</tr>
+<tr>
+<td><code>Maximum Water Surface</code></td>
+<td><code>maximum_water_surface</code></td>
+<td>ft NAVD88</td>
+</tr>
+<tr>
+<td><code>Minimum Water Surface</code></td>
+<td><code>minimum_water_surface</code></td>
+<td>ft NAVD88</td>
+</tr>
+<tr>
+<td><code>Maximum Face Velocity</code></td>
+<td><code>maximum_face_velocity</code></td>
+<td>ft/s</td>
+</tr>
+<tr>
+<td><code>Minimum Depth</code></td>
+<td><code>minimum_depth</code></td>
+<td>ft</td>
+</tr>
+<tr>
+<td><code>Cell Last Iteration</code></td>
+<td><code>cell_last_iteration</code></td>
+<td>count</td>
+</tr>
+<tr>
+<td><code>Cell Max Courant</code></td>
+<td><code>cell_max_courant</code></td>
+<td>dimensionless</td>
+</tr>
+</tbody>
+</table>
+<p>Use <code>list_available_summary_variables()</code> to discover what a specific plan HDF contains:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_available_summary_variables</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">variables</span> <span class="o">=</span> <span class="n">list_available_summary_variables</span><span class="p">(</span><span class="s2">&quot;BaldEagleDamBrk.p01.hdf&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># [&#39;Maximum Depth&#39;, &#39;Maximum Water Surface&#39;, &#39;Maximum Face Velocity&#39;, ...]</span>
+</code></pre></div>
+<hr />
+<h2 id="geometry-encoding-crs">Geometry Encoding &amp; CRS<a class="headerlink" href="#geometry-encoding-crs" title="Permanent link">&para;</a></h2>
+<h3 id="geoparquet-format">GeoParquet Format<a class="headerlink" href="#geoparquet-format" title="Permanent link">&para;</a></h3>
+<p>All geometry is stored as <strong>GeoParquet</strong> (Apache Parquet + GeoArrow encoding):</p>
+<ul>
+<li>Geometry column name: <code>geometry</code></li>
+<li>Encoding: Well-Known Binary (WKB) via <code>geopandas.to_parquet()</code></li>
+<li>Compression: <code>snappy</code> (lossless, fast read)</li>
+<li>CRS: Preserved in parquet metadata (<code>geo</code> key)</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="p">)</span>      <span class="c1"># EPSG:2271 — NAD83 / Pennsylvania North (ftUS)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="o">.</span><span class="n">to_epsg</span><span class="p">())</span>  <span class="c1"># 2271</span>
+</code></pre></div>
+<h3 id="crs-source">CRS Source<a class="headerlink" href="#crs-source" title="Permanent link">&para;</a></h3>
+<p>ras-commander detects the CRS from the HEC-RAS project in this order:</p>
+<ol>
+<li><code>Terrain/Projection.prj</code> (RASMapper projection file) — <strong>most common</strong></li>
+<li><code>Geometry</code> HDF group projection attribute</li>
+<li><code>*.prj</code> project file</li>
+</ol>
+<p>For <code>BaldEagleCrkMulti2D</code>: <strong>EPSG:2271</strong> (NAD83 / Pennsylvania North, US survey feet).</p>
+<h3 id="reading-in-duckdb">Reading in DuckDB<a class="headerlink" href="#reading-in-duckdb" title="Permanent link">&para;</a></h3>
+<p>The <code>DuckSession</code> automatically wraps WKB geometry columns with <code>ST_GeomFromWKB()</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.duckdb_session</span><span class="w"> </span><span class="kn">import</span> <span class="n">DuckSession</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">with</span> <span class="n">DuckSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">duck</span><span class="p">:</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="c1"># geometry column is automatically available as GEOMETRY type</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">duck</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">&quot;SELECT mesh_name, ST_Area(geometry) AS area FROM _ LIMIT 5&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="inspecting-output-schema">Inspecting Output Schema<a class="headerlink" href="#inspecting-output-schema" title="Permanent link">&para;</a></h2>
+<h3 id="with-geopandas">With geopandas<a class="headerlink" href="#with-geopandas" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">dtypes</span><span class="p">)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="p">)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">geom_type</span><span class="o">.</span><span class="n">value_counts</span><span class="p">())</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+</code></pre></div>
+<h3 id="with-pyarrow">With pyarrow<a class="headerlink" href="#with-pyarrow" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pq</span><span class="o">.</span><span class="n">read_table</span><span class="p">(</span><span class="s2">&quot;cross_sections.parquet&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>      <span class="c1"># all column types</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">num_rows</span><span class="p">)</span>    <span class="c1"># row count without loading data</span>
+</code></pre></div>
+<h3 id="with-duckdb">With DuckDB<a class="headerlink" href="#with-duckdb" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1">-- Schema inspection</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">DESCRIBE</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;mesh_cells.parquet&#39;</span><span class="p">);</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1">-- Quick stats</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="k">SELECT</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">n_cells</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span><span class="k">COUNT</span><span class="p">(</span><span class="k">DISTINCT</span><span class="w"> </span><span class="n">mesh_name</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">n_meshes</span><span class="p">,</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="n">ROUND</span><span class="p">(</span><span class="k">AVG</span><span class="p">(</span><span class="n">ST_Area</span><span class="p">(</span><span class="n">geometry</span><span class="p">)),</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">avg_cell_area_ft2</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="k">FROM</span><span class="w"> </span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;mesh_cells.parquet&#39;</span><span class="p">);</span>
+</code></pre></div>
+<hr />
+<h2 id="full-extraction-script">Full Extraction Script<a class="headerlink" href="#full-extraction-script" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras_commander</span><span class="w"> </span><span class="kn">import</span> <span class="n">RasExamples</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_geometry_layers</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_results_layer</span><span class="p">,</span> <span class="n">list_available_summary_variables</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="c1"># 1. Get the project</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="n">project_path</span> <span class="o">=</span> <span class="n">RasExamples</span><span class="o">.</span><span class="n">extract_project</span><span class="p">(</span><span class="s2">&quot;BaldEagleCrkMulti2D&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="n">out</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;outputs/bald_eagle&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">out</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="c1"># 2. Find files</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="n">geom_hdf</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">project_path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.g01.hdf&quot;</span><span class="p">))</span>   <span class="c1"># BaldEagleDamBrk.g01.hdf</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="n">xs_hdf</span>   <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">project_path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.g06.hdf&quot;</span><span class="p">))</span>   <span class="c1"># has cross sections</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="n">plan_hdfs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">project_path</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.p??.hdf&quot;</span><span class="p">))</span> <span class="c1"># empty until model is run</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="c1"># 3. Export geometry</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="n">export_geometry_layers</span><span class="p">(</span><span class="n">geom_hdf</span><span class="p">,</span> <span class="n">out</span><span class="o">/</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">,</span>    <span class="n">layer</span><span class="o">=</span><span class="s2">&quot;mesh_cells&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="n">export_geometry_layers</span><span class="p">(</span><span class="n">xs_hdf</span><span class="p">,</span>   <span class="n">out</span><span class="o">/</span><span class="s2">&quot;cross_sections.parquet&quot;</span><span class="p">,</span> <span class="n">layer</span><span class="o">=</span><span class="s2">&quot;cross_sections&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="n">export_geometry_layers</span><span class="p">(</span><span class="n">xs_hdf</span><span class="p">,</span>   <span class="n">out</span><span class="o">/</span><span class="s2">&quot;centerlines.parquet&quot;</span><span class="p">,</span>    <span class="n">layer</span><span class="o">=</span><span class="s2">&quot;centerlines&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>
+<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="c1"># 4. Export results (requires running the model first)</span>
+<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="k">if</span> <span class="n">plan_hdfs</span><span class="p">:</span>
+<a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>    <span class="n">plan_hdf</span> <span class="o">=</span> <span class="n">plan_hdfs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="n">variables</span> <span class="o">=</span> <span class="n">list_available_summary_variables</span><span class="p">(</span><span class="n">plan_hdf</span><span class="p">)</span>
+<a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Available variables: </span><span class="si">{</span><span class="n">variables</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a>
+<a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a>    <span class="n">export_results_layer</span><span class="p">(</span>
+<a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a>        <span class="n">plan_hdf</span><span class="p">,</span>
+<a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a>        <span class="n">out</span> <span class="o">/</span> <span class="s2">&quot;max_depth.parquet&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a>        <span class="n">variable</span><span class="o">=</span><span class="s2">&quot;Maximum Depth&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a>        <span class="n">geom_file</span><span class="o">=</span><span class="n">out</span> <span class="o">/</span> <span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">,</span>   <span class="c1"># join to polygons</span>
+<a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a>    <span class="p">)</span>
+<a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a>
+<a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a><span class="c1"># 5. What you get</span>
+<a id="__codelineno-10-35" name="__codelineno-10-35" href="#__codelineno-10-35"></a><span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<a id="__codelineno-10-36" name="__codelineno-10-36" href="#__codelineno-10-36"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">out</span><span class="o">/</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-37" name="__codelineno-10-37" href="#__codelineno-10-37"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;mesh_cells:  </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">gdf</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> rows  |  </span><span class="si">{</span><span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="o">.</span><span class="n">to_epsg</span><span class="p">()</span><span class="si">}</span><span class="s2">  |  </span><span class="si">{</span><span class="n">gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">geom_type</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+  </span>
+
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
