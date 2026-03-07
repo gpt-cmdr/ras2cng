@@ -19,10 +19,18 @@ ras2cng uses several excellent open-source projects in its pipeline:
 - [GeoPandas](https://geopandas.org/) — geospatial DataFrames for Python
 - [Marimo](https://marimo.io/) — reactive Python notebooks
 
-## CLB Engineering
+## CLB Engineering Corporation
 
-ras2cng is developed and maintained by [CLB Engineering](https://clbengineering.com), a water
+<p align="center">
+  <a href="https://clbengineering.com/">
+    <img src="../assets/CLBEngineeringHzLogo.png" alt="CLB Engineering Corporation" width="300">
+  </a>
+</p>
+
+ras2cng is developed and maintained by [CLB Engineering Corporation](https://clbengineering.com/), a water
 resources engineering firm specializing in flood modeling, hydraulic analysis, and cloud-native
 geospatial tooling.
 
 **William M. Katzenmeyer, P.E., C.F.M.** — primary developer
+
+Contact: [info@clbengineering.com](mailto:info@clbengineering.com)

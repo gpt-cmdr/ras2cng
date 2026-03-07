@@ -10,6 +10,9 @@ docs_dir: docs
 
 theme:
   name: material
+  custom_dir: docs/overrides
+  logo: assets/ras2cng_logo.svg
+  favicon: assets/ras2cng_logo.svg
   palette:
     - scheme: default
       primary: deep-orange
@@ -32,6 +35,25 @@ theme:
     - search.highlight
     - content.code.copy
     - content.code.annotate
+
+copyright: Copyright &copy; 2024-2026 CLB Engineering Corporation
+
+generator: false
+
+extra_css:
+  - stylesheets/clb-branding.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/gpt-cmdr/ras2cng
+      name: GitHub
+    - icon: fontawesome/solid/building
+      link: https://clbengineering.com/
+      name: CLB Engineering Corporation
+    - icon: fontawesome/solid/lightbulb
+      link: https://clbengineering.com/llm-forward
+      name: LLM Forward Engineering
 
 plugins:
   - search
@@ -75,6 +97,8 @@ nav:
     - Cloud-Native GIS Stack: getting-started/cloud-native-stack.md
   - User Guide:
     - Overview: user-guide/overview.md
+    - Project Archive: user-guide/project-archive.md
+    - Geometry Layers Reference: user-guide/geometry-layers.md
     - Geometry Export: user-guide/geometry-export.md
     - Results Export: user-guide/results-export.md
     - DuckDB Queries: user-guide/duckdb-queries.md
@@ -88,6 +112,7 @@ nav:
     - 03 - DuckDB Queries: examples/03_duckdb_queries.md
     - 04 - Generate PMTiles: examples/04_generate_pmtiles.md
     - 05 - Cloud Native Stack: examples/05_cloud_native_stack.md
+    - 06 - Project Archive: examples/06_project_archive.md
   - Data Reference:
     - Output Schema: reference/data-structure.md
   - API Reference:
@@ -99,5 +124,6 @@ nav:
     - pmtiles: api/pmtiles.md
     - postgis_sync: api/postgis_sync.md
   - About:
+    - CLB Engineering: about/clb-engineering.md
     - Cloud-Native GIS Philosophy: about/cloud-native-gis.md
     - Acknowledgments: about/acknowledgments.md
