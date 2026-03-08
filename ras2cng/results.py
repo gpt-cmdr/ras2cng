@@ -1,4 +1,4 @@
-"""Results export functions for rascmdr-parquet."""
+"""Results export functions for ras2cng."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Optional
 
 import geopandas as gpd
 import h5py
+import pandas as pd
 
 from ras_commander.hdf import HdfResultsMesh
 
@@ -94,3 +95,64 @@ def export_all_variables(plan_hdf: Path, output_dir: Path, geom_file: Optional[P
             print(f"✗ Failed to export {var}: {e}")
 
     return exported
+
+
+# ---------------------------------------------------------------------------
+# Consolidated merge function (v2 archive format)
+# ---------------------------------------------------------------------------
+
+def merge_all_variables(
+    plan_hdf: Path,
+    mesh_cells_gdf: Optional[gpd.GeoDataFrame] = None,
+) -> Optional[gpd.GeoDataFrame]:
+    """Extract and merge all summary variables into a single GeoDataFrame.
+
+    Each variable becomes rows distinguished by a ``layer`` column with the
+    snake_case variable name. When results are points and ``mesh_cells_gdf``
+    is provided, values are joined onto the polygon geometry.
+
+    Args:
+        plan_hdf: Path to ``*.p??.hdf`` plan results file
+        mesh_cells_gdf: Optional mesh cell polygons for spatial join
+
+    Returns:
+        A merged GeoDataFrame with ``layer`` column, or None if nothing extracted
+    """
+    plan_path = Path(plan_hdf)
+    variables = list_available_summary_variables(plan_path)
+    if not variables:
+        return None
+
+    all_gdfs: list[gpd.GeoDataFrame] = []
+
+    for var in variables:
+        try:
+            results_gdf = HdfResultsMesh.get_mesh_summary_output(plan_path, var)
+            if len(results_gdf) == 0:
+                continue
+        except Exception as e:
+            print(f"Warning: Could not extract '{var}': {e}")
+            continue
+
+        # Join to polygon geometry if results are points
+        geom_series = results_gdf.geometry if "geometry" in results_gdf.columns else None
+        geom_types = []
+        if geom_series is not None:
+            geom_types = list(geom_series.dropna().geom_type.unique())
+
+        is_pointy = (not geom_types) or (set(geom_types) == {"Point"})
+
+        if is_pointy and mesh_cells_gdf is not None:
+            results_df = results_gdf.drop(columns=["geometry"], errors="ignore")
+            merged = mesh_cells_gdf.merge(results_df, on=["mesh_name", "cell_id"], how="left")
+            results_gdf = gpd.GeoDataFrame(merged, geometry="geometry", crs=mesh_cells_gdf.crs)
+
+        var_snake = var.lower().replace(" ", "_")
+        results_gdf["layer"] = var_snake
+        all_gdfs.append(results_gdf)
+
+    if not all_gdfs:
+        return None
+
+    merged = pd.concat(all_gdfs, ignore_index=True)
+    return gpd.GeoDataFrame(merged, geometry="geometry")

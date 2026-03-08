@@ -1,5 +1,5 @@
 """
-Fixtures for rascmdr-parquet-cli integration tests.
+Fixtures for ras2cng integration tests.
 
 Provides:
 - Model discovery across RasExamples, HCFCD M3, and LWI Region 4 sources

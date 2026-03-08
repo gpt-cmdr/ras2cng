@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ras2cng_logo.svg" alt="ras2cng logo" width="420"/>
+</p>
+
 # ras2cng — RAS to Cloud Native GIS
 
 **ras2cng** exports HEC-RAS geometry and simulation results to cloud-native geospatial formats,
@@ -11,7 +15,7 @@ the web and analytical engines:
 
 | Legacy | Cloud Native | Benefit |
 |--------|-------------|---------|
-| Shapefile / File GDB | **GeoParquet** | Columnar, Arrow-native, snappy-compressed |
+| Shapefile / File GDB | **GeoParquet** | Columnar, Arrow-native, ZSTD-compressed |
 | WMS/WFS tile servers | **PMTiles** | Serverless HTTP range requests, no tile server |
 | Desktop GIS queries | **DuckDB** | In-process spatial SQL, no server needed |
 | SDE / file GDB layers | **PostGIS** | Open standard, cloud-ready, GIST indexed |
@@ -21,7 +25,7 @@ the web and analytical engines:
 ```
 HEC-RAS model files (.g??.hdf, .g??, .p??.hdf)
   → geometry.py / results.py    (parse via ras-commander → GeoDataFrame)
-    → GeoParquet                (intermediate, columnar, Arrow-native, snappy)
+    → GeoParquet                (intermediate, columnar, Arrow-native, ZSTD)
       → DuckDB                 (serverless SQL analytics, spatial joins)
       → PMTiles                (serverless vector tiles via HTTP range)
       → PostGIS                (enterprise spatial database)

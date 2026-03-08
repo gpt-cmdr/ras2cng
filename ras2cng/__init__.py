@@ -18,29 +18,41 @@ from ras2cng.geometry import (
     export_geometry_layers,
     export_all_hdf_layers,
     export_all_text_layers,
+    merge_all_layers,
     HDF_LAYERS,
     ALL_HDF_LAYERS,
     ALL_TEXT_LAYERS,
 )
-from ras2cng.results import export_results_layer, export_all_variables
+from ras2cng.results import (
+    export_results_layer,
+    export_all_variables,
+    merge_all_variables,
+)
 from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
-from ras2cng.project import archive_project, inspect_project, ProjectInfo
+from ras2cng.project import (
+    archive_project,
+    inspect_project,
+    export_project_metadata,
+    ProjectInfo,
+)
 from ras2cng.catalog import Manifest, ManifestLayer, ManifestGeomEntry, ManifestPlanEntry
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     # Geometry
     "export_geometry_layers",
     "export_all_hdf_layers",
     "export_all_text_layers",
+    "merge_all_layers",
     "HDF_LAYERS",
     "ALL_HDF_LAYERS",
     "ALL_TEXT_LAYERS",
     # Results
     "export_results_layer",
     "export_all_variables",
+    "merge_all_variables",
     # DuckDB
     "DuckSession",
     "query_parquet",
@@ -53,6 +65,7 @@ __all__ = [
     # Project
     "archive_project",
     "inspect_project",
+    "export_project_metadata",
     "ProjectInfo",
     # Catalog
     "Manifest",

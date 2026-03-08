@@ -1,17 +1,96 @@
-"""ras2cng: CLI for exporting HEC-RAS geometry/results to Cloud Native GIS formats."""
+"""ras2cng: Full-project archival and cloud-native export for HEC-RAS."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
 
 app = typer.Typer(
-    help="Export HEC-RAS geometry/results to GeoParquet; query with DuckDB; generate PMTiles; sync to PostGIS."
+    help=(
+        "ras2cng — HEC-RAS to Cloud Native GIS.\n\n"
+        "Archive full projects or export individual files to GeoParquet, "
+        "DuckDB, PMTiles, and PostGIS."
+    )
 )
 console = Console()
+
+
+@app.command("inspect")
+def inspect_command(
+    project: Path = typer.Argument(
+        ..., help="HEC-RAS project directory or .prj file"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON instead of table"),
+):
+    """Inspect a HEC-RAS project structure without extracting any data."""
+
+    from ras2cng.project import inspect_project, print_project_info
+
+    try:
+        info = inspect_project(project)
+        print_project_info(info, as_json=as_json)
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("archive")
+def archive_command(
+    project: Path = typer.Argument(
+        ..., help="HEC-RAS project directory or .prj file"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Archive output directory (created if needed)"
+    ),
+    results: bool = typer.Option(
+        False, "--results/--no-results", help="Include plan results (summary variables)"
+    ),
+    terrain: bool = typer.Option(
+        False, "--terrain/--no-terrain", help="Convert terrain TIFFs to Cloud Optimized GeoTIFF"
+    ),
+    plan_geometry: bool = typer.Option(
+        False, "--plan-geometry", help="Also extract geometry copy embedded in plan HDF files"
+    ),
+    plans: Optional[str] = typer.Option(
+        None, "--plans", help="Comma-separated plan IDs to include, e.g. p01,p02 (default: all)"
+    ),
+    skip_errors: bool = typer.Option(
+        True, "--skip-errors/--fail-fast", help="Skip individual layer errors vs abort"
+    ),
+    no_sort: bool = typer.Option(
+        False, "--no-sort", help="Disable Hilbert spatial sorting (on by default)"
+    ),
+):
+    """Archive a HEC-RAS project to consolidated GeoParquet files.
+
+    Produces one parquet per geometry file and one per plan, plus a project
+    metadata parquet. All layers within each file are distinguished by a
+    ``layer`` column — query with ``WHERE layer = 'mesh_cells'``.
+
+    Geometry is exported by default. Results and terrain are opt-in.
+    """
+
+    from ras2cng.project import archive_project
+
+    plans_list = [p.strip() for p in plans.split(",")] if plans else None
+
+    try:
+        archive_project(
+            project,
+            output,
+            include_results=results,
+            include_terrain=terrain,
+            include_plan_geometry=plan_geometry,
+            plans=plans_list,
+            skip_errors=skip_errors,
+            sort=not no_sort,
+        )
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @app.command("geometry")
@@ -24,7 +103,11 @@ def export_geometry(
         None,
         "--layer",
         "-l",
-        help="Geometry layer: mesh_cells, cross_sections, centerlines",
+        help=(
+            "Geometry layer: mesh_cells, mesh_areas, cross_sections, centerlines, "
+            "bc_lines, breaklines, refinement_regions, reference_lines, "
+            "reference_points, structures, storage_areas"
+        ),
     ),
 ):
     """Export HEC-RAS geometry to GeoParquet."""
