@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/user-guide/geometry-export/">
       
       
-        <link rel="prev" href="../overview/">
+        <link rel="prev" href="../geometry-layers/">
       
       
         <link rel="next" href="../results-export/">
@@ -703,7 +703,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../project-archive.md" class="md-nav__link">
+      <a href="../project-archive/" class="md-nav__link">
         
   
   
@@ -731,7 +731,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../geometry-layers.md" class="md-nav__link">
+      <a href="../geometry-layers/" class="md-nav__link">
         
   
   
@@ -837,6 +837,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Available Layers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf-geometry-layers-ghdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF geometry layers (.g##.hdf)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#text-geometry-layers-g" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Text geometry layers (.g##)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1845,6 +1873,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Available Layers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hdf-geometry-layers-ghdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF geometry layers (.g##.hdf)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#text-geometry-layers-g" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Text geometry layers (.g##)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1947,46 +2003,113 @@
 </tbody>
 </table>
 <h2 id="available-layers">Available Layers<a class="headerlink" href="#available-layers" title="Permanent link">&para;</a></h2>
+<h3 id="hdf-geometry-layers-ghdf">HDF geometry layers (<code>.g##.hdf</code>)<a class="headerlink" href="#hdf-geometry-layers-ghdf" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Layer</th>
-<th>Source</th>
-<th>Contents</th>
+<th>Geometry</th>
+<th>Source Class</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>mesh_cells</code></td>
-<td>HDF geometry only</td>
-<td>2D mesh cell polygons (falls back to centroid points if polygons unavailable)</td>
+<td>Polygon (Point fallback)</td>
+<td><code>HdfMesh</code></td>
+</tr>
+<tr>
+<td><code>mesh_areas</code></td>
+<td>Polygon</td>
+<td><code>HdfMesh</code></td>
 </tr>
 <tr>
 <td><code>cross_sections</code></td>
-<td>HDF geometry + text geometry</td>
-<td>1D cross section cut lines</td>
+<td>LineString</td>
+<td><code>HdfXsec</code></td>
 </tr>
 <tr>
 <td><code>centerlines</code></td>
-<td>HDF geometry + text geometry</td>
-<td>River/reach centerlines</td>
+<td>LineString</td>
+<td><code>HdfXsec</code></td>
+</tr>
+<tr>
+<td><code>bc_lines</code></td>
+<td>LineString</td>
+<td><code>HdfBndry</code></td>
+</tr>
+<tr>
+<td><code>breaklines</code></td>
+<td>LineString</td>
+<td><code>HdfBndry</code></td>
+</tr>
+<tr>
+<td><code>refinement_regions</code></td>
+<td>Polygon</td>
+<td><code>HdfBndry</code></td>
+</tr>
+<tr>
+<td><code>reference_lines</code></td>
+<td>LineString</td>
+<td><code>HdfBndry</code></td>
+</tr>
+<tr>
+<td><code>reference_points</code></td>
+<td>Point</td>
+<td><code>HdfBndry</code></td>
+</tr>
+<tr>
+<td><code>structures</code></td>
+<td>LineString</td>
+<td><code>HdfStruc</code></td>
 </tr>
 </tbody>
 </table>
+<h3 id="text-geometry-layers-g">Text geometry layers (<code>.g##</code>)<a class="headerlink" href="#text-geometry-layers-g" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Geometry</th>
+<th>Source Class</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cross_sections</code></td>
+<td>LineString</td>
+<td><code>GeomParser</code></td>
+</tr>
+<tr>
+<td><code>centerlines</code></td>
+<td>LineString</td>
+<td><code>GeomParser</code></td>
+</tr>
+<tr>
+<td><code>storage_areas</code></td>
+<td>Polygon</td>
+<td><code>GeomStorage</code></td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../geometry-layers/">Geometry Layers Reference</a> for full details on each layer.</p>
 <h2 id="default-behavior">Default Behavior<a class="headerlink" href="#default-behavior" title="Permanent link">&para;</a></h2>
 <p>When <code>--layer</code> is not specified:
 - <strong>HDF geometry</strong> → exports <code>mesh_cells</code> (most useful layer for flood depth visualization)
 - <strong>Text geometry</strong> → exports <code>cross_sections</code></p>
 <h2 id="cli-usage">CLI Usage<a class="headerlink" href="#cli-usage" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># HDF geometry — all layers</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># HDF geometry — specific layers</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01.hdf<span class="w"> </span>mesh_cells.parquet<span class="w"> </span>--layer<span class="w"> </span>mesh_cells
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01.hdf<span class="w"> </span>cross_sections.parquet<span class="w"> </span>--layer<span class="w"> </span>cross_sections
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01.hdf<span class="w"> </span>centerlines.parquet<span class="w"> </span>--layer<span class="w"> </span>centerlines
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Text geometry</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01<span class="w"> </span>cross_sections.parquet<span class="w"> </span>--layer<span class="w"> </span>cross_sections
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01<span class="w"> </span>centerlines.parquet<span class="w"> </span>--layer<span class="w"> </span>centerlines
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01.hdf<span class="w"> </span>bc_lines.parquet<span class="w"> </span>--layer<span class="w"> </span>bc_lines
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01.hdf<span class="w"> </span>structures.parquet<span class="w"> </span>--layer<span class="w"> </span>structures
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01.hdf<span class="w"> </span>cross_sections.parquet<span class="w"> </span>--layer<span class="w"> </span>cross_sections
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Text geometry</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01<span class="w"> </span>cross_sections.parquet<span class="w"> </span>--layer<span class="w"> </span>cross_sections
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>ras2cng<span class="w"> </span>geometry<span class="w"> </span>model.g01<span class="w"> </span>storage_areas.parquet<span class="w"> </span>--layer<span class="w"> </span>storage_areas
 </code></pre></div>
+<p>For full-project export with all layers consolidated into one file per geometry source,
+use <code>ras2cng archive</code> instead. See <a href="../project-archive/">Project Archive</a>.</p>
 <h2 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_geometry_layers</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
@@ -2040,7 +2163,7 @@ points. The output GeoParquet will have Point geometry instead of Polygon geomet
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 03:21:51 UTC">March 10, 2026</span>
   </span>
 
     
