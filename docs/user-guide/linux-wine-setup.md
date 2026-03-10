@@ -65,9 +65,14 @@ C:\Program Files (x86)\HEC\HEC-RAS\6.6\
 ```
 
 You need at minimum:
-- All `*.dll` files
-- `RasProcess.exe`
+- All `*.dll` and `*.exe` files in the root directory
 - The entire `GDAL/` directory
+- The entire `bin32/` directory (32-bit native DLLs including `hdf5.dll`)
+- The entire `bin64/` directory (64-bit native DLLs including `hdf5.dll`)
+- The entire `x64/` directory (64-bit HDF5 native libraries)
+
+!!! warning "Missing native DLLs"
+    If you only copy the managed `.dll` files without the `bin64/` and `x64/` directories, RasProcess will crash with "The type initializer for 'HDF.PInvoke.H5F' threw an exception." These directories contain the native HDF5 C libraries that the .NET wrapper (HDF.PInvoke.dll) loads at runtime.
 
 Place them on your Linux machine, for example at `/opt/ras2cng-data/ras66/`.
 
