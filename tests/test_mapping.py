@@ -130,7 +130,7 @@ def test_configure_rasprocess_no_args(mock_rp):
 # generate_result_maps (mocked)
 # ---------------------------------------------------------------------------
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_basic(mock_init, mock_config, mock_gen, tmp_path):
@@ -139,11 +139,11 @@ def test_generate_result_maps_basic(mock_init, mock_config, mock_gen, tmp_path):
     mock_init.return_value = ras
     output_dir = tmp_path / "maps"
 
-    # Mock single map generation to return a fake TIF path
+    # Mock plan map generation to return a dict of map type -> TIF paths
     fake_tif = output_dir / "p01" / "depth.tif"
     fake_tif.parent.mkdir(parents=True, exist_ok=True)
     fake_tif.write_bytes(b"fake tif")
-    mock_gen.return_value = [fake_tif]
+    mock_gen.return_value = {"depth": [fake_tif]}
 
     results = generate_result_maps(
         project_dir,
@@ -157,7 +157,7 @@ def test_generate_result_maps_basic(mock_init, mock_config, mock_gen, tmp_path):
     assert len(results[0].map_types["depth"]) == 1
 
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_plan_filtering(mock_init, mock_config, mock_gen, tmp_path):
@@ -166,7 +166,7 @@ def test_generate_result_maps_plan_filtering(mock_init, mock_config, mock_gen, t
     mock_init.return_value = ras
     output_dir = tmp_path / "maps"
 
-    mock_gen.return_value = []
+    mock_gen.return_value = {}
 
     results = generate_result_maps(
         project_dir, output_dir,
@@ -179,7 +179,7 @@ def test_generate_result_maps_plan_filtering(mock_init, mock_config, mock_gen, t
     assert results[0].plan_id == "p02"
 
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_skips_missing_hdf(mock_init, mock_config, mock_gen, tmp_path):
@@ -194,7 +194,7 @@ def test_generate_result_maps_skips_missing_hdf(mock_init, mock_config, mock_gen
     mock_gen.assert_not_called()
 
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_error_handling(mock_init, mock_config, mock_gen, tmp_path):
@@ -216,7 +216,7 @@ def test_generate_result_maps_error_handling(mock_init, mock_config, mock_gen, t
     assert "RasProcess failed" in results[0].errors[0]
 
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_error_raises_when_fail_fast(mock_init, mock_config, mock_gen, tmp_path):
@@ -235,7 +235,7 @@ def test_generate_result_maps_error_raises_when_fail_fast(mock_init, mock_config
         )
 
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_no_types_selected(mock_init, mock_config, mock_gen, tmp_path):
@@ -253,7 +253,7 @@ def test_generate_result_maps_no_types_selected(mock_init, mock_config, mock_gen
     mock_gen.assert_not_called()
 
 
-@patch("ras2cng.mapping._generate_single_map")
+@patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_empty_project(mock_init, mock_config, mock_gen, tmp_path):

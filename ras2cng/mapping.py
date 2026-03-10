@@ -163,19 +163,22 @@ def generate_result_maps(
 
         console.print(f"  [{plan_id}] Generating maps...")
 
-        for map_type in requested_types:
-            variable_name = MAP_TYPE_VARIABLES.get(map_type, map_type)
-            try:
-                tif_paths = _generate_single_map(
-                    ras=ras,
-                    plan_hdf=plan_hdf,
-                    plan_number=plan_num,
-                    variable_name=variable_name,
-                    profile=profile,
-                    output_dir=plan_output,
-                    terrain_name=terrain_name,
-                    timeout=timeout,
-                )
+        try:
+            # Build boolean flags for RasProcess.store_maps()
+            type_flags = {t: (t in requested_types) for t in MAP_TYPE_VARIABLES}
+
+            result_dict = _generate_plan_maps(
+                ras=ras,
+                plan_number=plan_num,
+                profile=profile,
+                output_dir=plan_output,
+                terrain_name=terrain_name,
+                timeout=timeout,
+                **type_flags,
+            )
+
+            for map_type in requested_types:
+                tif_paths = result_dict.get(map_type, [])
 
                 # Post-process: depth threshold
                 if map_type == "depth" and min_depth > 0.0:
@@ -189,15 +192,16 @@ def generate_result_maps(
                 if convert_cog:
                     tif_paths = _convert_to_cog(tif_paths)
 
-                map_result.map_types[map_type] = tif_paths
-                console.print(f"    {map_type}: {len(tif_paths)} raster(s)")
+                if tif_paths:
+                    map_result.map_types[map_type] = tif_paths
+                    console.print(f"    {map_type}: {len(tif_paths)} raster(s)")
 
-            except Exception as e:
-                error_msg = f"{map_type}: {e}"
-                map_result.errors.append(error_msg)
-                console.print(f"    [yellow]Warning:[/yellow] {error_msg}")
-                if not skip_errors:
-                    raise
+        except Exception as e:
+            error_msg = f"plan {plan_id}: {e}"
+            map_result.errors.append(error_msg)
+            console.print(f"    [yellow]Warning:[/yellow] {error_msg}")
+            if not skip_errors:
+                raise
 
         results.append(map_result)
 
@@ -242,35 +246,79 @@ def _build_requested_types(**kwargs) -> list[str]:
     return [name for name, enabled in kwargs.items() if enabled]
 
 
-def _generate_single_map(
+def _generate_plan_maps(
     ras,
-    plan_hdf: Path,
     plan_number: str,
-    variable_name: str,
     profile: str,
     output_dir: Path,
     terrain_name: Optional[str] = None,
     timeout: int = 600,
-) -> list[Path]:
-    """Generate a single map type for a plan.
+    **type_flags,
+) -> dict[str, list[Path]]:
+    """Generate all requested map types for a plan in a single RasProcess call.
 
-    Uses RasProcess.store_maps() which calls RasProcess.exe to render
-    the requested variable to GeoTIFF rasters.
+    Uses RasProcess.store_maps() which calls RasProcess.exe StoreAllMaps
+    to render all requested variables to GeoTIFF rasters at once.
+
+    Args:
+        ras: Initialized RAS project object
+        plan_number: Plan number (e.g., "01")
+        profile: Profile to map ("Max", "Min", or timestamp)
+        output_dir: Directory for output rasters
+        terrain_name: Specific terrain name (optional)
+        timeout: Command timeout in seconds
+        **type_flags: Boolean flags for each map type (wse, depth, velocity, etc.)
 
     Returns:
-        List of output TIFF paths
+        Dict mapping our type names to lists of output TIFF paths
     """
-    tif_paths = RasProcess.store_maps(
+    # Map our type names to RasProcess.store_maps() parameter names
+    PARAM_MAP = {
+        "wse": "wse",
+        "depth": "depth",
+        "velocity": "velocity",
+        "froude": "froude",
+        "shear_stress": "shear_stress",
+        "depth_x_velocity": "depth_x_velocity",
+        "arrival_time": None,  # Not directly supported by store_maps
+        "duration": None,
+        "recession": None,
+    }
+
+    # Build kwargs for store_maps
+    store_kwargs = {}
+    for our_name, param_name in PARAM_MAP.items():
+        if param_name and our_name in type_flags:
+            store_kwargs[param_name] = type_flags[our_name]
+
+    raw_results = RasProcess.store_maps(
         plan_number=plan_number,
-        variable=variable_name,
+        output_folder=str(output_dir),
         profile=profile,
-        output_dir=str(output_dir),
-        terrain_name=terrain_name,
         timeout=timeout,
-        ras=ras,
+        ras_object=ras,
+        **store_kwargs,
     )
 
-    return [Path(p) for p in tif_paths if Path(p).exists()]
+    # Normalize results: raw_results is Dict[str, List[Path]]
+    # Map RasProcess output keys back to our type names
+    REVERSE_MAP = {
+        "wse": "wse",
+        "depth": "depth",
+        "velocity": "velocity",
+        "froude": "froude",
+        "shear_stress": "shear_stress",
+        "depth_x_velocity": "depth_x_velocity",
+    }
+
+    result = {}
+    if isinstance(raw_results, dict):
+        for key, paths in raw_results.items():
+            norm_key = key.lower().replace(" ", "_")
+            mapped = REVERSE_MAP.get(norm_key, norm_key)
+            result[mapped] = [Path(p) for p in paths if Path(p).exists()]
+
+    return result
 
 
 def _apply_depth_threshold(tif_paths: list[Path], min_depth: float) -> list[Path]:
