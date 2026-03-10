@@ -33,9 +33,44 @@ HEC-RAS model files (.g??.hdf, .g??, .p??.hdf)
 
 ## Quick Start
 
+### Full Project Archive (recommended)
+
 ```bash
 pip install ras2cng
 
+# Inspect project structure (no export)
+ras2cng inspect path/to/MyProject/
+
+# Archive all geometry to consolidated GeoParquet files
+ras2cng archive path/to/MyProject/ ./archive/
+
+# Also export plan results summary variables
+ras2cng archive path/to/MyProject/ ./archive/ --results
+
+# Also convert terrain TIFFs to Cloud Optimized GeoTIFF
+ras2cng archive path/to/MyProject/ ./archive/ --results --terrain
+```
+
+```python
+from ras2cng import archive_project, inspect_project
+from pathlib import Path
+
+# Full project archive
+manifest = archive_project(
+    Path("path/to/MyProject/"),
+    Path("./archive/"),
+    include_results=True,
+)
+print(f"Exported {len(manifest.geometry)} geometry configurations")
+
+# Inspect project without extracting
+info = inspect_project(Path("path/to/MyProject/"))
+print(f"{info.name}: {len(info.geom_files)} geometry files, {len(info.plan_files)} plans")
+```
+
+### Single-File Export
+
+```bash
 # Export mesh cell geometry
 ras2cng geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
 
@@ -54,28 +89,11 @@ ras2cng pmtiles max_depth.parquet flood_depth.pmtiles --layer flood
 ras2cng sync max_depth.parquet "postgresql://user:pass@host/db" max_depth
 ```
 
-```python
-from ras2cng import export_geometry_layers, export_results_layer, query_parquet
-from pathlib import Path
-
-# Export geometry to GeoDataFrame or GeoParquet
-export_geometry_layers(Path("model.g01.hdf"), Path("mesh_cells.parquet"), layer="mesh_cells")
-
-# Export results joined to polygon geometry
-export_results_layer(
-    plan_hdf=Path("model.p01.hdf"),
-    output=Path("max_depth.parquet"),
-    variable="Maximum Depth",
-    geom_file=Path("mesh_cells.parquet"),
-)
-
-# Query with DuckDB
-df = query_parquet(Path("max_depth.parquet"), "SELECT * FROM _ WHERE maximum_depth > 3.0")
-```
-
 ## Key Features
 
-- **GeoParquet export** — Mesh cell polygons, cross sections, and centerlines from HDF and text geometry files
+- **Full project archival** — Discovers all geometry configs, plan runs, and terrain; produces consolidated GeoParquet archives with `manifest.json` catalog
+- **Consolidated GeoParquet** — One file per geometry source / plan, with `layer` column discriminator, ZSTD compression, bbox columns, and Hilbert spatial sorting
+- **10 HDF geometry layers** — mesh_cells, mesh_areas, cross_sections, centerlines, bc_lines, breaklines, refinement_regions, reference_lines, reference_points, structures
 - **Results export** — 2D mesh summary variables (Maximum Depth, WSE, Velocity, etc.) spatially joined with polygon geometry
 - **DuckDB queries** — SQL analytics directly on GeoParquet files, no database server needed
 - **PMTiles generation** — Vector tile pipeline via tippecanoe, serverless HTTP delivery
@@ -85,7 +103,7 @@ df = query_parquet(Path("max_depth.parquet"), "SELECT * FROM _ WHERE maximum_dep
 ## Installation
 
 ```bash
-# Core (geometry + results export)
+# Core (geometry + results + project archive)
 pip install ras2cng
 
 # All optional dependencies (DuckDB, PostGIS, PMTiles rasterio)

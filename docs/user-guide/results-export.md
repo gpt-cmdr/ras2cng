@@ -54,7 +54,12 @@ Each variable is written to a separate file: `results/maximum_depth.parquet`, et
 ## Python API
 
 ```python
-from ras2cng.results import export_results_layer, export_all_variables, list_available_summary_variables
+from ras2cng.results import (
+    export_results_layer,
+    export_all_variables,
+    merge_all_variables,
+    list_available_summary_variables,
+)
 from pathlib import Path
 
 # List variables
@@ -75,11 +80,19 @@ export_results_layer(
     geom_file=Path("mesh_cells.parquet"),
 )
 
-# Export all variables
+# Export all variables to separate parquet files
 exported = export_all_variables(
     plan_hdf=Path("model.p01.hdf"),
     output_dir=Path("./results/"),
     geom_file=Path("mesh_cells.parquet"),
 )
 print(f"Exported {len(exported)} variables: {exported}")
+
+# Merge all variables into one GeoDataFrame with `layer` column
+# (used by archive_project() for consolidated output)
+gdf = merge_all_variables(
+    plan_hdf=Path("model.p01.hdf"),
+    mesh_cells_gdf=mesh_cells_gdf,  # GeoDataFrame with polygon geometry
+)
+# gdf has `layer` column: 'maximum_depth', 'maximum_water_surface', ...
 ```

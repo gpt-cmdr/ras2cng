@@ -48,25 +48,23 @@ ras2cng archive path/to/MyProject/ ./archive/ --results
 ras2cng archive path/to/MyProject/ ./archive/ --results --terrain
 ```
 
-Output structure:
+Output structure (consolidated parquet per source file):
 ```
 archive/
-├── manifest.json          # Project catalog with layer inventory
-├── geometry/
-│   ├── g01/               # All extractable layers from g01.hdf
-│   │   ├── mesh_cells.parquet
-│   │   ├── bc_lines.parquet
-│   │   ├── breaklines.parquet
-│   │   └── ...
-│   └── g06/               # 1D cross sections from g06.hdf
-│       ├── cross_sections.parquet
-│       └── centerlines.parquet
-├── results/               # (--results flag)
-│   └── p01/
-│       ├── maximum_depth.parquet
-│       └── maximum_water_surface.parquet
-└── terrain/               # (--terrain flag)
+├── manifest.json              # Project catalog (schema v2.0)
+├── MyProject.parquet          # Project metadata (RasPrj dataframes, _table column)
+├── MyProject.g01.parquet      # All geometry from g01 (HDF + text), layer column
+├── MyProject.g06.parquet      # All geometry from g06
+├── MyProject.p01.parquet      # All results from p01, layer column (--results)
+└── terrain/                   # (--terrain flag)
     └── Terrain50_cog.tif
+```
+
+Query layers within consolidated files:
+```sql
+SELECT * FROM 'MyProject.g01.parquet' WHERE layer = 'mesh_cells'
+SELECT * FROM 'MyProject.p01.parquet' WHERE layer = 'maximum_depth'
+SELECT * FROM 'MyProject.parquet' WHERE _table = 'plan_df'
 ```
 
 ### Single-File Export

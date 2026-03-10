@@ -11,11 +11,30 @@ Detection is suffix-based — no file inspection required:
 
 ## Available Layers
 
-| Layer | Source | Contents |
+### HDF geometry layers (`.g##.hdf`)
+
+| Layer | Geometry | Source Class |
 |---|---|---|
-| `mesh_cells` | HDF geometry only | 2D mesh cell polygons (falls back to centroid points if polygons unavailable) |
-| `cross_sections` | HDF geometry + text geometry | 1D cross section cut lines |
-| `centerlines` | HDF geometry + text geometry | River/reach centerlines |
+| `mesh_cells` | Polygon (Point fallback) | `HdfMesh` |
+| `mesh_areas` | Polygon | `HdfMesh` |
+| `cross_sections` | LineString | `HdfXsec` |
+| `centerlines` | LineString | `HdfXsec` |
+| `bc_lines` | LineString | `HdfBndry` |
+| `breaklines` | LineString | `HdfBndry` |
+| `refinement_regions` | Polygon | `HdfBndry` |
+| `reference_lines` | LineString | `HdfBndry` |
+| `reference_points` | Point | `HdfBndry` |
+| `structures` | LineString | `HdfStruc` |
+
+### Text geometry layers (`.g##`)
+
+| Layer | Geometry | Source Class |
+|---|---|---|
+| `cross_sections` | LineString | `GeomParser` |
+| `centerlines` | LineString | `GeomParser` |
+| `storage_areas` | Polygon | `GeomStorage` |
+
+See [Geometry Layers Reference](geometry-layers.md) for full details on each layer.
 
 ## Default Behavior
 
@@ -26,15 +45,19 @@ When `--layer` is not specified:
 ## CLI Usage
 
 ```bash
-# HDF geometry — all layers
+# HDF geometry — specific layers
 ras2cng geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
+ras2cng geometry model.g01.hdf bc_lines.parquet --layer bc_lines
+ras2cng geometry model.g01.hdf structures.parquet --layer structures
 ras2cng geometry model.g01.hdf cross_sections.parquet --layer cross_sections
-ras2cng geometry model.g01.hdf centerlines.parquet --layer centerlines
 
 # Text geometry
 ras2cng geometry model.g01 cross_sections.parquet --layer cross_sections
-ras2cng geometry model.g01 centerlines.parquet --layer centerlines
+ras2cng geometry model.g01 storage_areas.parquet --layer storage_areas
 ```
+
+For full-project export with all layers consolidated into one file per geometry source,
+use `ras2cng archive` instead. See [Project Archive](project-archive.md).
 
 ## Python API
 

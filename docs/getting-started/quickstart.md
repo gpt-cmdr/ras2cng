@@ -1,6 +1,31 @@
 # Quick Start
 
-## 5-Step Workflow
+## Full Project Archive (recommended)
+
+The fastest way to extract everything from a HEC-RAS project:
+
+```bash
+# Inspect project structure (no export)
+ras2cng inspect path/to/MyProject/
+
+# Archive all geometry to consolidated GeoParquet files
+ras2cng archive path/to/MyProject/ ./archive/
+
+# Also export plan results summary variables
+ras2cng archive path/to/MyProject/ ./archive/ --results
+
+# Full archive with terrain COG conversion
+ras2cng archive path/to/MyProject/ ./archive/ --results --terrain
+```
+
+Query layers within consolidated files:
+
+```sql
+SELECT * FROM 'MyProject.g01.parquet' WHERE layer = 'mesh_cells'
+SELECT * FROM 'MyProject.p01.parquet' WHERE layer = 'maximum_depth'
+```
+
+## Single-File Workflow
 
 ### Step 1 — Export geometry
 
@@ -12,7 +37,9 @@ ras2cng geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
 ras2cng geometry model.g01 cross_sections.parquet --layer cross_sections
 ```
 
-Available layers: `mesh_cells`, `cross_sections`, `centerlines`
+Available HDF layers: `mesh_cells`, `mesh_areas`, `cross_sections`, `centerlines`, `bc_lines`, `breaklines`, `refinement_regions`, `reference_lines`, `reference_points`, `structures`
+
+Available text layers: `cross_sections`, `centerlines`, `storage_areas`
 
 ### Step 2 — Export results
 
@@ -65,19 +92,15 @@ ras2cng sync max_depth.parquet "postgresql://user:pass@localhost/mydb" max_depth
 ```bash
 ras2cng --help
 
-# Export geometry layer
+# Project-level commands
+ras2cng inspect PROJECT [--json]
+ras2cng archive PROJECT OUTPUT [--results] [--terrain] [--plan-geometry] [--plans p01,p02] [--no-sort] [--fail-fast]
+
+# Single-file commands
 ras2cng geometry GEOM_FILE OUTPUT.parquet [--layer LAYER]
-
-# Export results
 ras2cng results PLAN_HDF OUTPUT.parquet [--geometry GEOM.parquet] [--var VAR] [--all]
-
-# Query parquet
 ras2cng query INPUT.parquet "SQL" [--output result.csv]
-
-# Generate PMTiles (requires tippecanoe + pmtiles on PATH)
 ras2cng pmtiles INPUT.parquet OUTPUT.pmtiles [--layer NAME] [--min-zoom Z] [--max-zoom Z]
-
-# Sync to PostGIS
 ras2cng sync INPUT.parquet postgresql://user:pass@host/db TABLE_NAME [--schema public] [--if-exists replace]
 ```
 
@@ -85,17 +108,37 @@ ras2cng sync INPUT.parquet postgresql://user:pass@host/db TABLE_NAME [--schema p
 
 ```python
 from ras2cng import (
+    # Project archival
+    archive_project,
+    inspect_project,
+    Manifest,
+    # Single-file export
     export_geometry_layers,
     export_results_layer,
     export_all_variables,
+    merge_all_layers,
+    merge_all_variables,
+    # DuckDB
     DuckSession,
     query_parquet,
+    # PMTiles & PostGIS
     generate_pmtiles_from_input,
     sync_to_postgres,
 )
 from pathlib import Path
 
-# Export geometry
+# Full project archive (recommended)
+manifest = archive_project(
+    Path("path/to/MyProject/"),
+    Path("./archive/"),
+    include_results=True,
+)
+
+# Inspect project without extracting
+info = inspect_project(Path("path/to/MyProject/"))
+print(f"{info.name}: {len(info.geom_files)} geometry files, {len(info.plan_files)} plans")
+
+# Single-file export
 export_geometry_layers(Path("model.g01.hdf"), Path("mesh_cells.parquet"), layer="mesh_cells")
 
 # Export results joined to polygon geometry

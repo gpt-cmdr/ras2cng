@@ -234,8 +234,10 @@ All geometry is stored as **GeoParquet** (Apache Parquet + GeoArrow encoding):
 
 - Geometry column name: `geometry`
 - Encoding: Well-Known Binary (WKB) via `geopandas.to_parquet()`
-- Compression: `snappy` (lossless, fast read)
+- Compression: **ZSTD** for archive output (`archive_project()`), snappy for legacy single-file exports
 - CRS: Preserved in parquet metadata (`geo` key)
+- Archive output includes per-row bbox columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) with GeoParquet `covering` metadata for spatial predicate pushdown
+- Archive output is Hilbert-sorted within each layer for optimal spatial locality
 
 ```python
 import geopandas as gpd

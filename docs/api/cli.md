@@ -5,15 +5,59 @@
 ```
 Usage: ras2cng [OPTIONS] COMMAND [ARGS]...
 
-  Export HEC-RAS geometry/results to GeoParquet; query with DuckDB; generate
-  PMTiles; sync to PostGIS.
+  ras2cng — HEC-RAS to Cloud Native GIS.
+
+  Archive full projects or export individual files to GeoParquet,
+  DuckDB, PMTiles, and PostGIS.
 
 Commands:
+  inspect   Inspect a HEC-RAS project structure without extracting any data.
+  archive   Archive a HEC-RAS project to consolidated GeoParquet files.
   geometry  Export HEC-RAS geometry to GeoParquet.
   results   Export HEC-RAS 2D mesh summary results to GeoParquet.
   query     Query GeoParquet files using DuckDB SQL.
   pmtiles   Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
   sync      Sync GeoParquet data to PostGIS.
+```
+
+## ras2cng inspect
+
+```
+Usage: ras2cng inspect [OPTIONS] PROJECT
+
+  Inspect a HEC-RAS project structure without extracting any data.
+
+Arguments:
+  PROJECT  HEC-RAS project directory or .prj file
+
+Options:
+  --json    Output as JSON instead of table
+```
+
+## ras2cng archive
+
+```
+Usage: ras2cng archive [OPTIONS] PROJECT OUTPUT
+
+  Archive a HEC-RAS project to consolidated GeoParquet files.
+
+  Produces one parquet per geometry file and one per plan, plus a project
+  metadata parquet. All layers within each file are distinguished by a
+  `layer` column — query with `WHERE layer = 'mesh_cells'`.
+
+  Geometry is exported by default. Results and terrain are opt-in.
+
+Arguments:
+  PROJECT  HEC-RAS project directory or .prj file
+  OUTPUT   Archive output directory (created if needed)
+
+Options:
+  --results / --no-results    Include plan results (summary variables)
+  --terrain / --no-terrain    Convert terrain TIFFs to Cloud Optimized GeoTIFF
+  --plan-geometry             Also extract geometry copy embedded in plan HDF files
+  --plans TEXT                Comma-separated plan IDs to include, e.g. p01,p02 (default: all)
+  --skip-errors / --fail-fast Skip individual layer errors vs abort
+  --no-sort                   Disable Hilbert spatial sorting (on by default)
 ```
 
 ## ras2cng geometry
@@ -28,7 +72,9 @@ Arguments:
   OUTPUT     Output GeoParquet file path
 
 Options:
-  -l, --layer TEXT  Geometry layer: mesh_cells, cross_sections, centerlines
+  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_areas, cross_sections,
+                    centerlines, bc_lines, breaklines, refinement_regions,
+                    reference_lines, reference_points, structures, storage_areas
 ```
 
 ## ras2cng results
