@@ -110,7 +110,8 @@ def test_map_type_variables_keys():
 def test_configure_rasprocess_with_explicit_path(mock_rp):
     exe_path = Path("/usr/bin/RasProcess.exe")
     _configure_rasprocess(rasprocess_path=exe_path)
-    mock_rp.configure_wine.assert_called_once_with(str(exe_path))
+    # configure_wine receives the directory containing RasProcess.exe
+    mock_rp.configure_wine.assert_called_once_with(ras_install_dir=str(exe_path.parent))
 
 
 @patch("ras2cng.mapping.RasProcess")

@@ -227,9 +227,12 @@ def _configure_rasprocess(
 ) -> None:
     """Configure RasProcess executable path and version."""
     if rasprocess_path:
-        # Explicit path provided (for Linux/Wine or non-standard installs)
+        rasprocess_path = Path(rasprocess_path)
+        # configure_wine expects ras_install_dir (directory containing RasProcess.exe)
+        # Use suffix check instead of is_file() since path may not exist on current OS
+        ras_install_dir = rasprocess_path.parent if rasprocess_path.suffix.lower() == ".exe" else rasprocess_path
         try:
-            RasProcess.configure_wine(str(rasprocess_path))
+            RasProcess.configure_wine(ras_install_dir=str(ras_install_dir))
         except AttributeError:
             # Older ras-commander versions may not have configure_wine
             pass
