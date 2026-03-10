@@ -2153,9 +2153,15 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>C:\Program Files (x86)\HEC\HEC-RAS\6.6\
 </code></pre></div>
 <p>You need at minimum:
-- All <code>*.dll</code> files
-- <code>RasProcess.exe</code>
-- The entire <code>GDAL/</code> directory</p>
+- All <code>*.dll</code> and <code>*.exe</code> files in the root directory
+- The entire <code>GDAL/</code> directory
+- The entire <code>bin32/</code> directory (32-bit native DLLs including <code>hdf5.dll</code>)
+- The entire <code>bin64/</code> directory (64-bit native DLLs including <code>hdf5.dll</code>)
+- The entire <code>x64/</code> directory (64-bit HDF5 native libraries)</p>
+<div class="admonition warning">
+<p class="admonition-title">Missing native DLLs</p>
+<p>If you only copy the managed <code>.dll</code> files without the <code>bin64/</code> and <code>x64/</code> directories, RasProcess will crash with "The type initializer for 'HDF.PInvoke.H5F' threw an exception." These directories contain the native HDF5 C libraries that the .NET wrapper (HDF.PInvoke.dll) loads at runtime.</p>
+</div>
 <p>Place them on your Linux machine, for example at <code>/opt/ras2cng-data/ras66/</code>.</p>
 <h3 id="using-scp-or-rsync">Using scp or rsync<a class="headerlink" href="#using-scp-or-rsync" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># From the Windows machine (Git Bash):</span>
@@ -2299,7 +2305,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 22:07:05 UTC">March 10, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 22:43:23 UTC">March 10, 2026</span>
   </span>
 
     
