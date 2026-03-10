@@ -15,7 +15,7 @@ from typing import Optional
 
 
 # Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "2.1"
 
 
 @dataclass
@@ -78,6 +78,16 @@ class ManifestTerrainEntry:
 
 
 @dataclass
+class ManifestMapEntry:
+    """Result raster generation record for one plan."""
+    plan_id: str
+    profile: str
+    rasters: list[dict] = field(default_factory=list)  # [{type, file, size_bytes}]
+    min_depth: float = 0.0
+    reprojected_wgs84: bool = False
+
+
+@dataclass
 class Manifest:
     """Full archive manifest. Written as manifest.json at archive root."""
 
@@ -86,6 +96,7 @@ class Manifest:
     geometry: list[dict] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
     terrain: list[dict] = field(default_factory=list)
+    maps: list[dict] = field(default_factory=list)
     schema_version: str = SCHEMA_VERSION
 
     # -----------------------------------------------------------------------
@@ -128,12 +139,15 @@ class Manifest:
     def add_terrain_entry(self, entry: ManifestTerrainEntry) -> None:
         self.terrain.append(asdict(entry))
 
+    def add_map_entry(self, entry: ManifestMapEntry) -> None:
+        self.maps.append(asdict(entry))
+
     # -----------------------------------------------------------------------
     # Serialization
     # -----------------------------------------------------------------------
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "schema_version": self.schema_version,
             "project": self.project,
             "project_parquet": self.project_parquet,
@@ -141,6 +155,9 @@ class Manifest:
             "results": self.results,
             "terrain": self.terrain,
         }
+        if self.maps:
+            d["maps"] = self.maps
+        return d
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent, default=str)
@@ -160,6 +177,7 @@ class Manifest:
             geometry=data.get("geometry", []),
             results=data.get("results", []),
             terrain=data.get("terrain", []),
+            maps=data.get("maps", []),
             schema_version=data.get("schema_version", SCHEMA_VERSION),
         )
 

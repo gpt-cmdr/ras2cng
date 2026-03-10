@@ -83,7 +83,7 @@ def test_manifest_create(tmp_path):
     assert m.project["name"] == "TestProject"
     assert m.project["crs"] == "EPSG:4326"
     assert m.project["plan_count"] == 3
-    assert m.schema_version == "2.0"
+    assert m.schema_version == "2.1"
     assert m.geometry == []
     assert m.results == []
     assert m.terrain == []
@@ -204,7 +204,7 @@ def test_manifest_to_json_is_valid(tmp_path):
     m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
     json_str = m.to_json()
     parsed = json.loads(json_str)
-    assert parsed["schema_version"] == "2.0"
+    assert parsed["schema_version"] == "2.1"
     assert "project" in parsed
     assert "project_parquet" in parsed
 
@@ -312,11 +312,11 @@ def test_archive_geometry_only_creates_flat_parquet(
     assert (archive_out / "manifest.json").exists()
     # No results
     assert not (archive_out / "results").exists()
-    # Manifest v2.0 fields
+    # Manifest v2.1 fields
     assert len(manifest.geometry) >= 1
     assert manifest.geometry[0]["geom_id"] == "g01"
     assert manifest.geometry[0]["parquet"] == "FakeModel.g01.parquet"
-    assert manifest.schema_version == "2.0"
+    assert manifest.schema_version == "2.1"
 
 
 @patch("ras2cng.project.merge_all_layers")
@@ -427,3 +427,122 @@ def test_export_project_metadata(tmp_path):
     # None and empty should be excluded
     assert "unsteady_df" not in tables
     assert "boundaries_df" not in tables
+
+
+# ---------------------------------------------------------------------------
+# Manifest v2.1 — maps field
+# ---------------------------------------------------------------------------
+
+def test_manifest_map_entry(tmp_path):
+    from ras2cng.catalog import ManifestMapEntry
+
+    prj = tmp_path / "M.prj"
+    m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
+    entry = ManifestMapEntry(
+        plan_id="p01",
+        profile="Max",
+        rasters=[{"type": "depth", "file": "maps/p01/depth.tif", "size_bytes": 1024}],
+        min_depth=0.1,
+        reprojected_wgs84=False,
+    )
+    m.add_map_entry(entry)
+
+    assert len(m.maps) == 1
+    assert m.maps[0]["plan_id"] == "p01"
+    assert m.maps[0]["profile"] == "Max"
+    assert len(m.maps[0]["rasters"]) == 1
+
+
+def test_manifest_maps_in_json(tmp_path):
+    from ras2cng.catalog import ManifestMapEntry
+
+    prj = tmp_path / "M.prj"
+    m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
+    m.add_map_entry(ManifestMapEntry(
+        plan_id="p01", profile="Max",
+        rasters=[{"type": "wse", "file": "wse.tif", "size_bytes": 512}],
+    ))
+
+    d = m.to_dict()
+    assert "maps" in d
+    assert len(d["maps"]) == 1
+
+    # Roundtrip through JSON
+    manifest_path = tmp_path / "manifest.json"
+    m.write(manifest_path)
+    loaded = Manifest.load(manifest_path)
+    assert len(loaded.maps) == 1
+    assert loaded.maps[0]["plan_id"] == "p01"
+
+
+def test_manifest_maps_omitted_when_empty(tmp_path):
+    """maps key should not appear in JSON when empty."""
+    prj = tmp_path / "M.prj"
+    m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
+    d = m.to_dict()
+    assert "maps" not in d
+
+
+# ---------------------------------------------------------------------------
+# Enhanced inspect — new fields
+# ---------------------------------------------------------------------------
+
+def test_project_info_has_new_fields():
+    """ProjectInfo should have ras_version, terrain_details, rasmap_path fields."""
+    from ras2cng.project import ProjectInfo, TerrainFileInfo
+    info = ProjectInfo(
+        name="Test",
+        prj_file=Path("test.prj"),
+        project_dir=Path("."),
+        crs="EPSG:4326",
+        units="US Survey Feet",
+        ras_version="6.5",
+        terrain_details=[
+            TerrainFileInfo(name="T50", crs="EPSG:2271", resolution="50.0 x 50.0"),
+        ],
+        rasmap_path=Path("test.rasmap"),
+    )
+    assert info.ras_version == "6.5"
+    assert len(info.terrain_details) == 1
+    assert info.terrain_details[0].name == "T50"
+    assert info.rasmap_path == Path("test.rasmap")
+
+
+def test_terrain_file_info_defaults():
+    from ras2cng.project import TerrainFileInfo
+    tfi = TerrainFileInfo(name="Test")
+    assert tfi.hdf_path is None
+    assert tfi.hdf_exists is False
+    assert tfi.tif_files == []
+    assert tfi.crs is None
+    assert tfi.resolution is None
+    assert tfi.total_size_mb == 0.0
+
+
+# ---------------------------------------------------------------------------
+# archive_project — new flags acceptance test
+# ---------------------------------------------------------------------------
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_accepts_new_flags(mock_init, mock_merge, tmp_path):
+    """archive_project should accept map_results and consolidate_terrain flags."""
+    ras, project_dir, hdf_path = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+
+    from ras2cng.project import archive_project
+
+    # Just verify the new flags don't cause errors (map/terrain will skip
+    # since there's no RasProcess/rasterio in test env)
+    manifest = archive_project(
+        project_dir / "FakeModel.prj",
+        tmp_path / "out",
+        sort=False,
+        map_results=False,
+        consolidate_terrain=False,
+        ras_version="6.6",
+    )
+
+    assert manifest is not None
+    assert (tmp_path / "out" / "manifest.json").exists()

@@ -63,6 +63,18 @@ def archive_command(
     no_sort: bool = typer.Option(
         False, "--no-sort", help="Disable Hilbert spatial sorting (on by default)"
     ),
+    map_results: bool = typer.Option(
+        False, "--map/--no-map", help="Generate result rasters via RasProcess"
+    ),
+    consolidate_terrain: bool = typer.Option(
+        False, "--consolidate-terrain", help="Merge terrains into single COG"
+    ),
+    ras_version: Optional[str] = typer.Option(
+        None, "--ras-version", help="HEC-RAS version for RasProcess mapping"
+    ),
+    rasprocess: Optional[Path] = typer.Option(
+        None, "--rasprocess", help="Path to RasProcess.exe (required on Linux/Wine)"
+    ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -70,7 +82,7 @@ def archive_command(
     metadata parquet. All layers within each file are distinguished by a
     ``layer`` column — query with ``WHERE layer = 'mesh_cells'``.
 
-    Geometry is exported by default. Results and terrain are opt-in.
+    Geometry is exported by default. Results, terrain, and map generation are opt-in.
     """
 
     from ras2cng.project import archive_project
@@ -87,6 +99,10 @@ def archive_command(
             plans=plans_list,
             skip_errors=skip_errors,
             sort=not no_sort,
+            map_results=map_results,
+            consolidate_terrain=consolidate_terrain,
+            ras_version=ras_version,
+            rasprocess_path=rasprocess,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -240,6 +256,152 @@ def sync_to_postgis(
         console.print(f"[green]OK[/green] Synced to {schema}.{table_name}")
     except Exception as e:
         console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("terrain")
+def terrain_command(
+    project: Path = typer.Argument(
+        ..., help="HEC-RAS project directory or .prj file"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Output directory for consolidated terrain files"
+    ),
+    name: str = typer.Option(
+        "Consolidated", "--name", help="Terrain name (default: Consolidated)"
+    ),
+    downsample: Optional[float] = typer.Option(
+        None, "--downsample", help="Downsample factor (2.0 = half resolution)"
+    ),
+    resolution: Optional[float] = typer.Option(
+        None, "--resolution", help="Target cell size in project units"
+    ),
+    terrains: Optional[str] = typer.Option(
+        None, "--terrains", help="Comma-separated terrain names to include"
+    ),
+    units: str = typer.Option(
+        "Feet", "--units", help="Vertical units: Feet or Meters (default: Feet)"
+    ),
+    ras_version: str = typer.Option(
+        "6.6", "--ras-version", help="HEC-RAS version (default: 6.6)"
+    ),
+    tiff_only: bool = typer.Option(
+        False, "--tiff-only", help="Only produce merged TIFF, skip HDF creation"
+    ),
+    no_register: bool = typer.Option(
+        False, "--no-register", help="Don't register new terrain in rasmap"
+    ),
+):
+    """Consolidate project terrains into a single merged TIFF and HEC-RAS terrain HDF.
+
+    Discovers all terrain layers from the project rasmap, merges their TIFFs
+    (first-wins priority in overlaps), and optionally creates a new HEC-RAS
+    terrain HDF via RasProcess.exe.
+    """
+
+    from ras2cng.terrain import consolidate_terrain
+
+    terrain_list = [t.strip() for t in terrains.split(",")] if terrains else None
+
+    try:
+        result = consolidate_terrain(
+            project,
+            output,
+            terrain_name=name,
+            downsample_factor=downsample,
+            target_resolution=resolution,
+            terrain_names=terrain_list,
+            units=units,
+            ras_version=ras_version,
+            create_hdf=not tiff_only,
+            register_rasmap=not no_register,
+        )
+        console.print(f"[green]OK[/green] Terrain output: {result}")
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("map")
+def map_command(
+    project: Path = typer.Argument(
+        ..., help="HEC-RAS project directory or .prj file"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Output directory for result rasters"
+    ),
+    plans: Optional[str] = typer.Option(
+        None, "--plans", help="Comma-separated plan IDs (default: all with results)"
+    ),
+    profile: str = typer.Option(
+        "Max", "--profile", help="Max, Min, or timestamp (default: Max)"
+    ),
+    wse: bool = typer.Option(True, "--wse/--no-wse", help="Water Surface Elevation (default: on)"),
+    depth: bool = typer.Option(True, "--depth/--no-depth", help="Depth (default: on)"),
+    velocity: bool = typer.Option(True, "--velocity/--no-velocity", help="Velocity (default: on)"),
+    froude: bool = typer.Option(False, "--froude", help="Froude number"),
+    shear_stress: bool = typer.Option(False, "--shear-stress", help="Shear stress"),
+    dv: bool = typer.Option(False, "--dv", help="Depth x Velocity"),
+    arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time"),
+    duration: bool = typer.Option(False, "--duration", help="Duration"),
+    recession: bool = typer.Option(False, "--recession", help="Recession"),
+    terrain_name: Optional[str] = typer.Option(
+        None, "--terrain", help="Specific terrain name from rasmap"
+    ),
+    ras_version: Optional[str] = typer.Option(
+        None, "--ras-version", help="HEC-RAS version (e.g. 6.6)"
+    ),
+    rasprocess: Optional[Path] = typer.Option(
+        None, "--rasprocess", help="Path to RasProcess.exe (required on Linux/Wine)"
+    ),
+    min_depth: float = typer.Option(
+        0.0, "--min-depth", help="Min depth threshold (default: 0.0)"
+    ),
+    wgs84: bool = typer.Option(False, "--wgs84", help="Reproject output to WGS84"),
+    cog: bool = typer.Option(False, "--cog", help="Convert output to Cloud Optimized GeoTIFF"),
+    timeout: int = typer.Option(
+        600, "--timeout", help="Per-plan timeout in seconds (default: 600)"
+    ),
+    skip_errors: bool = typer.Option(
+        True, "--skip-errors/--fail-fast", help="Skip errors vs abort"
+    ),
+):
+    """Generate result rasters (WSE, Depth, Velocity, etc.) via RasProcess.exe.
+
+    Renders completed plan results to GeoTIFF rasters using the HEC-RAS
+    mapping engine. Requires RasProcess.exe (bundled with HEC-RAS).
+    """
+
+    from ras2cng.mapping import generate_result_maps
+
+    plans_list = [p.strip() for p in plans.split(",")] if plans else None
+
+    try:
+        generate_result_maps(
+            project,
+            output,
+            plans=plans_list,
+            profile=profile,
+            wse=wse,
+            depth=depth,
+            velocity=velocity,
+            froude=froude,
+            shear_stress=shear_stress,
+            depth_x_velocity=dv,
+            arrival_time=arrival_time,
+            duration=duration,
+            recession=recession,
+            terrain_name=terrain_name,
+            ras_version=ras_version,
+            rasprocess_path=rasprocess,
+            min_depth=min_depth,
+            reproject_wgs84=wgs84,
+            convert_cog=cog,
+            timeout=timeout,
+            skip_errors=skip_errors,
+        )
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
         raise typer.Exit(1)
 
 

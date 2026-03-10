@@ -36,10 +36,19 @@ from ras2cng.project import (
     inspect_project,
     export_project_metadata,
     ProjectInfo,
+    TerrainFileInfo,
 )
-from ras2cng.catalog import Manifest, ManifestLayer, ManifestGeomEntry, ManifestPlanEntry
+from ras2cng.catalog import (
+    Manifest,
+    ManifestLayer,
+    ManifestGeomEntry,
+    ManifestPlanEntry,
+    ManifestMapEntry,
+)
+from ras2cng.mapping import generate_result_maps, MapResult
+from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     # Geometry
     "export_geometry_layers",
@@ -67,9 +76,18 @@ __all__ = [
     "inspect_project",
     "export_project_metadata",
     "ProjectInfo",
+    "TerrainFileInfo",
     # Catalog
     "Manifest",
     "ManifestLayer",
     "ManifestGeomEntry",
     "ManifestPlanEntry",
+    "ManifestMapEntry",
+    # Mapping
+    "generate_result_maps",
+    "MapResult",
+    # Terrain
+    "consolidate_terrain",
+    "discover_terrains",
+    "TerrainInfo",
 ]

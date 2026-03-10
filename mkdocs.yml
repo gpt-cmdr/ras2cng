@@ -104,6 +104,7 @@ nav:
     - DuckDB Queries: user-guide/duckdb-queries.md
     - PMTiles Generation: user-guide/pmtiles.md
     - PostGIS Sync: user-guide/postgis-sync.md
+    - Linux/Wine Setup: user-guide/linux-wine-setup.md
   - Examples:
     - Overview: examples/index.md
     - 00 - Using RasExamples: examples/00_using_ras_examples.md
