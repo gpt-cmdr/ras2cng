@@ -64,7 +64,7 @@ def generate_result_maps(
     min_depth: float = 0.0,
     reproject_wgs84: bool = False,
     convert_cog: bool = False,
-    timeout: int = 1800,
+    timeout: int = 10800,
     skip_errors: bool = True,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
@@ -91,7 +91,7 @@ def generate_result_maps(
         min_depth: Minimum depth threshold for depth rasters (default: 0.0)
         reproject_wgs84: Reproject output rasters to WGS84
         convert_cog: Convert output to Cloud Optimized GeoTIFF
-        timeout: Per-plan timeout in seconds (default: 1800, increase for Wine)
+        timeout: Per-plan timeout in seconds (default: 10800 = 3 hours)
         skip_errors: If True, log and continue past errors
 
     Returns:
