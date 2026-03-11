@@ -36,6 +36,13 @@ from ras2cng import (
     # PostGIS
     sync_to_postgres,
     read_from_postgres,
+    # Mapping (result rasters)
+    generate_result_maps,
+    MapResult,
+    # Terrain
+    consolidate_terrain,
+    discover_terrains,
+    TerrainInfo,
 )
 
 # Module-level imports
@@ -46,13 +53,17 @@ from ras2cng.results import export_results_layer, export_all_variables, merge_al
 from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
+from ras2cng.mapping import generate_result_maps, MapResult
+from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 ```
 
 ## Modules
 
-- [CLI](cli.md) — Command-line interface reference (7 commands)
+- [CLI](cli.md) — Command-line interface reference (9 commands)
 - [geometry](geometry.md) — HDF and text geometry export (10 HDF + 3 text layers)
 - [results](results.md) — Plan results export and polygon join
+- [mapping](mapping.md) — Result raster generation via RasProcess.exe
+- [terrain](terrain.md) — Terrain discovery and consolidation
 - [duckdb_session](duckdb_session.md) — DuckDB wrapper with spatial extension
 - [pmtiles](pmtiles.md) — Vector/raster PMTiles pipeline
 - [postgis_sync](postgis_sync.md) — GeoParquet → PostGIS

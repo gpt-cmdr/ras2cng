@@ -121,6 +121,8 @@ nav:
     - CLI: api/cli.md
     - geometry: api/geometry.md
     - results: api/results.md
+    - mapping: api/mapping.md
+    - terrain: api/terrain.md
     - duckdb_session: api/duckdb_session.md
     - pmtiles: api/pmtiles.md
     - postgis_sync: api/postgis_sync.md

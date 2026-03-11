@@ -4,11 +4,13 @@
 
 ```
 ras2cng/
-├── cli.py           — Typer CLI (7 commands): inspect, archive, geometry, results, query, pmtiles, sync
+├── cli.py           — Typer CLI (9 commands): inspect, archive, geometry, results, query, pmtiles, sync, terrain, map
 ├── project.py       — Full-project orchestration: inspect, archive, metadata export
-├── catalog.py       — Manifest schema v2.0 for archive catalogs (manifest.json)
+├── catalog.py       — Manifest schema v2.1 for archive catalogs (manifest.json)
 ├── geometry.py      — HDF + text geometry export via ras-commander (10 HDF + 3 text layers)
 ├── results.py       — Plan HDF results export + polygon join
+├── mapping.py       — Result raster generation via RasProcess.exe (WSE, Depth, Velocity, etc.)
+├── terrain.py       — Terrain discovery, consolidation, and downsampling
 ├── duckdb_session.py — DuckDB wrapper with auto-loaded spatial extension
 ├── pmtiles.py       — Vector/raster PMTiles pipeline
 └── postgis_sync.py  — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2
@@ -28,15 +30,15 @@ HEC-RAS project directory
      ▼
 project.py (archive_project / inspect_project)
      │  Discovers all geometry, plan, and terrain files
-     │  Orchestrates extraction via geometry.py / results.py
+     │  Orchestrates extraction via geometry.py / results.py / mapping.py / terrain.py
      ▼
-geometry.py / results.py
-     │  ras-commander parses HDF/text
-     │  returns GeoDataFrame
-     ▼
-GeoParquet (ZSTD compression for archives, bbox columns, Hilbert sorted)
+geometry.py / results.py          mapping.py / terrain.py
+     │  ras-commander parses            │  RasProcess.exe generates
+     │  HDF/text → GeoDataFrame         │  rasters and terrain HDFs
+     ▼                                  ▼
+GeoParquet (ZSTD, bbox, Hilbert)  GeoTIFF rasters + terrain HDFs
      │
-     ├── catalog.py         →  manifest.json (schema v2.0)
+     ├── catalog.py         →  manifest.json (schema v2.1)
      ├── duckdb_session.py  →  SQL analytics
      ├── pmtiles.py         →  GeoJSON → tippecanoe → PMTiles
      └── postgis_sync.py    →  SQLAlchemy → PostGIS + GIST index
