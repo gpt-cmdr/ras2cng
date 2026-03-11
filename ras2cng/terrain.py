@@ -486,11 +486,9 @@ def _reproject_to_match(src_dataset, target_crs, work_dir: Path) -> Path:
 
     Returns path to a temporary reprojected TIFF in work_dir.
     """
-    import numpy as np
     import rasterio
     from rasterio.crs import CRS
-    from rasterio.transform import calculate_default_transform
-    from rasterio.warp import reproject, Resampling
+    from rasterio.warp import calculate_default_transform, reproject, Resampling
 
     work_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = work_dir / f"_reproj_{src_dataset.name.split('/')[-1].split(chr(92))[-1]}"
