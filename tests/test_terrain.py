@@ -20,6 +20,8 @@ from ras2cng.terrain import (
     _get_raster_info,
     _merge_tifs,
     _downsample_tif,
+    _stem_matches_name,
+    _crs_equivalent,
 )
 
 
@@ -286,3 +288,90 @@ def test_consolidate_terrain_with_downsample(mock_discover, mock_downsample, moc
     mock_downsample.assert_called_once()
     call_kwargs = mock_downsample.call_args
     assert call_kwargs[1]["factor"] == 2.0
+
+
+# ---------------------------------------------------------------------------
+# _stem_matches_name (terrain name filtering)
+# ---------------------------------------------------------------------------
+
+def test_stem_matches_name_exact():
+    assert _stem_matches_name("Terrain", "Terrain") is True
+
+
+def test_stem_matches_name_with_dot_suffix():
+    """Terrain.muncie_clip should match terrain name 'Terrain'."""
+    assert _stem_matches_name("Terrain.muncie_clip", "Terrain") is True
+
+
+def test_stem_matches_name_with_underscore_suffix():
+    """Terrain_tile2 should match terrain name 'Terrain'."""
+    assert _stem_matches_name("Terrain_tile2", "Terrain") is True
+
+
+def test_stem_matches_name_rejects_different_terrain():
+    """TerrainWithChannel should NOT match terrain name 'Terrain'."""
+    assert _stem_matches_name("TerrainWithChannel", "Terrain") is False
+
+
+def test_stem_matches_name_rejects_different_terrain_with_suffix():
+    """TerrainWithChannel.ChannelOnly should NOT match 'Terrain'."""
+    assert _stem_matches_name("TerrainWithChannel.ChannelOnly", "Terrain") is False
+
+
+def test_stem_matches_name_case_insensitive():
+    assert _stem_matches_name("terrain.tif_data", "Terrain") is True
+
+
+def test_stem_matches_name_dash_separator():
+    assert _stem_matches_name("HighRes-50ft", "HighRes") is True
+
+
+def test_stem_matches_name_no_false_prefix():
+    """'Terr' should NOT match 'Terrain' (name is shorter than stem)."""
+    assert _stem_matches_name("Terrain", "Terr") is False
+
+
+# ---------------------------------------------------------------------------
+# _crs_equivalent
+# ---------------------------------------------------------------------------
+
+def test_crs_equivalent_same_object():
+    """Identical CRS objects should be equivalent."""
+    mock_crs = MagicMock()
+    mock_crs.__eq__ = MagicMock(return_value=True)
+    assert _crs_equivalent(mock_crs, mock_crs) is True
+
+
+def test_crs_equivalent_same_epsg():
+    """CRS with same EPSG code should be equivalent."""
+    crs1 = MagicMock()
+    crs2 = MagicMock()
+    crs1.__eq__ = MagicMock(return_value=False)
+    crs1.to_epsg.return_value = 2965
+    crs2.to_epsg.return_value = 2965
+    crs1.to_wkt.side_effect = Exception("no pyproj")
+    assert _crs_equivalent(crs1, crs2) is True
+
+
+def test_crs_equivalent_different_epsg():
+    """CRS with different EPSG codes should not be equivalent."""
+    crs1 = MagicMock()
+    crs2 = MagicMock()
+    crs1.__eq__ = MagicMock(return_value=False)
+    crs1.to_epsg.return_value = 2965
+    crs2.to_epsg.return_value = 4326
+    crs1.to_wkt.side_effect = Exception("no pyproj")
+    assert _crs_equivalent(crs1, crs2) is False
+
+
+def test_crs_equivalent_none_epsg_falls_through():
+    """When EPSG is None, should try WKT comparison."""
+    crs1 = MagicMock()
+    crs2 = MagicMock()
+    crs1.__eq__ = MagicMock(return_value=False)
+    crs1.to_epsg.return_value = None
+    crs2.to_epsg.return_value = None
+    wkt = 'PROJCS["NAD83 / Indiana East"]'
+    crs1.to_wkt.return_value = wkt
+    crs2.to_wkt.return_value = wkt
+    assert _crs_equivalent(crs1, crs2) is True

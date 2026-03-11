@@ -123,7 +123,12 @@ def discover_terrains(project_path: Path) -> list[TerrainInfo]:
             terrain_dir = project_dir / "Terrain"
             if terrain_dir.exists():
                 all_tifs = _glob_tifs(terrain_dir)
-                tif_files = sorted(f for f in all_tifs if name.lower() in f.stem.lower())
+                # Exact stem match: "Terrain" matches "Terrain.tif" and
+                # "Terrain_tile2.tif" but NOT "TerrainWithChannel.tif"
+                tif_files = sorted(
+                    f for f in all_tifs
+                    if _stem_matches_name(f.stem, name)
+                )
 
         info = _get_raster_info(tif_files)
         terrains.append(TerrainInfo(
@@ -287,6 +292,29 @@ def _get_terrain_names_safe(project_dir: Path) -> list[str]:
         return []
 
 
+def _stem_matches_name(stem: str, name: str) -> bool:
+    """Check if a TIF file stem matches a terrain name exactly.
+
+    Matches "Terrain.muncie_clip" and "Terrain_tile2" for name "Terrain",
+    but NOT "TerrainWithChannel" (which is a different terrain).
+
+    The stem must either equal the name, or start with the name followed
+    by a non-alphanumeric separator (dot, underscore, dash, space).
+    """
+    stem_lower = stem.lower()
+    name_lower = name.lower()
+
+    if stem_lower == name_lower:
+        return True
+
+    if stem_lower.startswith(name_lower):
+        # Character after the name must be a separator, not alphanumeric
+        next_char = stem_lower[len(name_lower)]
+        return not next_char.isalnum()
+
+    return False
+
+
 def _discover_tifs_for_hdf(hdf_path: Optional[Path]) -> list[Path]:
     """Find TIFF files associated with a terrain HDF file.
 
@@ -349,6 +377,10 @@ def _get_raster_info(tif_files: list[Path]) -> dict:
 def _merge_tifs(tif_files: list[Path], output_tif: Path) -> Path:
     """Merge multiple TIFFs using rasterio with first-wins priority.
 
+    Handles CRS harmonization: when TIFFs have equivalent but differently-
+    represented CRS (e.g., EPSG:2965 vs raw WKT for the same projection),
+    reprojects non-matching TIFFs to the first file's CRS before merging.
+
     Args:
         tif_files: List of input TIFF paths (priority order: first wins)
         output_tif: Path for merged output TIFF
@@ -360,6 +392,7 @@ def _merge_tifs(tif_files: list[Path], output_tif: Path) -> Path:
     from rasterio.merge import merge
 
     datasets = []
+    reprojected_temps = []
     try:
         for tif in tif_files:
             if tif.exists():
@@ -368,9 +401,24 @@ def _merge_tifs(tif_files: list[Path], output_tif: Path) -> Path:
         if not datasets:
             raise ValueError("No valid TIFF files to merge")
 
-        mosaic, out_transform = merge(datasets, method="first")
+        # Harmonize CRS: reproject any datasets that don't match the first
+        ref_crs = datasets[0].crs
+        harmonized = [datasets[0]]
+        for ds in datasets[1:]:
+            if ds.crs == ref_crs:
+                harmonized.append(ds)
+            elif _crs_equivalent(ds.crs, ref_crs):
+                # Same projection, different representation — override CRS
+                harmonized.append(ds)
+            else:
+                # Actually different CRS — reproject to match the reference
+                reprojected = _reproject_to_match(ds, ref_crs, output_tif.parent)
+                reprojected_temps.append(reprojected)
+                harmonized.append(rasterio.open(reprojected))
 
-        out_meta = datasets[0].meta.copy()
+        mosaic, out_transform = merge(harmonized, method="first")
+
+        out_meta = harmonized[0].meta.copy()
         out_meta.update({
             "driver": "GTiff",
             "height": mosaic.shape[1],
@@ -385,8 +433,98 @@ def _merge_tifs(tif_files: list[Path], output_tif: Path) -> Path:
     finally:
         for ds in datasets:
             ds.close()
+        # Clean up any temporary reprojected files
+        for tmp in reprojected_temps:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return output_tif
+
+
+def _crs_equivalent(crs1, crs2) -> bool:
+    """Check if two CRS objects represent the same coordinate system.
+
+    Handles the common HEC-RAS case where one TIF has EPSG:XXXX and another
+    has the equivalent raw WKT/PROJCS string.
+    """
+    if crs1 == crs2:
+        return True
+
+    try:
+        from pyproj import CRS as PyprojCRS
+
+        p1 = PyprojCRS(crs1.to_wkt())
+        p2 = PyprojCRS(crs2.to_wkt())
+        return p1.equals(p2)
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: compare EPSG codes if both resolve
+    try:
+        e1 = crs1.to_epsg()
+        e2 = crs2.to_epsg()
+        if e1 and e2:
+            return e1 == e2
+    except Exception:
+        pass
+
+    # Fallback: compare WKT strings after normalizing whitespace
+    try:
+        w1 = " ".join(crs1.to_wkt().split())
+        w2 = " ".join(crs2.to_wkt().split())
+        return w1 == w2
+    except Exception:
+        pass
+
+    return False
+
+
+def _reproject_to_match(src_dataset, target_crs, work_dir: Path) -> Path:
+    """Reproject an open rasterio dataset to a target CRS.
+
+    Returns path to a temporary reprojected TIFF in work_dir.
+    """
+    import numpy as np
+    import rasterio
+    from rasterio.crs import CRS
+    from rasterio.transform import calculate_default_transform
+    from rasterio.warp import reproject, Resampling
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = work_dir / f"_reproj_{src_dataset.name.split('/')[-1].split(chr(92))[-1]}"
+
+    dst_crs = CRS(target_crs.to_wkt()) if not isinstance(target_crs, CRS) else target_crs
+
+    transform, width, height = calculate_default_transform(
+        src_dataset.crs, dst_crs,
+        src_dataset.width, src_dataset.height,
+        *src_dataset.bounds,
+    )
+
+    out_meta = src_dataset.meta.copy()
+    out_meta.update({
+        "driver": "GTiff",
+        "crs": dst_crs,
+        "transform": transform,
+        "width": width,
+        "height": height,
+    })
+
+    with rasterio.open(tmp_path, "w", **out_meta) as dst:
+        for i in range(1, src_dataset.count + 1):
+            reproject(
+                source=rasterio.band(src_dataset, i),
+                destination=rasterio.band(dst, i),
+                src_transform=src_dataset.transform,
+                src_crs=src_dataset.crs,
+                dst_transform=transform,
+                dst_crs=dst_crs,
+                resampling=Resampling.bilinear,
+            )
+
+    return tmp_path
 
 
 def _downsample_tif(

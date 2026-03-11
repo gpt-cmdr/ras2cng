@@ -360,7 +360,7 @@ def map_command(
     wgs84: bool = typer.Option(False, "--wgs84", help="Reproject output to WGS84"),
     cog: bool = typer.Option(False, "--cog", help="Convert output to Cloud Optimized GeoTIFF"),
     timeout: int = typer.Option(
-        600, "--timeout", help="Per-plan timeout in seconds (default: 600)"
+        1800, "--timeout", help="Per-plan timeout in seconds (default: 1800)"
     ),
     skip_errors: bool = typer.Option(
         True, "--skip-errors/--fail-fast", help="Skip errors vs abort"
