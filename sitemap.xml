@@ -33,6 +33,10 @@
          <lastmod>2026-03-11</lastmod>
     </url>
     <url>
+         <loc>https://gpt-cmdr.github.io/ras2cng/api/mapping/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
          <loc>https://gpt-cmdr.github.io/ras2cng/api/pmtiles/</loc>
          <lastmod>2026-03-11</lastmod>
     </url>
@@ -42,6 +46,10 @@
     </url>
     <url>
          <loc>https://gpt-cmdr.github.io/ras2cng/api/results/</loc>
+         <lastmod>2026-03-11</lastmod>
+    </url>
+    <url>
+         <loc>https://gpt-cmdr.github.io/ras2cng/api/terrain/</loc>
          <lastmod>2026-03-11</lastmod>
     </url>
     <url>

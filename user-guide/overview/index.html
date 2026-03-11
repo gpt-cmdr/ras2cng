@@ -1565,6 +1565,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/terrain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    terrain
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/duckdb_session/" class="md-nav__link">
         
   
@@ -1887,14 +1943,16 @@
 <h1 id="architecture-overview">Architecture Overview<a class="headerlink" href="#architecture-overview" title="Permanent link">&para;</a></h1>
 <h2 id="module-map">Module Map<a class="headerlink" href="#module-map" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ras2cng/
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── cli.py           — Typer CLI (7 commands): inspect, archive, geometry, results, query, pmtiles, sync
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── cli.py           — Typer CLI (9 commands): inspect, archive, geometry, results, query, pmtiles, sync, terrain, map
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── project.py       — Full-project orchestration: inspect, archive, metadata export
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── catalog.py       — Manifest schema v2.0 for archive catalogs (manifest.json)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── catalog.py       — Manifest schema v2.1 for archive catalogs (manifest.json)
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── geometry.py      — HDF + text geometry export via ras-commander (10 HDF + 3 text layers)
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── results.py       — Plan HDF results export + polygon join
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── duckdb_session.py — DuckDB wrapper with auto-loaded spatial extension
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>├── pmtiles.py       — Vector/raster PMTiles pipeline
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>└── postgis_sync.py  — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── mapping.py       — Result raster generation via RasProcess.exe (WSE, Depth, Velocity, etc.)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>├── terrain.py       — Terrain discovery, consolidation, and downsampling
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>├── duckdb_session.py — DuckDB wrapper with auto-loaded spatial extension
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>├── pmtiles.py       — Vector/raster PMTiles pipeline
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>└── postgis_sync.py  — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2
 </code></pre></div>
 <h2 id="cli-layer">CLI Layer<a class="headerlink" href="#cli-layer" title="Permanent link">&para;</a></h2>
 <p><code>cli.py</code> uses <strong>lazy imports</strong> — heavy dependencies (geopandas, duckdb, sqlalchemy) are imported
@@ -1906,15 +1964,15 @@ optional extras are not installed.</p>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>     ▼
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>project.py (archive_project / inspect_project)
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>     │  Discovers all geometry, plan, and terrain files
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>     │  Orchestrates extraction via geometry.py / results.py
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>     │  Orchestrates extraction via geometry.py / results.py / mapping.py / terrain.py
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>     ▼
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>geometry.py / results.py
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>     │  ras-commander parses HDF/text
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>     │  returns GeoDataFrame
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>     ▼
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>GeoParquet (ZSTD compression for archives, bbox columns, Hilbert sorted)
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>geometry.py / results.py          mapping.py / terrain.py
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>     │  ras-commander parses            │  RasProcess.exe generates
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>     │  HDF/text → GeoDataFrame         │  rasters and terrain HDFs
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>     ▼                                  ▼
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>GeoParquet (ZSTD, bbox, Hilbert)  GeoTIFF rasters + terrain HDFs
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>     │
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>     ├── catalog.py         →  manifest.json (schema v2.0)
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>     ├── catalog.py         →  manifest.json (schema v2.1)
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>     ├── duckdb_session.py  →  SQL analytics
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>     ├── pmtiles.py         →  GeoJSON → tippecanoe → PMTiles
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>     └── postgis_sync.py    →  SQLAlchemy → PostGIS + GIST index
@@ -1949,7 +2007,7 @@ optional extras are not installed.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 03:21:51 UTC">March 10, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 11, 2026 11:16:03 UTC">March 11, 2026</span>
   </span>
 
     

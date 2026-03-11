@@ -1532,6 +1532,62 @@
   
   
     <li class="md-nav__item">
+      <a href="mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="terrain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    terrain
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="duckdb_session/" class="md-nav__link">
         
   
@@ -1853,22 +1909,33 @@
 <a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="c1"># PostGIS</span>
 <a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>    <span class="n">sync_to_postgres</span><span class="p">,</span>
 <a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>    <span class="n">read_from_postgres</span><span class="p">,</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="p">)</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="c1"># Module-level imports</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.project</span><span class="w"> </span><span class="kn">import</span> <span class="n">archive_project</span><span class="p">,</span> <span class="n">inspect_project</span><span class="p">,</span> <span class="n">export_project_metadata</span><span class="p">,</span> <span class="n">ProjectInfo</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.catalog</span><span class="w"> </span><span class="kn">import</span> <span class="n">Manifest</span><span class="p">,</span> <span class="n">ManifestLayer</span><span class="p">,</span> <span class="n">ManifestGeomEntry</span><span class="p">,</span> <span class="n">ManifestPlanEntry</span>
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_geometry_layers</span><span class="p">,</span> <span class="n">merge_all_layers</span><span class="p">,</span> <span class="n">HDF_LAYERS</span>
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_results_layer</span><span class="p">,</span> <span class="n">export_all_variables</span><span class="p">,</span> <span class="n">merge_all_variables</span>
-<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.duckdb_session</span><span class="w"> </span><span class="kn">import</span> <span class="n">DuckSession</span><span class="p">,</span> <span class="n">query_parquet</span><span class="p">,</span> <span class="n">spatial_join</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.pmtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_pmtiles_from_input</span>
-<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.postgis_sync</span><span class="w"> </span><span class="kn">import</span> <span class="n">sync_to_postgres</span><span class="p">,</span> <span class="n">read_from_postgres</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>    <span class="c1"># Mapping (result rasters)</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>    <span class="n">generate_result_maps</span><span class="p">,</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>    <span class="n">MapResult</span><span class="p">,</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>    <span class="c1"># Terrain</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>    <span class="n">consolidate_terrain</span><span class="p">,</span>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>    <span class="n">discover_terrains</span><span class="p">,</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>    <span class="n">TerrainInfo</span><span class="p">,</span>
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="p">)</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="c1"># Module-level imports</span>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.project</span><span class="w"> </span><span class="kn">import</span> <span class="n">archive_project</span><span class="p">,</span> <span class="n">inspect_project</span><span class="p">,</span> <span class="n">export_project_metadata</span><span class="p">,</span> <span class="n">ProjectInfo</span>
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.catalog</span><span class="w"> </span><span class="kn">import</span> <span class="n">Manifest</span><span class="p">,</span> <span class="n">ManifestLayer</span><span class="p">,</span> <span class="n">ManifestGeomEntry</span><span class="p">,</span> <span class="n">ManifestPlanEntry</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_geometry_layers</span><span class="p">,</span> <span class="n">merge_all_layers</span><span class="p">,</span> <span class="n">HDF_LAYERS</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_results_layer</span><span class="p">,</span> <span class="n">export_all_variables</span><span class="p">,</span> <span class="n">merge_all_variables</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.duckdb_session</span><span class="w"> </span><span class="kn">import</span> <span class="n">DuckSession</span><span class="p">,</span> <span class="n">query_parquet</span><span class="p">,</span> <span class="n">spatial_join</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.pmtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_pmtiles_from_input</span>
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.postgis_sync</span><span class="w"> </span><span class="kn">import</span> <span class="n">sync_to_postgres</span><span class="p">,</span> <span class="n">read_from_postgres</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_result_maps</span><span class="p">,</span> <span class="n">MapResult</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.terrain</span><span class="w"> </span><span class="kn">import</span> <span class="n">consolidate_terrain</span><span class="p">,</span> <span class="n">discover_terrains</span><span class="p">,</span> <span class="n">TerrainInfo</span>
 </code></pre></div>
 <h2 id="modules">Modules<a class="headerlink" href="#modules" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="cli/">CLI</a> — Command-line interface reference (7 commands)</li>
+<li><a href="cli/">CLI</a> — Command-line interface reference (9 commands)</li>
 <li><a href="geometry/">geometry</a> — HDF and text geometry export (10 HDF + 3 text layers)</li>
 <li><a href="results/">results</a> — Plan results export and polygon join</li>
+<li><a href="mapping/">mapping</a> — Result raster generation via RasProcess.exe</li>
+<li><a href="terrain/">terrain</a> — Terrain discovery and consolidation</li>
 <li><a href="duckdb_session/">duckdb_session</a> — DuckDB wrapper with spatial extension</li>
 <li><a href="pmtiles/">pmtiles</a> — Vector/raster PMTiles pipeline</li>
 <li><a href="postgis_sync/">postgis_sync</a> — GeoParquet → PostGIS</li>
@@ -1895,7 +1962,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 03:21:51 UTC">March 10, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 11, 2026 11:16:03 UTC">March 11, 2026</span>
   </span>
 
     
