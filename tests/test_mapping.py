@@ -62,6 +62,8 @@ def test_build_requested_types_defaults():
         wse=True, depth=True, velocity=True,
         froude=False, shear_stress=False,
         depth_x_velocity=False,
+        depth_x_velocity_sq=False,
+        inundation_boundary=False,
         arrival_time=False, duration=False,
         recession=False,
     )
@@ -73,10 +75,12 @@ def test_build_requested_types_all_enabled():
         wse=True, depth=True, velocity=True,
         froude=True, shear_stress=True,
         depth_x_velocity=True,
+        depth_x_velocity_sq=True,
+        inundation_boundary=True,
         arrival_time=True, duration=True,
         recession=True,
     )
-    assert len(result) == 9
+    assert len(result) == 11
 
 
 def test_build_requested_types_none_enabled():
@@ -84,6 +88,8 @@ def test_build_requested_types_none_enabled():
         wse=False, depth=False, velocity=False,
         froude=False, shear_stress=False,
         depth_x_velocity=False,
+        depth_x_velocity_sq=False,
+        inundation_boundary=False,
         arrival_time=False, duration=False,
         recession=False,
     )
@@ -97,7 +103,8 @@ def test_build_requested_types_none_enabled():
 def test_map_type_variables_keys():
     expected = {
         "wse", "depth", "velocity", "froude", "shear_stress",
-        "depth_x_velocity", "arrival_time", "duration", "recession",
+        "depth_x_velocity", "depth_x_velocity_sq", "inundation_boundary",
+        "arrival_time", "duration", "recession",
     }
     assert set(MAP_TYPE_VARIABLES.keys()) == expected
 

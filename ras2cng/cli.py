@@ -64,7 +64,7 @@ def archive_command(
         False, "--no-sort", help="Disable Hilbert spatial sorting (on by default)"
     ),
     map_results: bool = typer.Option(
-        False, "--map/--no-map", help="Generate result rasters via RasProcess"
+        False, "--map/--no-map", help="Generate result rasters via RasStoreMapHelper"
     ),
     consolidate_terrain: bool = typer.Option(
         False, "--consolidate-terrain", help="Merge terrains into single COG"
@@ -73,7 +73,7 @@ def archive_command(
         None, "--ras-version", help="HEC-RAS version for RasProcess mapping"
     ),
     rasprocess: Optional[Path] = typer.Option(
-        None, "--rasprocess", help="Path to RasProcess.exe (required on Linux/Wine)"
+        None, "--rasprocess", help="Path to HEC-RAS install directory (for helper deployment)"
     ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
@@ -342,6 +342,8 @@ def map_command(
     froude: bool = typer.Option(False, "--froude", help="Froude number"),
     shear_stress: bool = typer.Option(False, "--shear-stress", help="Shear stress"),
     dv: bool = typer.Option(False, "--dv", help="Depth x Velocity"),
+    dv_sq: bool = typer.Option(False, "--dv-sq", help="Depth x Velocity²"),
+    inundation_boundary: bool = typer.Option(False, "--inundation-boundary", help="Inundation boundary polygon"),
     arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time"),
     duration: bool = typer.Option(False, "--duration", help="Duration"),
     recession: bool = typer.Option(False, "--recession", help="Recession"),
@@ -352,7 +354,7 @@ def map_command(
         None, "--ras-version", help="HEC-RAS version (e.g. 6.6)"
     ),
     rasprocess: Optional[Path] = typer.Option(
-        None, "--rasprocess", help="Path to RasProcess.exe (required on Linux/Wine)"
+        None, "--rasprocess", help="Path to HEC-RAS install directory (for helper deployment)"
     ),
     min_depth: float = typer.Option(
         0.0, "--min-depth", help="Min depth threshold (default: 0.0)"
@@ -366,10 +368,10 @@ def map_command(
         True, "--skip-errors/--fail-fast", help="Skip errors vs abort"
     ),
 ):
-    """Generate result rasters (WSE, Depth, Velocity, etc.) via RasProcess.exe.
+    """Generate result rasters (WSE, Depth, Velocity, etc.) via RasStoreMapHelper.
 
     Renders completed plan results to GeoTIFF rasters using the HEC-RAS
-    mapping engine. Requires RasProcess.exe (bundled with HEC-RAS).
+    mapping engine via RasStoreMapHelper.exe (bundled with ras-commander).
     """
 
     from ras2cng.mapping import generate_result_maps
@@ -388,6 +390,8 @@ def map_command(
             froude=froude,
             shear_stress=shear_stress,
             depth_x_velocity=dv,
+            depth_x_velocity_sq=dv_sq,
+            inundation_boundary=inundation_boundary,
             arrival_time=arrival_time,
             duration=duration,
             recession=recession,
@@ -399,6 +403,72 @@ def map_command(
             convert_cog=cog,
             timeout=timeout,
             skip_errors=skip_errors,
+        )
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("terrain-mod")
+def terrain_mod_command(
+    project: Path = typer.Argument(
+        ..., help="HEC-RAS project directory or .prj file"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Output GeoTIFF path"
+    ),
+    geometry: Optional[str] = typer.Option(
+        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: first"
+    ),
+    terrain_name: Optional[str] = typer.Option(
+        None, "--terrain", help="Specific terrain name from rasmap"
+    ),
+):
+    """Export terrain with modifications (channels, levees, etc.) as GeoTIFF.
+
+    Samples the modified terrain surface at full raster resolution via
+    RasMapperLib. Requires HEC-RAS 6.6+ and pythonnet (Windows only).
+    """
+
+    from ras2cng.terrain import export_modified_terrain
+
+    try:
+        export_modified_terrain(
+            project,
+            output,
+            geometry=geometry,
+            terrain_name=terrain_name,
+        )
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("mannings")
+def mannings_command(
+    project: Path = typer.Argument(
+        ..., help="HEC-RAS project directory or .prj file"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Output GeoTIFF path"
+    ),
+    geometry: Optional[str] = typer.Option(
+        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: first"
+    ),
+):
+    """Export final Manning's n raster (base landcover + calibration overrides).
+
+    Produces a full-resolution GeoTIFF of Manning's n values matching the
+    land cover raster grid, with all calibration region overrides applied.
+    """
+
+    from ras2cng.terrain import export_mannings_raster
+
+    try:
+        export_mannings_raster(
+            project,
+            output,
+            geometry=geometry,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")

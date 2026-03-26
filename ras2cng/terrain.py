@@ -5,6 +5,8 @@ Provides:
 - discover_terrains(): Discover terrain layers from rasmap in priority order
 - consolidate_terrain(): Merge multiple terrain TIFFs, optionally downsample,
   and create a new HEC-RAS terrain HDF via RasProcess.exe
+- export_modified_terrain(): Export terrain with modifications as GeoTIFF
+- export_mannings_raster(): Export final Manning's n values as GeoTIFF
 """
 
 from __future__ import annotations
@@ -523,6 +525,158 @@ def _reproject_to_match(src_dataset, target_crs, work_dir: Path) -> Path:
             )
 
     return tmp_path
+
+
+def export_modified_terrain(
+    project_path: Path,
+    output_tif: Path,
+    *,
+    geometry: Optional[str] = None,
+    terrain_name: Optional[str] = None,
+) -> Path:
+    """Export terrain with modifications applied as a GeoTIFF.
+
+    Reads the original terrain raster grid, then samples the modified terrain
+    (channels, levees, polygon overrides, etc.) at each cell center via
+    RasMapperLib and writes the result.
+
+    Requires HEC-RAS 6.6+ installed and pythonnet (Windows only).
+
+    Args:
+        project_path: Path to .prj file or project directory
+        output_tif: Output GeoTIFF path
+        geometry: Geometry number (e.g. "g01"). None = first geometry
+        terrain_name: Specific terrain to use. None = first terrain from rasmap
+
+    Returns:
+        Path to the output GeoTIFF
+    """
+    from ras_commander import init_ras_project
+    from ras_commander.terrain import RasTerrainMod
+    from ras2cng.project import resolve_project_path
+
+    project_dir, prj_file = resolve_project_path(Path(project_path))
+    ras = init_ras_project(project_dir, ras_object="new", load_results_summary=False)
+
+    # Resolve rasmap path
+    rasmap_path = project_dir / f"{prj_file.stem}.rasmap"
+    if not rasmap_path.exists():
+        rasmap_files = list(project_dir.glob("*.rasmap"))
+        if not rasmap_files:
+            raise FileNotFoundError("No .rasmap file found in project")
+        rasmap_path = rasmap_files[0]
+
+    # Resolve geometry HDF
+    if geometry:
+        geom_num = geometry.replace("g", "").zfill(2)
+    else:
+        geom_num = "01"
+    geom_hdf = project_dir / f"{ras.project_name}.g{geom_num}.hdf"
+    if not geom_hdf.exists():
+        raise FileNotFoundError(f"Geometry HDF not found: {geom_hdf}")
+
+    # Discover terrain TIF
+    terrains = discover_terrains(project_path)
+    if not terrains:
+        raise ValueError("No terrain data found in project")
+
+    if terrain_name:
+        matches = [t for t in terrains if t.name == terrain_name]
+        if not matches:
+            raise ValueError(f"Terrain '{terrain_name}' not found. Available: {[t.name for t in terrains]}")
+        terrain_info = matches[0]
+    else:
+        terrain_info = terrains[0]
+
+    if not terrain_info.tif_files:
+        raise ValueError(f"No TIF files found for terrain '{terrain_info.name}'")
+
+    terrain_tif = terrain_info.tif_files[0]
+
+    console.print(f"\n[bold cyan]ras2cng terrain-mod[/bold cyan] -> {output_tif}")
+    console.print(f"  Project  : {prj_file.name}")
+    console.print(f"  Geometry : g{geom_num}")
+    console.print(f"  Terrain  : {terrain_info.name} ({terrain_tif.name})")
+
+    # One-time setup for RasMapperLib
+    console.print("  Setting up GDAL bridge...")
+    RasTerrainMod.setup_gdal_bridge()
+
+    console.print("  Sampling modified terrain (this may take a while)...")
+    output_tif = Path(output_tif)
+    output_tif.parent.mkdir(parents=True, exist_ok=True)
+
+    RasTerrainMod.compute_modified_terrain_raster(
+        rasmap_path=str(rasmap_path),
+        geom_hdf_path=str(geom_hdf),
+        terrain_tif_path=str(terrain_tif),
+        output_tif_path=str(output_tif),
+    )
+
+    console.print(f"[green]OK[/green] Modified terrain raster: {output_tif}")
+    return output_tif
+
+
+def export_mannings_raster(
+    project_path: Path,
+    output_tif: Path,
+    *,
+    geometry: Optional[str] = None,
+) -> Path:
+    """Export final Manning's n raster (base + calibration overrides) as GeoTIFF.
+
+    Combines base land cover raster with calibration table and region polygon
+    overrides to produce the full-resolution Final Manning's N raster. Replicates
+    what RASMapper's FinalNValueLayer computes internally.
+
+    Args:
+        project_path: Path to .prj file or project directory
+        output_tif: Output GeoTIFF path
+        geometry: Geometry number (e.g. "g01"). None = first geometry
+
+    Returns:
+        Path to the output GeoTIFF
+    """
+    from ras_commander import init_ras_project
+    from ras_commander.hdf import HdfLandCover
+    from ras2cng.project import resolve_project_path
+
+    project_dir, prj_file = resolve_project_path(Path(project_path))
+    ras = init_ras_project(project_dir, ras_object="new", load_results_summary=False)
+
+    # Resolve geometry HDF
+    if geometry:
+        geom_num = geometry.replace("g", "").zfill(2)
+    else:
+        geom_num = "01"
+    geom_hdf = project_dir / f"{ras.project_name}.g{geom_num}.hdf"
+    if not geom_hdf.exists():
+        raise FileNotFoundError(f"Geometry HDF not found: {geom_hdf}")
+
+    console.print(f"\n[bold cyan]ras2cng mannings[/bold cyan] -> {output_tif}")
+    console.print(f"  Project  : {prj_file.name}")
+    console.print(f"  Geometry : g{geom_num}")
+
+    output_tif = Path(output_tif)
+    output_tif.parent.mkdir(parents=True, exist_ok=True)
+
+    console.print("  Computing final Manning's n raster...")
+    result = HdfLandCover.compute_final_mannings_raster(
+        hdf_path=geom_hdf,
+        output_tif_path=str(output_tif),
+        ras_object=ras,
+    )
+
+    if result is None:
+        raise RuntimeError(
+            "Manning's n raster computation failed. "
+            "Check that the geometry HDF has land cover associations configured."
+        )
+
+    console.print(f"  Shape: {result.shape[1]}x{result.shape[0]}")
+    console.print(f"  Range: {result[result > 0].min():.4f} to {result.max():.4f}")
+    console.print(f"[green]OK[/green] Manning's n raster: {output_tif}")
+    return output_tif
 
 
 def _downsample_tif(

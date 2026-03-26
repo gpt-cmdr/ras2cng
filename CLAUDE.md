@@ -42,7 +42,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 
 ## Architecture
 
-**CLI layer** (`cli.py`): Typer app with 7 commands (`inspect`, `archive`, `geometry`, `results`, `query`, `pmtiles`, `sync`). Uses lazy imports — heavy dependencies are imported inside command functions, not at module level.
+**CLI layer** (`cli.py`): Typer app with 10 commands (`inspect`, `archive`, `geometry`, `results`, `query`, `pmtiles`, `sync`, `terrain`, `map`, `terrain-mod`, `mannings`). Uses lazy imports — heavy dependencies are imported inside command functions, not at module level.
 
 **Core modules** — each handles one concern:
 - `project.py` — Full-project orchestration. `archive_project()` produces consolidated GeoParquet files (one per geometry source, one per plan) with `layer` discriminator column. `export_project_metadata()` writes RasPrj dataframes to a plain Parquet with `_table` column. `_write_geoparquet()` helper adds per-row bbox columns and ZSTD compression with GeoParquet `covering` metadata. `inspect_project()` returns a `ProjectInfo` dataclass (no file extraction). **Note**: `init_ras_project` and `export_all_variables` are imported at module level (not lazy) to enable mock patching in tests.
@@ -52,6 +52,8 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - `duckdb_session.py` — `DuckSession` class wraps DuckDB with auto-loaded spatial extension. `register_parquet()` detects WKB geometry columns and converts them to DuckDB GEOMETRY type. The table alias is always `_`.
 - `pmtiles.py` — Dispatches between vector (GeoParquet → GeoJSON → tippecanoe → PMTiles) and raster (GeoTIFF → gdal_translate → pmtiles) pipelines. Requires external CLIs: `tippecanoe`, `gdal_translate`, `pmtiles`.
 - `postgis_sync.py` — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2 with automatic spatial index creation.
+- `terrain.py` — Terrain discovery, consolidation, and raster export. `discover_terrains()` finds terrain layers from rasmap. `consolidate_terrain()` merges multiple TIFFs. `export_modified_terrain()` produces a full-resolution GeoTIFF of terrain with modifications (channels, levees, etc.) applied via `RasTerrainMod.compute_modified_terrain_raster()`. `export_mannings_raster()` wraps `HdfLandCover.compute_final_mannings_raster()` to produce a Manning's n GeoTIFF. Both terrain-mod and Manning's n exports require HEC-RAS 6.6+ on Windows.
+- `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0).
 
 **Data flow**: HEC-RAS files → ras-commander → GeoDataFrame → GeoParquet (ZSTD compression, bbox columns, Hilbert sorted). Archive output uses `_write_geoparquet()` which adds `covering` metadata for spatial predicate pushdown.
 

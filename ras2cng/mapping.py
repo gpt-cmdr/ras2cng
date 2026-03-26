@@ -2,7 +2,7 @@
 Result raster generation for ras2cng.
 
 Provides:
-- generate_result_maps(): Generate WSE/Depth/Velocity/etc. rasters via RasProcess.exe
+- generate_result_maps(): Generate WSE/Depth/Velocity/etc. rasters via RasStoreMapHelper.exe
 - MapResult: Structured output from map generation
 """
 
@@ -37,6 +37,8 @@ MAP_TYPE_VARIABLES = {
     "froude": "Froude Number",
     "shear_stress": "Shear Stress",
     "depth_x_velocity": "Depth x Velocity",
+    "depth_x_velocity_sq": "Depth x Velocity²",
+    "inundation_boundary": "Inundation Boundary",
     "arrival_time": "Arrival Time",
     "duration": "Duration",
     "recession": "Recession",
@@ -55,6 +57,8 @@ def generate_result_maps(
     froude: bool = False,
     shear_stress: bool = False,
     depth_x_velocity: bool = False,
+    depth_x_velocity_sq: bool = False,
+    inundation_boundary: bool = False,
     arrival_time: bool = False,
     duration: bool = False,
     recession: bool = False,
@@ -69,7 +73,8 @@ def generate_result_maps(
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
-    Uses RasProcess.store_maps() to generate raw TIFs from completed plan HDF files.
+    Uses RasProcess.store_maps() with RasStoreMapHelper.exe to generate raw TIFs
+    from completed plan HDF files.
 
     Args:
         project_path: Path to .prj file or project directory
@@ -82,12 +87,14 @@ def generate_result_maps(
         froude: Generate Froude Number rasters
         shear_stress: Generate Shear Stress rasters
         depth_x_velocity: Generate Depth x Velocity rasters
+        depth_x_velocity_sq: Generate Depth x Velocity² rasters
+        inundation_boundary: Generate Inundation Boundary polygon (shapefile)
         arrival_time: Generate Arrival Time rasters
         duration: Generate Duration rasters
         recession: Generate Recession rasters
         terrain_name: Specific terrain name from rasmap to use for mapping
         ras_version: HEC-RAS version (auto-detected if None)
-        rasprocess_path: Path to RasProcess.exe (required on Linux/Wine)
+        rasprocess_path: Path to HEC-RAS install directory (for helper deployment)
         min_depth: Minimum depth threshold for depth rasters (default: 0.0)
         reproject_wgs84: Reproject output rasters to WGS84
         convert_cog: Convert output to Cloud Optimized GeoTIFF
@@ -120,6 +127,8 @@ def generate_result_maps(
         wse=wse, depth=depth, velocity=velocity,
         froude=froude, shear_stress=shear_stress,
         depth_x_velocity=depth_x_velocity,
+        depth_x_velocity_sq=depth_x_velocity_sq,
+        inundation_boundary=inundation_boundary,
         arrival_time=arrival_time, duration=duration,
         recession=recession,
     )
@@ -258,10 +267,10 @@ def _generate_plan_maps(
     timeout: int = 600,
     **type_flags,
 ) -> dict[str, list[Path]]:
-    """Generate all requested map types for a plan in a single RasProcess call.
+    """Generate all requested map types for a plan via RasStoreMapHelper.exe.
 
-    Uses RasProcess.store_maps() which calls RasProcess.exe StoreAllMaps
-    to render all requested variables to GeoTIFF rasters at once.
+    Uses RasProcess.store_maps() which deploys RasStoreMapHelper.exe to set
+    the correct render mode via .NET reflection before StoreAllMapsCommand.
 
     Args:
         ras: Initialized RAS project object
@@ -283,6 +292,8 @@ def _generate_plan_maps(
         "froude": "froude",
         "shear_stress": "shear_stress",
         "depth_x_velocity": "depth_x_velocity",
+        "depth_x_velocity_sq": "depth_x_velocity_sq",
+        "inundation_boundary": "inundation_boundary",
         "arrival_time": None,  # Not directly supported by store_maps
         "duration": None,
         "recession": None,
@@ -296,7 +307,7 @@ def _generate_plan_maps(
 
     raw_results = RasProcess.store_maps(
         plan_number=plan_number,
-        output_folder=str(output_dir),
+        output_path=str(output_dir),
         profile=profile,
         timeout=timeout,
         ras_object=ras,
@@ -312,6 +323,8 @@ def _generate_plan_maps(
         "froude": "froude",
         "shear_stress": "shear_stress",
         "depth_x_velocity": "depth_x_velocity",
+        "depth_x_velocity_sq": "depth_x_velocity_sq",
+        "inundation_boundary": "inundation_boundary",
     }
 
     result = {}
@@ -328,14 +341,21 @@ def _apply_depth_threshold(tif_paths: list[Path], min_depth: float) -> list[Path
     """Apply minimum depth threshold to depth rasters.
 
     Pixels with depth < min_depth are set to NoData.
+    Output is written alongside the original with _filtered suffix.
     """
     try:
         processed = []
         for tif in tif_paths:
+            out_path = tif.parent / f"{tif.stem}_filtered{tif.suffix}"
             result = RasProcess.apply_depth_threshold(
-                str(tif), min_depth=min_depth
+                input_tiff=str(tif),
+                output_tiff=str(out_path),
+                min_depth=min_depth,
             )
-            processed.append(Path(result) if result else tif)
+            if result and Path(result.get("output", "")).exists():
+                processed.append(Path(result["output"]))
+            else:
+                processed.append(out_path if out_path.exists() else tif)
         return processed
     except Exception:
         return tif_paths
