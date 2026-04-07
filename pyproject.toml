@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ras2cng"
-version = "0.4.0"
+version = "0.5.0"
 description = "CLI for exporting HEC-RAS geometry/results to cloud-native GIS formats (GeoParquet, PMTiles, DuckDB, PostGIS)"
 readme = "README.md"
 license = {file = "LICENSE"}
