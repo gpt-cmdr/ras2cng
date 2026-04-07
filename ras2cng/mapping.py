@@ -65,6 +65,7 @@ def generate_result_maps(
     terrain_name: Optional[str] = None,
     ras_version: Optional[str] = None,
     rasprocess_path: Optional[Path] = None,
+    render_mode: Optional[str] = None,
     min_depth: float = 0.0,
     reproject_wgs84: bool = False,
     convert_cog: bool = False,
@@ -95,6 +96,8 @@ def generate_result_maps(
         terrain_name: Specific terrain name from rasmap to use for mapping
         ras_version: HEC-RAS version (auto-detected if None)
         rasprocess_path: Path to HEC-RAS install directory (for helper deployment)
+        render_mode: Water surface render mode: "horizontal", "sloping", or "slopingPretty".
+            If None, reads from the .rasmap file (default: horizontal).
         min_depth: Minimum depth threshold for depth rasters (default: 0.0)
         reproject_wgs84: Reproject output rasters to WGS84
         convert_cog: Convert output to Cloud Optimized GeoTIFF
@@ -182,6 +185,7 @@ def generate_result_maps(
                 profile=profile,
                 output_dir=plan_output,
                 terrain_name=terrain_name,
+                render_mode=render_mode,
                 timeout=timeout,
                 **type_flags,
             )
@@ -264,6 +268,7 @@ def _generate_plan_maps(
     profile: str,
     output_dir: Path,
     terrain_name: Optional[str] = None,
+    render_mode: Optional[str] = None,
     timeout: int = 600,
     **type_flags,
 ) -> dict[str, list[Path]]:
@@ -278,6 +283,8 @@ def _generate_plan_maps(
         profile: Profile to map ("Max", "Min", or timestamp)
         output_dir: Directory for output rasters
         terrain_name: Specific terrain name (optional)
+        render_mode: Water surface render mode ("horizontal", "sloping", or
+            "slopingPretty"). None reads from .rasmap file.
         timeout: Command timeout in seconds
         **type_flags: Boolean flags for each map type (wse, depth, velocity, etc.)
 
@@ -309,6 +316,7 @@ def _generate_plan_maps(
         plan_number=plan_number,
         output_path=str(output_dir),
         profile=profile,
+        render_mode=render_mode,
         timeout=timeout,
         ras_object=ras,
         **store_kwargs,

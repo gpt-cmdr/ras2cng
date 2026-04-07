@@ -69,6 +69,9 @@ def archive_command(
     consolidate_terrain: bool = typer.Option(
         False, "--consolidate-terrain", help="Merge terrains into single COG"
     ),
+    render_mode: Optional[str] = typer.Option(
+        None, "--render-mode", help="Water surface render mode: horizontal, sloping, slopingPretty"
+    ),
     ras_version: Optional[str] = typer.Option(
         None, "--ras-version", help="HEC-RAS version for RasProcess mapping"
     ),
@@ -101,6 +104,7 @@ def archive_command(
             sort=not no_sort,
             map_results=map_results,
             consolidate_terrain=consolidate_terrain,
+            render_mode=render_mode,
             ras_version=ras_version,
             rasprocess_path=rasprocess,
         )
@@ -350,6 +354,9 @@ def map_command(
     terrain_name: Optional[str] = typer.Option(
         None, "--terrain", help="Specific terrain name from rasmap"
     ),
+    render_mode: Optional[str] = typer.Option(
+        None, "--render-mode", help="Water surface render mode: horizontal, sloping, slopingPretty"
+    ),
     ras_version: Optional[str] = typer.Option(
         None, "--ras-version", help="HEC-RAS version (e.g. 6.6)"
     ),
@@ -398,6 +405,7 @@ def map_command(
             terrain_name=terrain_name,
             ras_version=ras_version,
             rasprocess_path=rasprocess,
+            render_mode=render_mode,
             min_depth=min_depth,
             reproject_wgs84=wgs84,
             convert_cog=cog,

@@ -264,6 +264,25 @@ def test_generate_result_maps_no_types_selected(mock_init, mock_config, mock_gen
 @patch("ras2cng.mapping._generate_plan_maps")
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
+def test_generate_result_maps_passes_render_mode(mock_init, mock_config, mock_gen, tmp_path):
+    """render_mode should be forwarded to _generate_plan_maps."""
+    ras, project_dir, prj = _make_fake_ras(tmp_path, plan_count=1)
+    mock_init.return_value = ras
+    mock_gen.return_value = {}
+
+    generate_result_maps(
+        project_dir, tmp_path / "maps",
+        wse=False, depth=True, velocity=False,
+        render_mode="slopingPretty",
+    )
+
+    _, kwargs = mock_gen.call_args
+    assert kwargs.get("render_mode") == "slopingPretty"
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
 def test_generate_result_maps_empty_project(mock_init, mock_config, mock_gen, tmp_path):
     """Should handle project with no plans gracefully."""
     project_dir = tmp_path / "project"

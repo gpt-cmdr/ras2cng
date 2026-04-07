@@ -444,6 +444,7 @@ def archive_project(
     sort: bool = True,
     map_results: bool = False,
     consolidate_terrain: bool = False,
+    render_mode: Optional[str] = None,
     ras_version: Optional[str] = None,
     rasprocess_path: Optional[Path] = None,
 ) -> Manifest:
@@ -466,6 +467,7 @@ def archive_project(
         sort: If True (default), apply Hilbert spatial sort within each layer
         map_results: If True, generate result rasters via RasProcess after export
         consolidate_terrain: If True, merge terrains into single COG
+        render_mode: Water surface render mode: "horizontal", "sloping", or "slopingPretty"
         ras_version: HEC-RAS version for RasProcess mapping
         rasprocess_path: Path to RasProcess.exe (required on Linux/Wine)
 
@@ -764,6 +766,7 @@ def archive_project(
                 project_path,
                 map_output,
                 plans=plan_filter_list,
+                render_mode=render_mode,
                 ras_version=ras_version,
                 rasprocess_path=rasprocess_path,
                 skip_errors=skip_errors,

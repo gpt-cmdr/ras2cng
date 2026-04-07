@@ -3599,7 +3599,7 @@ wheels = [
 
 [[package]]
 name = "ras-commander"
-version = "0.92.0"
+version = "0.93.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
@@ -3623,9 +3623,9 @@ dependencies = [
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2026.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/58/89fb2060a0f4550564b11eb7176d472a0bcf6a3067a93bc6c369351dbb38/ras_commander-0.92.0.tar.gz", hash = "sha256:181e0267e40c5d6fb20000d6496a9a23d8053face326f23f46bb0c7f679aedbd", size = 861972, upload-time = "2026-03-25T01:26:16.929Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/7b/58030f29d805b9c5b0d395389c5cfb118113c9b08e4885a3c23f4770ee72/ras_commander-0.93.0.tar.gz", hash = "sha256:7f8ea4f3cb533269affd8ef64e47472febf5b8e029827481b5110e15ef5fdffc", size = 919879, upload-time = "2026-04-07T16:24:39.248Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/5a/59a22674515d15321e5338d8067bed64202bdc89a30e210359b36e4ea550/ras_commander-0.92.0-py3-none-any.whl", hash = "sha256:aa01d89603839d3f3ddb1a9c2cbe53680451e8f0279ca01eacc06a0b10e8f200", size = 906423, upload-time = "2026-03-25T01:26:15.674Z" },
+    { url = "https://files.pythonhosted.org/packages/40/32/cd20bf76ecf12eb324ae7845fe06ab937ca28f0c7a28212391102e034398/ras_commander-0.93.0-py3-none-any.whl", hash = "sha256:6a0bb0d8ea3b589173cb2317ab257426ef32e4452bdccd1f1c14bfebb3f76778", size = 951297, upload-time = "2026-04-07T16:24:37.816Z" },
 ]
 
 [[package]]
@@ -3691,7 +3691,7 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgis'", specifier = ">=2.9.0" },
     { name = "pyarrow", specifier = ">=14.0.0" },
-    { name = "ras-commander", specifier = ">=0.92.0" },
+    { name = "ras-commander", specifier = ">=0.93.0" },
     { name = "rasterio", marker = "extra == 'all'", specifier = ">=1.3.0" },
     { name = "rasterio", marker = "extra == 'pmtiles'", specifier = ">=1.3.0" },
     { name = "rich", specifier = ">=13.0.0" },
