@@ -4,12 +4,12 @@
 
 ```
 ras2cng/
-├── cli.py           — Typer CLI (9 commands): inspect, archive, geometry, results, query, pmtiles, sync, terrain, map
+├── cli.py           — Typer CLI (11 commands): inspect, archive, geometry, results, query, pmtiles, sync, terrain, map, terrain-mod, mannings
 ├── project.py       — Full-project orchestration: inspect, archive, metadata export
 ├── catalog.py       — Manifest schema v2.1 for archive catalogs (manifest.json)
 ├── geometry.py      — HDF + text geometry export via ras-commander (10 HDF + 3 text layers)
 ├── results.py       — Plan HDF results export + polygon join
-├── mapping.py       — Result raster generation via RasProcess.exe (WSE, Depth, Velocity, etc.)
+├── mapping.py       — Result raster generation via RasStoreMapHelper.exe (WSE, Depth, Velocity, etc.)
 ├── terrain.py       — Terrain discovery, consolidation, and downsampling
 ├── duckdb_session.py — DuckDB wrapper with auto-loaded spatial extension
 ├── pmtiles.py       — Vector/raster PMTiles pipeline
@@ -33,8 +33,8 @@ project.py (archive_project / inspect_project)
      │  Orchestrates extraction via geometry.py / results.py / mapping.py / terrain.py
      ▼
 geometry.py / results.py          mapping.py / terrain.py
-     │  ras-commander parses            │  RasProcess.exe generates
-     │  HDF/text → GeoDataFrame         │  rasters and terrain HDFs
+     │  ras-commander parses            │  RasStoreMapHelper.exe generates
+     │  HDF/text → GeoDataFrame         │  pixel-perfect rasters + terrain HDFs
      ▼                                  ▼
 GeoParquet (ZSTD, bbox, Hilbert)  GeoTIFF rasters + terrain HDFs
      │

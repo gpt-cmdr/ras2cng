@@ -99,6 +99,15 @@ ras2cng archive path/to/project /output/archive --results --plans p01,p02
 # Full archive
 ras2cng archive path/to/project /output/archive --results --terrain
 
+# Generate result rasters (WSE, Depth, Velocity) alongside the archive
+ras2cng archive path/to/project /output/archive --results --map
+
+# Generate rasters with a specific render mode
+ras2cng archive path/to/project /output/archive --results --map --render-mode sloping
+
+# Consolidate terrains into a single COG
+ras2cng archive path/to/project /output/archive --terrain --consolidate-terrain
+
 # Disable Hilbert spatial sorting
 ras2cng archive path/to/project /output/archive --no-sort
 
@@ -141,6 +150,15 @@ manifest = archive_project(
     Path("project.prj"),
     Path("/output/archive"),
     include_terrain=True,
+)
+
+# Archive with result raster generation
+manifest = archive_project(
+    Path("project.prj"),
+    Path("/output/archive"),
+    include_results=True,
+    map_results=True,
+    render_mode="horizontal",  # or "sloping", "slopingPretty"
 )
 
 # Archive with custom options
@@ -268,10 +286,15 @@ for entry in m.geometry:
 | _(default, no flags)_ | Archiving geometry for GIS analysis, tile generation, or multi-project inventory |
 | `--results` | You need flood depth/velocity maps and the model has been run |
 | `--terrain` | You need the DEM in cloud-optimized format for raster tile generation |
+| `--map` | Generate result rasters (WSE, Depth, Velocity) via RasStoreMapHelper |
+| `--consolidate-terrain` | Merge multiple terrain TIFFs into a single COG |
+| `--render-mode` | Set water surface render mode: `horizontal`, `sloping`, or `slopingPretty` |
 | `--plan-geometry` | Also extract the geometry copy embedded in plan HDF files |
 | `--plans p01,p02` | Only specific scenarios are relevant (saves time/space on large projects) |
 | `--no-sort` | Disable Hilbert spatial sorting (on by default) |
 | `--fail-fast` | Debugging extraction issues; default is to skip and continue |
+| `--ras-version` | Specify HEC-RAS version for RasProcess mapping |
+| `--rasprocess` | Path to HEC-RAS install directory (required on Linux/Wine) |
 
 ---
 

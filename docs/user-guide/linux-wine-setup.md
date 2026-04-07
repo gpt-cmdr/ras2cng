@@ -1,6 +1,6 @@
 # Linux/Wine Setup for Result Mapping
 
-The `ras2cng map` and `ras2cng terrain` commands use **RasProcess.exe** from HEC-RAS to generate result rasters and terrain HDFs. On Linux, RasProcess.exe runs under [Wine](https://www.winehq.org/).
+The `ras2cng map` and `ras2cng terrain` commands use **RasStoreMapHelper.exe** (bundled with ras-commander) to generate result rasters, and **RasProcess.exe** from HEC-RAS for terrain HDFs. Both run under [Wine](https://www.winehq.org/) on Linux. The helper sets the correct water surface render mode via .NET reflection before generating maps, producing pixel-perfect output.
 
 This guide covers setting up Wine + RasProcess.exe on Ubuntu Linux.
 
@@ -186,6 +186,11 @@ ras2cng map /path/to/project /output/maps \
   --depth --no-wse --no-velocity \
   --plans p01
 
+# Specify render mode (horizontal, sloping, or slopingPretty)
+ras2cng map /path/to/project /output/maps \
+  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
+  --render-mode sloping
+
 # Custom timeout (default: 3 hours)
 ras2cng map /path/to/project /output/maps \
   --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
@@ -215,7 +220,8 @@ ras2cng archive /path/to/project /output/archive \
   --terrain \
   --map \
   --consolidate-terrain \
-  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe
+  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
+  --render-mode horizontal
 ```
 
 ### Python API
@@ -230,6 +236,7 @@ results = generate_result_maps(
     "/output/maps",
     rasprocess_path="/opt/ras2cng-data/ras66/RasProcess.exe",
     depth=True, wse=True, velocity=True,
+    render_mode="horizontal",  # or "sloping", "slopingPretty"
 )
 
 # Discover terrains in a project
