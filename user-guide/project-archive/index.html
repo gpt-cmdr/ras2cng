@@ -2234,11 +2234,20 @@ with <code>WHERE layer = 'mesh_cells'</code> and avoids directory proliferation.
 <a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="c1"># Full archive</span>
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--results<span class="w"> </span>--terrain
 <a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="c1"># Disable Hilbert spatial sorting</span>
-<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--no-sort
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="c1"># Generate result rasters (WSE, Depth, Velocity) alongside the archive</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--results<span class="w"> </span>--map
 <a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>
-<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="c1"># Fail fast on any extraction error (default: skip and continue)</span>
-<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--fail-fast
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="c1"># Generate rasters with a specific render mode</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--results<span class="w"> </span>--map<span class="w"> </span>--render-mode<span class="w"> </span>sloping
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="c1"># Consolidate terrains into a single COG</span>
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--terrain<span class="w"> </span>--consolidate-terrain
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>
+<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="c1"># Disable Hilbert spatial sorting</span>
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--no-sort
+<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>
+<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a><span class="c1"># Fail fast on any extraction error (default: skip and continue)</span>
+<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive<span class="w"> </span>--fail-fast
 </code></pre></div>
 <hr />
 <h2 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h2>
@@ -2274,16 +2283,25 @@ with <code>WHERE layer = 'mesh_cells'</code> and avoids directory proliferation.
 <a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>    <span class="n">include_terrain</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a><span class="p">)</span>
 <a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>
-<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="c1"># Archive with custom options</span>
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="c1"># Archive with result raster generation</span>
 <a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a><span class="n">manifest</span> <span class="o">=</span> <span class="n">archive_project</span><span class="p">(</span>
 <a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;project.prj&quot;</span><span class="p">),</span>
 <a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/output/archive&quot;</span><span class="p">),</span>
 <a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>    <span class="n">include_results</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>    <span class="n">include_terrain</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>    <span class="n">include_plan_geometry</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># Also extract geometry from plan HDFs</span>
-<a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a>    <span class="n">sort</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>                  <span class="c1"># Disable Hilbert sorting</span>
-<a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a>    <span class="n">skip_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>           <span class="c1"># Fail fast on errors</span>
-<a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a><span class="p">)</span>
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>    <span class="n">map_results</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>    <span class="n">render_mode</span><span class="o">=</span><span class="s2">&quot;horizontal&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;sloping&quot;, &quot;slopingPretty&quot;</span>
+<a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a><span class="p">)</span>
+<a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a>
+<a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a><span class="c1"># Archive with custom options</span>
+<a id="__codelineno-4-43" name="__codelineno-4-43" href="#__codelineno-4-43"></a><span class="n">manifest</span> <span class="o">=</span> <span class="n">archive_project</span><span class="p">(</span>
+<a id="__codelineno-4-44" name="__codelineno-4-44" href="#__codelineno-4-44"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;project.prj&quot;</span><span class="p">),</span>
+<a id="__codelineno-4-45" name="__codelineno-4-45" href="#__codelineno-4-45"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/output/archive&quot;</span><span class="p">),</span>
+<a id="__codelineno-4-46" name="__codelineno-4-46" href="#__codelineno-4-46"></a>    <span class="n">include_results</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-4-47" name="__codelineno-4-47" href="#__codelineno-4-47"></a>    <span class="n">include_terrain</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-4-48" name="__codelineno-4-48" href="#__codelineno-4-48"></a>    <span class="n">include_plan_geometry</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># Also extract geometry from plan HDFs</span>
+<a id="__codelineno-4-49" name="__codelineno-4-49" href="#__codelineno-4-49"></a>    <span class="n">sort</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>                  <span class="c1"># Disable Hilbert sorting</span>
+<a id="__codelineno-4-50" name="__codelineno-4-50" href="#__codelineno-4-50"></a>    <span class="n">skip_errors</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>           <span class="c1"># Fail fast on errors</span>
+<a id="__codelineno-4-51" name="__codelineno-4-51" href="#__codelineno-4-51"></a><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h2 id="manifestjson-schema">manifest.json Schema<a class="headerlink" href="#manifestjson-schema" title="Permanent link">&para;</a></h2>
@@ -2404,6 +2422,18 @@ with <code>WHERE layer = 'mesh_cells'</code> and avoids directory proliferation.
 <td>You need the DEM in cloud-optimized format for raster tile generation</td>
 </tr>
 <tr>
+<td><code>--map</code></td>
+<td>Generate result rasters (WSE, Depth, Velocity) via RasStoreMapHelper</td>
+</tr>
+<tr>
+<td><code>--consolidate-terrain</code></td>
+<td>Merge multiple terrain TIFFs into a single COG</td>
+</tr>
+<tr>
+<td><code>--render-mode</code></td>
+<td>Set water surface render mode: <code>horizontal</code>, <code>sloping</code>, or <code>slopingPretty</code></td>
+</tr>
+<tr>
 <td><code>--plan-geometry</code></td>
 <td>Also extract the geometry copy embedded in plan HDF files</td>
 </tr>
@@ -2418,6 +2448,14 @@ with <code>WHERE layer = 'mesh_cells'</code> and avoids directory proliferation.
 <tr>
 <td><code>--fail-fast</code></td>
 <td>Debugging extraction issues; default is to skip and continue</td>
+</tr>
+<tr>
+<td><code>--ras-version</code></td>
+<td>Specify HEC-RAS version for RasProcess mapping</td>
+</tr>
+<tr>
+<td><code>--rasprocess</code></td>
+<td>Path to HEC-RAS install directory (required on Linux/Wine)</td>
 </tr>
 </tbody>
 </table>
@@ -2463,7 +2501,7 @@ with <code>WHERE layer = 'mesh_cells'</code> and avoids directory proliferation.
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 03:21:51 UTC">March 10, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="April 7, 2026 20:16:45 UTC">April 7, 2026</span>
   </span>
 
     

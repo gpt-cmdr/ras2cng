@@ -10,4 +10,4 @@ pyarrow
 typer
 rich
 duckdb>=1.0.0
-ras-commander>=0.89.0
+ras-commander>=0.93.0

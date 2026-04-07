@@ -2273,7 +2273,7 @@
 
 
 <h1 id="linuxwine-setup-for-result-mapping">Linux/Wine Setup for Result Mapping<a class="headerlink" href="#linuxwine-setup-for-result-mapping" title="Permanent link">&para;</a></h1>
-<p>The <code>ras2cng map</code> and <code>ras2cng terrain</code> commands use <strong>RasProcess.exe</strong> from HEC-RAS to generate result rasters and terrain HDFs. On Linux, RasProcess.exe runs under <a href="https://www.winehq.org/">Wine</a>.</p>
+<p>The <code>ras2cng map</code> and <code>ras2cng terrain</code> commands use <strong>RasStoreMapHelper.exe</strong> (bundled with ras-commander) to generate result rasters, and <strong>RasProcess.exe</strong> from HEC-RAS for terrain HDFs. Both run under <a href="https://www.winehq.org/">Wine</a> on Linux. The helper sets the correct water surface render mode via .NET reflection before generating maps, producing pixel-perfect output.</p>
 <p>This guide covers setting up Wine + RasProcess.exe on Ubuntu Linux.</p>
 <h2 id="tested-configuration">Tested Configuration<a class="headerlink" href="#tested-configuration" title="Permanent link">&para;</a></h2>
 <table>
@@ -2473,10 +2473,15 @@
 <a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span>--depth<span class="w"> </span>--no-wse<span class="w"> </span>--no-velocity<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">  </span>--plans<span class="w"> </span>p01
 <a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="c1"># Custom timeout (default: 3 hours)</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="c1"># Specify render mode (horizontal, sloping, or slopingPretty)</span>
 <a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span>--timeout<span class="w"> </span><span class="m">7200</span>
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span>--render-mode<span class="w"> </span>sloping
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>
+<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="c1"># Custom timeout (default: 3 hours)</span>
+<a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="w">  </span>--timeout<span class="w"> </span><span class="m">7200</span>
 </code></pre></div>
 <h3 id="consolidate-terrain">Consolidate terrain<a class="headerlink" href="#consolidate-terrain" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Merge all terrain TIFFs into a single file</span>
@@ -2496,7 +2501,8 @@
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>--terrain<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span>--map<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span>--consolidate-terrain<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span>--render-mode<span class="w"> </span>horizontal
 </code></pre></div>
 <h3 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_result_maps</span>
@@ -2508,20 +2514,21 @@
 <a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    <span class="s2">&quot;/output/maps&quot;</span><span class="p">,</span>
 <a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>    <span class="n">rasprocess_path</span><span class="o">=</span><span class="s2">&quot;/opt/ras2cng-data/ras66/RasProcess.exe&quot;</span><span class="p">,</span>
 <a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    <span class="n">depth</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">wse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="p">)</span>
-<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
-<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="c1"># Discover terrains in a project</span>
-<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="n">terrains</span> <span class="o">=</span> <span class="n">discover_terrains</span><span class="p">(</span><span class="s2">&quot;/path/to/project&quot;</span><span class="p">)</span>
-<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terrains</span><span class="p">:</span>
-<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">tif_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> TIFs, HDF exists: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">hdf_exists</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>
-<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="c1"># Consolidate terrain TIFFs</span>
-<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="n">merged</span> <span class="o">=</span> <span class="n">consolidate_terrain</span><span class="p">(</span>
-<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a>    <span class="s2">&quot;/path/to/project&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>    <span class="s2">&quot;/output/terrain&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>    <span class="n">terrain_name</span><span class="o">=</span><span class="s2">&quot;Consolidated&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>    <span class="n">create_hdf</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a><span class="p">)</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>    <span class="n">render_mode</span><span class="o">=</span><span class="s2">&quot;horizontal&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;sloping&quot;, &quot;slopingPretty&quot;</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="p">)</span>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="c1"># Discover terrains in a project</span>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="n">terrains</span> <span class="o">=</span> <span class="n">discover_terrains</span><span class="p">(</span><span class="s2">&quot;/path/to/project&quot;</span><span class="p">)</span>
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terrains</span><span class="p">:</span>
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">tif_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> TIFs, HDF exists: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">hdf_exists</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="c1"># Consolidate terrain TIFFs</span>
+<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="n">merged</span> <span class="o">=</span> <span class="n">consolidate_terrain</span><span class="p">(</span>
+<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>    <span class="s2">&quot;/path/to/project&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>    <span class="s2">&quot;/output/terrain&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>    <span class="n">terrain_name</span><span class="o">=</span><span class="s2">&quot;Consolidated&quot;</span><span class="p">,</span>
+<a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a>    <span class="n">create_hdf</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="p">)</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">configure_wine expects a directory</p>
@@ -2600,7 +2607,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 11, 2026 11:19:45 UTC">March 11, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="April 7, 2026 20:16:45 UTC">April 7, 2026</span>
   </span>
 
     
