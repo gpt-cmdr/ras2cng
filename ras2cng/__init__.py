@@ -48,7 +48,7 @@ from ras2cng.catalog import (
 from ras2cng.mapping import generate_result_maps, MapResult
 from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 
-__version__ = "0.4.0"
+__version__ = "0.5.1"
 __all__ = [
     # Geometry
     "export_geometry_layers",
