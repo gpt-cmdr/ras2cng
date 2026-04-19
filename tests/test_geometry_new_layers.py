@@ -42,9 +42,10 @@ def _fake_gdf(geom_type="LineString", n=3):
 
 def test_hdf_layers_dict_includes_all_expected():
     expected = {
-        "mesh_cells", "mesh_areas", "cross_sections", "centerlines",
-        "bc_lines", "breaklines", "refinement_regions", "reference_lines",
-        "reference_points", "structures",
+        "mesh_cells", "mesh_faces", "mesh_areas", "cross_sections",
+        "centerlines", "bank_lines", "bc_lines", "breaklines",
+        "refinement_regions", "reference_lines", "reference_points",
+        "structures",
     }
     assert expected == set(HDF_LAYERS.keys()), f"Missing: {expected - set(HDF_LAYERS.keys())}"
 

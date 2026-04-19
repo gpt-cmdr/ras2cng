@@ -28,9 +28,11 @@ from ras_commander.geom import GeomStorage
 
 HDF_LAYERS: dict[str, tuple] = {
     "mesh_cells":           (None, None),           # handled specially (polygon/point fallback)
+    "mesh_faces":           (None, None),           # handled specially (polygon boundary → lines)
     "mesh_areas":           (HdfMesh, "get_mesh_areas"),
     "cross_sections":       (HdfXsec, "get_cross_sections"),
     "centerlines":          (HdfXsec, "get_river_centerlines"),
+    "bank_lines":           (HdfXsec, "get_river_bank_lines"),
     "bc_lines":             (HdfBndry, "get_bc_lines"),
     "breaklines":           (HdfBndry, "get_breaklines"),
     "refinement_regions":   (HdfBndry, "get_refinement_regions"),
@@ -73,6 +75,15 @@ def _ensure_utf8_readable(geom_path: Path) -> Path:
         return tmp
 
 
+def _maybe_reproject(gdf: gpd.GeoDataFrame, out_crs: Optional[str]) -> gpd.GeoDataFrame:
+    """Reproject GeoDataFrame to out_crs if set and different from current CRS."""
+    if out_crs is None:
+        return gdf
+    if gdf.crs is not None and not gdf.crs.equals(out_crs):
+        return gdf.to_crs(out_crs)
+    return gdf
+
+
 def _is_hdf_geometry(path: Path) -> bool:
     suf = [s.lower() for s in path.suffixes]
     return len(suf) >= 2 and suf[-1] == ".hdf" and suf[-2].startswith(".g")
@@ -99,10 +110,23 @@ def _extract_mesh_cells(hdf_path: Path) -> Optional[object]:
     return None
 
 
+def _extract_mesh_faces(hdf_path: Path) -> Optional[object]:
+    """Extract mesh cell boundaries as LineStrings for line-based rendering."""
+    gdf = _extract_mesh_cells(hdf_path)
+    if gdf is None or len(gdf) == 0:
+        return None
+    gdf = gdf.copy()
+    gdf.geometry = gdf.geometry.boundary
+    return gdf
+
+
 def _extract_hdf_layer(hdf_path: Path, layer: str) -> Optional[object]:
     """Extract a single named layer from an HDF geometry file. Returns GDF or None."""
     if layer == "mesh_cells":
         return _extract_mesh_cells(hdf_path)
+
+    if layer == "mesh_faces":
+        return _extract_mesh_faces(hdf_path)
 
     if layer not in HDF_LAYERS:
         raise ValueError(f"Unknown HDF layer '{layer}'. Available: {ALL_HDF_LAYERS}")
@@ -125,29 +149,35 @@ def export_geometry_layers(
     geom_input: Path,
     output: Path,
     layer: Optional[str] = None,
+    out_crs: Optional[str] = None,
 ):
     """Export HEC-RAS geometry layers to GeoParquet.
 
     Args:
         geom_input: Path to *.g?? or *.g??.hdf
         output: Output GeoParquet path
-        layer: Layer name (mesh_cells, cross_sections, centerlines, bc_lines,
-               breaklines, refinement_regions, reference_lines, reference_points,
-               structures, mesh_areas, storage_areas). None = auto-select best.
+        layer: Layer name (mesh_cells, mesh_faces, cross_sections, centerlines,
+               bank_lines, bc_lines, breaklines, refinement_regions,
+               reference_lines, reference_points, structures, mesh_areas,
+               storage_areas). None = auto-select best.
+        out_crs: Output CRS (e.g. "EPSG:4326"). If set and differs from data
+                 CRS, the GeoDataFrame is reprojected before writing.
     """
     geom_path = Path(geom_input)
 
     if _is_hdf_geometry(geom_path):
-        export_hdf_geometry(geom_path, output, layer=layer)
+        export_hdf_geometry(geom_path, output, layer=layer, out_crs=out_crs)
     elif _is_text_geometry(geom_path):
-        export_text_geometry(geom_path, output, layer=layer)
+        export_text_geometry(geom_path, output, layer=layer, out_crs=out_crs)
     else:
         raise ValueError(
             f"Unsupported geometry file format: {geom_path.name} (suffixes={geom_path.suffixes})"
         )
 
 
-def export_hdf_geometry(hdf_path: Path, output: Path, layer: Optional[str] = None):
+def export_hdf_geometry(
+    hdf_path: Path, output: Path, layer: Optional[str] = None, out_crs: Optional[str] = None,
+):
     """Export geometry from a HDF geometry file (*.g??.hdf).
 
     When layer is None, prefers mesh_cells then falls back to first available.
@@ -156,6 +186,7 @@ def export_hdf_geometry(hdf_path: Path, output: Path, layer: Optional[str] = Non
         gdf = _extract_hdf_layer(hdf_path, layer)
         if gdf is None:
             raise ValueError(f"Layer '{layer}' could not be extracted from {hdf_path.name}")
+        gdf = _maybe_reproject(gdf, out_crs)
         output.parent.mkdir(parents=True, exist_ok=True)
         _prepare_for_parquet(gdf).to_parquet(output, compression="snappy", index=False)
         return
@@ -171,8 +202,9 @@ def export_hdf_geometry(hdf_path: Path, output: Path, layer: Optional[str] = Non
         raise ValueError("No geometry layers could be extracted from HDF geometry file")
 
     preferred = "mesh_cells" if "mesh_cells" in layers else next(iter(layers))
+    gdf = _maybe_reproject(layers[preferred], out_crs)
     output.parent.mkdir(parents=True, exist_ok=True)
-    _prepare_for_parquet(layers[preferred]).to_parquet(output, compression="snappy", index=False)
+    _prepare_for_parquet(gdf).to_parquet(output, compression="snappy", index=False)
 
 
 def export_all_hdf_layers(
@@ -210,7 +242,9 @@ def export_all_hdf_layers(
     return written
 
 
-def export_text_geometry(geom_path: Path, output: Path, layer: Optional[str] = None):
+def export_text_geometry(
+    geom_path: Path, output: Path, layer: Optional[str] = None, out_crs: Optional[str] = None,
+):
     """Export geometry from a plain text geometry file (*.g??).
 
     Layers available from text files: cross_sections, centerlines, storage_areas
@@ -250,13 +284,15 @@ def export_text_geometry(geom_path: Path, output: Path, layer: Optional[str] = N
             raise ValueError(
                 f"Layer '{layer}' not available. Available: {list(layers.keys())}"
             )
+        gdf = _maybe_reproject(layers[layer], out_crs)
         output.parent.mkdir(parents=True, exist_ok=True)
-        _prepare_for_parquet(layers[layer]).to_parquet(output, compression="snappy", index=False)
+        _prepare_for_parquet(gdf).to_parquet(output, compression="snappy", index=False)
         return
 
     preferred = "cross_sections" if "cross_sections" in layers else next(iter(layers))
+    gdf = _maybe_reproject(layers[preferred], out_crs)
     output.parent.mkdir(parents=True, exist_ok=True)
-    _prepare_for_parquet(layers[preferred]).to_parquet(output, compression="snappy", index=False)
+    _prepare_for_parquet(gdf).to_parquet(output, compression="snappy", index=False)
 
 
 def export_all_text_layers(

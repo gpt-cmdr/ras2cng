@@ -124,19 +124,27 @@ def export_geometry(
         "--layer",
         "-l",
         help=(
-            "Geometry layer: mesh_cells, mesh_areas, cross_sections, centerlines, "
-            "bc_lines, breaklines, refinement_regions, reference_lines, "
-            "reference_points, structures, storage_areas"
+            "Geometry layer: mesh_cells, mesh_faces, mesh_areas, cross_sections, "
+            "centerlines, bank_lines, bc_lines, breaklines, refinement_regions, "
+            "reference_lines, reference_points, structures, storage_areas"
         ),
+    ),
+    out_crs: Optional[str] = typer.Option(
+        "EPSG:4326",
+        "--out-crs",
+        help="Output CRS (default EPSG:4326). Set to empty string to skip reprojection.",
     ),
 ):
     """Export HEC-RAS geometry to GeoParquet."""
 
     from ras2cng.geometry import export_geometry_layers
 
+    # Treat empty string as None (no reprojection)
+    effective_crs = out_crs if out_crs else None
+
     console.print(f"[bold blue]Exporting geometry:[/bold blue] {geom_file}")
     try:
-        export_geometry_layers(geom_file, output, layer=layer)
+        export_geometry_layers(geom_file, output, layer=layer, out_crs=effective_crs)
         console.print(f"[green]OK[/green] Exported to {output}")
     except Exception as e:
         console.print(f"[red]ERROR:[/red] {e}")
