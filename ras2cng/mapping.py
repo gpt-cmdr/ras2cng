@@ -127,6 +127,13 @@ def generate_result_maps(
     if ras_version:
         init_kwargs["ras_version"] = ras_version
     ras = init_ras_project(project_dir, **init_kwargs)
+    if rasprocess_path:
+        exe_path = Path(rasprocess_path)
+        ras.ras_exe_path = str(
+            exe_path
+            if exe_path.suffix.lower() == ".exe"
+            else exe_path / "RasProcess.exe"
+        )
 
     # Build list of requested map types
     requested_types = _build_requested_types(
