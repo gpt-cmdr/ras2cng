@@ -122,8 +122,11 @@ def generate_result_maps(
     # Configure RasProcess
     _configure_rasprocess(rasprocess_path, ras_version)
 
-    # Initialize project
-    ras = init_ras_project(project_dir, ras_object="new", load_results_summary=True)
+    # Initialize project (pass ras_version to avoid auto-detecting old versions from plan files)
+    init_kwargs = dict(ras_object="new", load_results_summary=True)
+    if ras_version:
+        init_kwargs["ras_version"] = ras_version
+    ras = init_ras_project(project_dir, **init_kwargs)
 
     # Build list of requested map types
     requested_types = _build_requested_types(
