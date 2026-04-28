@@ -8,6 +8,7 @@ Provides:
 
 from __future__ import annotations
 
+import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -251,14 +252,23 @@ def _configure_rasprocess(
     """Configure RasProcess executable path and version."""
     if rasprocess_path:
         rasprocess_path = Path(rasprocess_path)
-        # configure_wine expects ras_install_dir (directory containing RasProcess.exe)
-        # Use suffix check instead of is_file() since path may not exist on current OS
         ras_install_dir = rasprocess_path.parent if rasprocess_path.suffix.lower() == ".exe" else rasprocess_path
-        try:
-            RasProcess.configure_wine(ras_install_dir=str(ras_install_dir))
-        except AttributeError:
-            # Older ras-commander versions may not have configure_wine
-            pass
+
+        if platform.system() == "Linux":
+            # configure_wine expects ras_install_dir (directory containing RasProcess.exe).
+            try:
+                RasProcess.configure_wine(ras_install_dir=str(ras_install_dir))
+            except AttributeError:
+                # Older ras-commander versions may not have configure_wine.
+                pass
+        else:
+            rasprocess_exe = (
+                ras_install_dir
+                if ras_install_dir.name.lower() == "rasprocess.exe"
+                else ras_install_dir / "RasProcess.exe"
+            )
+            if not rasprocess_exe.exists():
+                raise FileNotFoundError(f"RasProcess.exe not found: {rasprocess_exe}")
 
     if ras_version:
         try:
