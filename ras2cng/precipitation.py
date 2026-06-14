@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Sequence
@@ -18,6 +18,9 @@ IMPORTED_VALUES = f"{PRECIPITATION_GROUP}/Imported Raster Data/Values"
 TIMESTAMP_DATASET = f"{PRECIPITATION_GROUP}/Timestamp"
 
 PrecipitationSource = Literal["auto", "processed", "imported"]
+PrecipitationUnits = Literal["native", "in", "mm"]
+
+MM_PER_INCH = 25.4
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,7 @@ def export_precipitation_rasters(
     *,
     source: PrecipitationSource = "auto",
     timestamps: Sequence[str | int] | None = None,
+    units: PrecipitationUnits = "native",
     export_incremental: bool = True,
     export_cumulative: bool = True,
     prefix: str | None = None,
@@ -154,8 +158,15 @@ def export_precipitation_rasters(
         source: ``"auto"`` prefers processed plan results and falls back to
             imported raster data. Use ``"processed"`` or ``"imported"`` to
             require a specific dataset.
-        timestamps: Optional timestamp labels or zero-based indices to export.
-            ``None`` exports every timestep.
+        timestamps: Optional timestamp labels or integer indices to export.
+            Each token is matched against the actual timestamp labels first;
+            only a token with no matching label is interpreted as a zero-based
+            integer index. ``None`` exports every timestep.
+        units: Output units. ``"native"`` (default) preserves the HDF source
+            units unchanged. ``"in"`` or ``"mm"`` converts raster values to the
+            requested unit (mm to in divides by 25.4, in to mm multiplies by
+            25.4) and tags the GeoTIFF with the target unit. Conversion is
+            skipped if the source units already match the requested unit.
         export_incremental: Write per-timestep precipitation amount rasters.
         export_cumulative: Write cumulative-through-timestep rasters.
         prefix: Optional filename prefix. Defaults to the HDF stem.
@@ -192,6 +203,15 @@ def export_precipitation_rasters(
 
     grids = _reshape_values(raw, info)
     incremental, cumulative = _incremental_and_cumulative(grids, info)
+
+    factor, target_units = _unit_conversion(info.units, units)
+    if factor != 1.0:
+        # NaN cells (nodata) are preserved through multiplication; the nodata
+        # sentinel in ``info.nodata`` is left untouched so it round-trips.
+        incremental = (incremental.astype("float64") * factor).astype("float32")
+        cumulative = (cumulative.astype("float64") * factor).astype("float32")
+    if target_units is not None:
+        info = replace(info, units=target_units)
 
     transform = from_origin(info.left, info.top, info.cellsize, info.cellsize)
     crs = _rasterio_crs(CRS, info.projection)
@@ -381,14 +401,19 @@ def _select_indices(
 
     indices: list[int] = []
     for item in requested:
-        if isinstance(item, int) or (isinstance(item, str) and item.strip().isdigit()):
-            idx = int(item)
+        if isinstance(item, int):
+            idx = item
         else:
             token = str(item).strip()
+            # Match the token against actual timestamp labels first so that a
+            # purely-numeric timestamp label can be selected by label. Only if
+            # no label matches do we fall back to integer-index interpretation.
             if token in by_label:
                 idx = by_label[token]
             elif token in by_safe:
                 idx = by_safe[token]
+            elif _is_int_token(token):
+                idx = int(token)
             else:
                 raise ValueError(f"Timestamp not found in precipitation HDF: {token}")
 
@@ -398,6 +423,56 @@ def _select_indices(
             indices.append(idx)
 
     return indices
+
+
+def _normalize_unit(units: str | None) -> str | None:
+    """Map an HDF units string to a canonical ``"in"`` / ``"mm"`` token."""
+    if not units:
+        return None
+    text = units.strip().lower()
+    if text in {"in", "inch", "inches", '"'}:
+        return "in"
+    if text in {"mm", "millimeter", "millimeters", "millimetre", "millimetres"}:
+        return "mm"
+    return text
+
+
+def _unit_conversion(
+    source_units: str | None,
+    target: PrecipitationUnits,
+) -> tuple[float, str | None]:
+    """Return ``(factor, target_units_tag)`` for a requested unit conversion.
+
+    ``target == "native"`` is a no-op (factor 1.0, units tag unchanged). For
+    ``"in"`` / ``"mm"`` a factor is returned to scale raster values, along with
+    the canonical units string to tag the output GeoTIFF. Conversion is skipped
+    (factor 1.0) when the source units already match the requested unit.
+    """
+    if target == "native":
+        return 1.0, None
+    if target not in {"in", "mm"}:
+        raise ValueError(f"Invalid precipitation units: {target}")
+
+    source = _normalize_unit(source_units)
+    if source == target or source is None:
+        # Already in the requested unit, or source unit is unknown: do not
+        # rescale values, but still tag the output with the requested unit.
+        return 1.0, target
+    if source == "mm" and target == "in":
+        return 1.0 / MM_PER_INCH, "in"
+    if source == "in" and target == "mm":
+        return MM_PER_INCH, "mm"
+    # Source unit is some other known string we cannot convert from.
+    raise ValueError(
+        f"Cannot convert precipitation units from {source_units!r} to {target!r}"
+    )
+
+
+def _is_int_token(token: str) -> bool:
+    text = token.strip()
+    if text.startswith(("+", "-")):
+        text = text[1:]
+    return text.isdigit()
 
 
 def _reshape_values(raw: np.ndarray, info: PrecipitationGridInfo) -> np.ndarray:

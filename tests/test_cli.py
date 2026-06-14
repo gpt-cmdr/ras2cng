@@ -776,6 +776,7 @@ def test_precip_routes_to_export_precipitation(monkeypatch, tmp_path: Path):
     assert called["kwargs"] == {
         "source": "processed",
         "timestamps": ["0", "2"],
+        "units": "native",
         "export_incremental": True,
         "export_cumulative": False,
         "prefix": "rain",

@@ -152,3 +152,102 @@ def test_invalid_precipitation_source_raises(tmp_path: Path):
 
     with pytest.raises(ValueError, match="Invalid precipitation source"):
         read_precipitation_grid_info(hdf_path, source="bad")  # type: ignore[arg-type]
+
+
+def _make_nodata_hdf(path: Path, nodata: float = -9999.0) -> Path:
+    """Processed-style HDF with a NoData attribute and a masked cell."""
+    values = np.array(
+        [
+            [[1.0, 2.0], [3.0, nodata]],
+            [[0.5, 1.0], [nodata, 2.0]],
+        ],
+        dtype="float32",
+    )
+    with h5py.File(path, "w") as hdf:
+        group = hdf.require_group(PRECIPITATION_GROUP)
+        _write_base_attrs(group)
+        group.attrs["Data Type"] = "per-cum"
+        group.attrs["NoData"] = str(nodata)
+        group.create_dataset(
+            "Timestamp",
+            data=np.array([b"01JAN2020 00:00:00", b"01JAN2020 01:00:00"]),
+        )
+        group.create_dataset("Values", data=values.reshape(2, 4))
+    return path
+
+
+def test_export_precipitation_nodata_round_trip(tmp_path: Path):
+    rasterio = pytest.importorskip("rasterio")
+    nodata = -9999.0
+    hdf_path = _make_nodata_hdf(tmp_path / "model.p01.hdf", nodata=nodata)
+
+    info = read_precipitation_grid_info(hdf_path)
+    assert info.nodata == nodata
+
+    result = export_precipitation_rasters(hdf_path, tmp_path / "precip", timestamps=[0])
+
+    with rasterio.open(result.incremental[0]) as src:
+        # NoData declared in the GeoTIFF profile matches the HDF NoData value.
+        assert src.nodata == nodata
+        data = src.read(1)
+        # The originally-masked cell round-trips as the NoData sentinel...
+        assert data[1, 1] == nodata
+        # ...and rasterio masks it, while valid cells stay unmasked.
+        masked = src.read(1, masked=True)
+        assert masked.mask[1, 1]
+        assert not masked.mask[0, 0]
+        assert masked[0, 0] == 1.0
+
+
+def test_select_timestamps_label_first_for_numeric_label(tmp_path: Path):
+    rasterio = pytest.importorskip("rasterio")
+    # Numeric timestamp labels: "0" is also a valid index, so label-first
+    # resolution must select the label, not index 0.
+    values = np.array(
+        [
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[5.0, 6.0], [7.0, 8.0]],
+            [[9.0, 10.0], [11.0, 12.0]],
+        ],
+        dtype="float32",
+    )
+    hdf_path = tmp_path / "model.p01.hdf"
+    with h5py.File(hdf_path, "w") as hdf:
+        group = hdf.require_group(PRECIPITATION_GROUP)
+        _write_base_attrs(group)
+        group.attrs["Data Type"] = "per-cum"
+        group.create_dataset("Timestamp", data=np.array([b"2", b"0", b"1"]))
+        group.create_dataset("Values", data=values.reshape(3, 4))
+
+    # Token "0" matches the label at index 1, not index 0.
+    result = export_precipitation_rasters(hdf_path, tmp_path / "p", timestamps=["0"])
+    assert result.timestamps == ["0"]
+    with rasterio.open(result.incremental[0]) as src:
+        assert np.allclose(src.read(1), [[5.0, 6.0], [7.0, 8.0]])
+
+    # A non-matching numeric token still falls back to index interpretation:
+    # "1" has no label match here (labels are "2","0","1" -> "1" IS a label),
+    # so use a token that is neither a label nor an in-range index. "99" is not
+    # a label, so it is treated as an out-of-range index and rejected.
+    with pytest.raises(IndexError):
+        export_precipitation_rasters(hdf_path, tmp_path / "p2", timestamps=["99"])
+
+    # With non-numeric labels, a numeric token is unambiguously an index.
+    hdf_path2 = _make_processed_hdf(tmp_path / "model2.p01.hdf")
+    result3 = export_precipitation_rasters(hdf_path2, tmp_path / "p3", timestamps=["1"])
+    assert result3.timestamps == ["01JAN2020 01:00:00"]
+
+
+def test_export_precipitation_units_conversion_in_to_mm(tmp_path: Path):
+    rasterio = pytest.importorskip("rasterio")
+    # _write_base_attrs tags Units as "in"; convert to mm on export.
+    hdf_path = _make_processed_hdf(tmp_path / "model.p01.hdf")
+
+    result = export_precipitation_rasters(
+        hdf_path, tmp_path / "precip", timestamps=[0], units="mm"
+    )
+
+    assert result.units == "mm"
+    with rasterio.open(result.incremental[0]) as src:
+        assert src.tags()["units"] == "mm"
+        assert np.allclose(src.read(1), np.array([[1.0, 2.0], [3.0, 4.0]]) * 25.4)
