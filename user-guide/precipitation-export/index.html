@@ -12,13 +12,13 @@
         <meta name="author" content="William Katzenmeyer, P.E., C.F.M.">
       
       
-        <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/examples/00_using_ras_examples/">
+        <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/user-guide/precipitation-export/">
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../results-export/">
       
       
-        <link rel="next" href="../01_export_geometry/">
+        <link rel="next" href="../duckdb-queries/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>00 - Using RasExamples - ras2cng — RAS to Cloud Native GIS</title>
+        <title>Precipitation Export - ras2cng — RAS to Cloud Native GIS</title>
       
     
     
@@ -84,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#00-using-rasexamples" class="md-skip">
+        <a href="#precipitation-export" class="md-skip">
           Skip to content
         </a>
       
@@ -147,7 +147,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              00 - Using RasExamples
+              Precipitation Export
             
           </span>
         </div>
@@ -297,11 +297,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../user-guide/overview/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../overview/" class="md-tabs__link">
           
   
   
@@ -317,13 +319,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../examples/" class="md-tabs__link">
           
   
   
@@ -615,28 +615,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -654,7 +657,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -672,7 +675,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/overview/" class="md-nav__link">
+      <a href="../overview/" class="md-nav__link">
         
   
   
@@ -700,7 +703,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/project-archive/" class="md-nav__link">
+      <a href="../project-archive/" class="md-nav__link">
         
   
   
@@ -728,7 +731,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/geometry-layers/" class="md-nav__link">
+      <a href="../geometry-layers/" class="md-nav__link">
         
   
   
@@ -756,7 +759,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/geometry-export/" class="md-nav__link">
+      <a href="../geometry-export/" class="md-nav__link">
         
   
   
@@ -784,7 +787,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/results-export/" class="md-nav__link">
+      <a href="../results-export/" class="md-nav__link">
         
   
   
@@ -792,238 +795,6 @@
     
   
     Results Export
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/precipitation-export/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Precipitation Export
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/duckdb-queries/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    DuckDB Queries
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/pmtiles/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    PMTiles Generation
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/postgis-sync/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    PostGIS Sync
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../user-guide/linux-wine-setup/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Linux/Wine Setup
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
-    
-    
-    
-      
-        
-        
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
-        
-          
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Examples
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Examples
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overview
   
 
     
@@ -1060,7 +831,7 @@
   <span class="md-ellipsis">
     
   
-    00 - Using RasExamples
+    Precipitation Export
   
 
     
@@ -1078,7 +849,7 @@
   <span class="md-ellipsis">
     
   
-    00 - Using RasExamples
+    Precipitation Export
   
 
     
@@ -1104,10 +875,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-it-demonstrates" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What it demonstrates
+        Overview
       
     </span>
   </a>
@@ -1115,10 +886,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-it" class="md-nav__link">
+  <a href="#command-line" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run it
+        Command Line
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hdf-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF Sources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python API
       
     </span>
   </a>
@@ -1141,7 +945,236 @@
   
   
     <li class="md-nav__item">
-      <a href="../01_export_geometry/" class="md-nav__link">
+      <a href="../duckdb-queries/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DuckDB Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pmtiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PMTiles Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postgis-sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PostGIS Sync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../linux-wine-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux/Wine Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/00_using_ras_examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 - Using RasExamples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_export_geometry/" class="md-nav__link">
         
   
   
@@ -1169,7 +1202,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../02_export_results/" class="md-nav__link">
+      <a href="../../examples/02_export_results/" class="md-nav__link">
         
   
   
@@ -1197,7 +1230,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../03_duckdb_queries/" class="md-nav__link">
+      <a href="../../examples/03_duckdb_queries/" class="md-nav__link">
         
   
   
@@ -1225,7 +1258,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../04_generate_pmtiles/" class="md-nav__link">
+      <a href="../../examples/04_generate_pmtiles/" class="md-nav__link">
         
   
   
@@ -1253,7 +1286,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../05_cloud_native_stack/" class="md-nav__link">
+      <a href="../../examples/05_cloud_native_stack/" class="md-nav__link">
         
   
   
@@ -1281,7 +1314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../06_project_archive/" class="md-nav__link">
+      <a href="../../examples/06_project_archive/" class="md-nav__link">
         
   
   
@@ -1911,10 +1944,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-it-demonstrates" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What it demonstrates
+        Overview
       
     </span>
   </a>
@@ -1922,10 +1955,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-it" class="md-nav__link">
+  <a href="#command-line" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run it
+        Command Line
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hdf-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HDF Sources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python API
       
     </span>
   </a>
@@ -1952,20 +2018,96 @@
   
 
 
-<h1 id="00-using-rasexamples">00 — Using RasExamples<a class="headerlink" href="#00-using-rasexamples" title="Permanent link">&para;</a></h1>
-<p><strong>Notebook</strong>: <a href="https://github.com/gpt-cmdr/ras2cng/blob/master/examples/00_using_ras_examples.py">examples/00_using_ras_examples.py</a></p>
-<p>Introduces the <code>RasExamples</code> API from ras-commander. Shows how to list available example projects
-and extract <code>BaldEagleCrkMulti2D</code> — the example project used by all other notebooks.</p>
-<h2 id="what-it-demonstrates">What it demonstrates<a class="headerlink" href="#what-it-demonstrates" title="Permanent link">&para;</a></h2>
+<h1 id="precipitation-export">Precipitation Export<a class="headerlink" href="#precipitation-export" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>HEC-RAS plan HDF files with gridded meteorology store precipitation under
+<code>Event Conditions/Meteorology/Precipitation</code>. ras2cng can export those grids to
+GeoTIFF rasters for each timestep and can also write cumulative-through-timestep
+rasters.</p>
+<p>This is a data extraction workflow. It does not render frames or assemble video.</p>
+<h2 id="command-line">Command Line<a class="headerlink" href="#command-line" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Export timestep and cumulative precipitation rasters</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ras2cng<span class="w"> </span>precip<span class="w"> </span>model.p01.hdf<span class="w"> </span>./precipitation/
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Export only selected timesteps by zero-based index</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>ras2cng<span class="w"> </span>precip<span class="w"> </span>model.p01.hdf<span class="w"> </span>./precipitation/<span class="w"> </span>--timestamps<span class="w"> </span><span class="m">0</span>,6,12
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Export only cumulative rasters</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>ras2cng<span class="w"> </span>precip<span class="w"> </span>model.p01.hdf<span class="w"> </span>./precipitation/<span class="w"> </span>--no-incremental
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># Require imported raster data instead of processed plan-HDF values</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>ras2cng<span class="w"> </span>precip<span class="w"> </span>model.u01.hdf<span class="w"> </span>./precipitation/<span class="w"> </span>--source<span class="w"> </span>imported
+</code></pre></div>
+<h2 id="hdf-sources">HDF Sources<a class="headerlink" href="#hdf-sources" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>HDF dataset</th>
+<th>Typical file</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>processed</code></td>
+<td><code>Precipitation/Values</code></td>
+<td><code>*.p??.hdf</code></td>
+<td>Processed timestep precipitation amounts used by the computed plan</td>
+</tr>
+<tr>
+<td><code>imported</code></td>
+<td><code>Precipitation/Imported Raster Data/Values</code></td>
+<td><code>*.u??.hdf</code> or <code>*.p??.hdf</code></td>
+<td>Original imported raster time series; cumulative sources are differenced for timestep rasters</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td>processed, then imported</td>
+<td>either</td>
+<td>Default behavior</td>
+</tr>
+</tbody>
+</table>
+<p>GeoTIFF georeferencing is read from the HDF raster attributes:</p>
 <ul>
-<li><code>RasExamples.list_projects()</code> — list all available example HEC-RAS projects</li>
-<li><code>RasExamples.extract_project("BaldEagleCrkMulti2D")</code> — extract to a local directory</li>
-<li>Inspecting the extracted project: finding <code>.g??.hdf</code>, <code>.g??</code>, and <code>.p??.hdf</code> files</li>
+<li><code>Projection</code></li>
+<li><code>Raster Cellsize</code></li>
+<li><code>Raster Cols</code></li>
+<li><code>Raster Rows</code></li>
+<li><code>Raster Left</code></li>
+<li><code>Raster Top</code></li>
+<li><code>Units</code></li>
 </ul>
-<h2 id="run-it">Run it<a class="headerlink" href="#run-it" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>marimo<span class="w"> </span>edit<span class="w"> </span>examples/00_using_ras_examples.py
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># or</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>examples/00_using_ras_examples.py
+<h2 id="output-files">Output Files<a class="headerlink" href="#output-files" title="Permanent link">&para;</a></h2>
+<p>Output names include the HDF stem, raster type, zero-padded timestep index, and
+timestamp:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>model_p01_precip_0000_20220617_090000.tif
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>model_p01_precip_cumulative_0000_20220617_090000.tif
+</code></pre></div>
+<p>Each GeoTIFF includes tags for the source HDF, source HDF dataset, timestamp,
+precipitation units, and whether the raster is incremental or cumulative.</p>
+<h2 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.precipitation</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">export_precipitation_rasters</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">list_precipitation_timestamps</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">read_precipitation_grid_info</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">)</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">plan_hdf</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="n">timestamps</span> <span class="o">=</span> <span class="n">list_precipitation_timestamps</span><span class="p">(</span><span class="n">plan_hdf</span><span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">info</span> <span class="o">=</span> <span class="n">read_precipitation_grid_info</span><span class="p">(</span><span class="n">plan_hdf</span><span class="p">)</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">result</span> <span class="o">=</span> <span class="n">export_precipitation_rasters</span><span class="p">(</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">plan_hdf</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./precipitation&quot;</span><span class="p">),</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">timestamps</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="p">)</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">incremental</span><span class="p">)</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">cumulative</span><span class="p">)</span>
 </code></pre></div>
 
 
@@ -1989,7 +2131,7 @@ and extract <code>BaldEagleCrkMulti2D</code> — the example project used by all
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="June 14, 2026 18:56:40 UTC">June 14, 2026</span>
   </span>
 
     
@@ -1999,7 +2141,7 @@ and extract <code>BaldEagleCrkMulti2D</code> — the example project used by all
     <span class="md-icon" title="Created">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="June 14, 2026 18:56:40 UTC">June 14, 2026</span>
   </span>
 
     
