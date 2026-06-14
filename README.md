@@ -77,6 +77,9 @@ ras2cng geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
 ras2cng results model.p01.hdf max_depth.parquet \
   --geometry mesh_cells.parquet --var "Maximum Depth"
 
+# Export gridded precipitation and cumulative precipitation GeoTIFFs
+ras2cng precip model.p01.hdf ./precipitation/
+
 # Query with DuckDB (use _ as table name)
 ras2cng query max_depth.parquet \
   "SELECT mesh_name, AVG(maximum_depth) FROM _ GROUP BY mesh_name"
@@ -97,6 +100,8 @@ from ras2cng import (
     export_geometry_layers,
     export_results_layer,
     export_all_variables,
+    export_precipitation_rasters,
+    list_precipitation_timestamps,
     DuckSession,
     query_parquet,
     generate_pmtiles_from_input,
@@ -119,6 +124,9 @@ print(f"{info.name}: {len(info.geom_files)} geometry files, {len(info.plan_files
 
 # Single file export
 export_geometry_layers(Path("model.g01.hdf"), Path("mesh_cells.parquet"), layer="mesh_cells")
+
+# Gridded precipitation rasters
+export_precipitation_rasters(Path("model.p01.hdf"), Path("./precipitation"))
 
 # DuckDB query (table alias is always _)
 df = query_parquet(Path("max_depth.parquet"), "SELECT * FROM _ WHERE maximum_depth > 3.0")
@@ -155,11 +163,22 @@ Column names are **snake_case** (ras-commander normalization). Use `--all` flag 
 > **Why results are opt-in:** Plan HDF files contain a copy of the geometry.
 > Exporting geometry first (`archive` default), then adding `--results` avoids redundant extraction.
 
+### Gridded Precipitation Rasters (from `.p##.hdf` or `.u##.hdf`)
+
+Exported from `Event Conditions/Meteorology/Precipitation` as GeoTIFF rasters:
+
+- Per-timestep precipitation amount rasters
+- Cumulative-through-timestep precipitation rasters
+- CRS, transform, timestamps, and units preserved from HDF attributes
+
+Use `ras2cng precip model.p01.hdf ./precipitation/` for the CLI workflow.
+
 ### Output Formats
 
 | Format | Command | Requirements |
 |---|---|---|
 | GeoParquet | `geometry`, `results`, `archive` | Built-in |
+| GeoTIFF precipitation rasters | `precip` | `pip install "ras2cng[all]"` or `rasterio` |
 | Cloud Optimized GeoTIFF | `archive --terrain` | gdal_translate CLI |
 | DuckDB SQL | `query` | `pip install "ras2cng[duckdb]"` |
 | Vector PMTiles | `pmtiles` | tippecanoe + pmtiles CLIs |

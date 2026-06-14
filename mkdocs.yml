@@ -101,6 +101,7 @@ nav:
     - Geometry Layers Reference: user-guide/geometry-layers.md
     - Geometry Export: user-guide/geometry-export.md
     - Results Export: user-guide/results-export.md
+    - Precipitation Export: user-guide/precipitation-export.md
     - DuckDB Queries: user-guide/duckdb-queries.md
     - PMTiles Generation: user-guide/pmtiles.md
     - PostGIS Sync: user-guide/postgis-sync.md
@@ -121,6 +122,7 @@ nav:
     - CLI: api/cli.md
     - geometry: api/geometry.md
     - results: api/results.md
+    - precipitation: api/precipitation.md
     - mapping: api/mapping.md
     - terrain: api/terrain.md
     - duckdb_session: api/duckdb_session.md
