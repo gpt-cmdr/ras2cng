@@ -195,7 +195,19 @@ def export_precipitation(
     timestamps: Optional[str] = typer.Option(
         None,
         "--timestamps",
-        help="Comma-separated timestamp labels or zero-based indices to export",
+        help=(
+            "Comma-separated timestamp labels or integer indices to export. "
+            "Each token is matched against timestamp labels first, then "
+            "interpreted as a zero-based index if no label matches."
+        ),
+    ),
+    units: str = typer.Option(
+        "native",
+        "--units",
+        help=(
+            "Output units: native (default, no conversion), in, or mm. "
+            "in/mm convert raster values (mm->in /25.4, in->mm *25.4)."
+        ),
     ),
     incremental: bool = typer.Option(
         True,
@@ -228,6 +240,7 @@ def export_precipitation(
             output,
             source=source,  # type: ignore[arg-type]
             timestamps=timestamp_list,
+            units=units,  # type: ignore[arg-type]
             export_incremental=incremental,
             export_cumulative=cumulative,
             prefix=prefix,
