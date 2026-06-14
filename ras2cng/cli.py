@@ -181,6 +181,70 @@ def export_results(
         raise typer.Exit(1)
 
 
+@app.command("precip")
+def export_precipitation(
+    hdf_file: Path = typer.Argument(
+        ..., help="HEC-RAS plan or unsteady HDF file containing gridded precipitation"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Output directory for precipitation GeoTIFFs"
+    ),
+    source: str = typer.Option(
+        "auto", "--source", help="Precipitation source: auto, processed, or imported"
+    ),
+    timestamps: Optional[str] = typer.Option(
+        None,
+        "--timestamps",
+        help="Comma-separated timestamp labels or zero-based indices to export",
+    ),
+    incremental: bool = typer.Option(
+        True,
+        "--incremental/--no-incremental",
+        help="Write per-timestep precipitation rasters",
+    ),
+    cumulative: bool = typer.Option(
+        True,
+        "--cumulative/--no-cumulative",
+        help="Write cumulative-through-timestep precipitation rasters",
+    ),
+    prefix: Optional[str] = typer.Option(
+        None, "--prefix", help="Optional filename prefix"
+    ),
+    no_overwrite: bool = typer.Option(
+        False, "--no-overwrite", help="Fail if an output GeoTIFF already exists"
+    ),
+):
+    """Export gridded precipitation and cumulative precipitation GeoTIFFs."""
+
+    from ras2cng.precipitation import export_precipitation_rasters
+
+    timestamp_list: list[str | int] | None = None
+    if timestamps:
+        timestamp_list = [part.strip() for part in timestamps.split(",") if part.strip()]
+
+    try:
+        result = export_precipitation_rasters(
+            hdf_file,
+            output,
+            source=source,  # type: ignore[arg-type]
+            timestamps=timestamp_list,
+            export_incremental=incremental,
+            export_cumulative=cumulative,
+            prefix=prefix,
+            overwrite=not no_overwrite,
+        )
+        console.print(f"[green]OK[/green] Exported precipitation rasters to {output}")
+        console.print(f"  Source     : {result.source} ({result.values_path})")
+        console.print(f"  Timesteps  : {len(result.timestamps)}")
+        console.print(f"  Incremental: {len(result.incremental)}")
+        console.print(f"  Cumulative : {len(result.cumulative)}")
+        if result.units:
+            console.print(f"  Units      : {result.units}")
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
 @app.command("query")
 def query_parquet(
     input_file: Path = typer.Argument(..., help="Input GeoParquet file"),

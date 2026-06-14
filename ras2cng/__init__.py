@@ -28,6 +28,13 @@ from ras2cng.results import (
     export_all_variables,
     merge_all_variables,
 )
+from ras2cng.precipitation import (
+    export_precipitation_rasters,
+    list_precipitation_timestamps,
+    read_precipitation_grid_info,
+    PrecipitationExportResult,
+    PrecipitationGridInfo,
+)
 from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
@@ -62,6 +69,11 @@ __all__ = [
     "export_results_layer",
     "export_all_variables",
     "merge_all_variables",
+    "export_precipitation_rasters",
+    "list_precipitation_timestamps",
+    "read_precipitation_grid_info",
+    "PrecipitationExportResult",
+    "PrecipitationGridInfo",
     # DuckDB
     "DuckSession",
     "query_parquet",

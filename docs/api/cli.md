@@ -15,6 +15,7 @@ Commands:
   archive      Archive a HEC-RAS project to consolidated GeoParquet files.
   geometry     Export HEC-RAS geometry to GeoParquet.
   results      Export HEC-RAS 2D mesh summary results to GeoParquet.
+  precip       Export gridded precipitation and cumulative precipitation GeoTIFFs.
   query        Query GeoParquet files using DuckDB SQL.
   pmtiles      Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
   sync         Sync GeoParquet data to PostGIS.
@@ -101,6 +102,29 @@ Options:
   -g, --geometry PATH   Geometry GeoParquet for spatial join
   -v, --var TEXT        Result variable to export  [default: Maximum Depth]
   --all                 Export all available summary variables to the output directory
+```
+
+## ras2cng precip
+
+```
+Usage: ras2cng precip [OPTIONS] HDF_FILE OUTPUT
+
+  Export gridded precipitation and cumulative precipitation GeoTIFFs.
+
+Arguments:
+  HDF_FILE  HEC-RAS plan or unsteady HDF file containing gridded precipitation
+  OUTPUT    Output directory for precipitation GeoTIFFs
+
+Options:
+  --source TEXT                 Precipitation source: auto, processed, or imported
+                                 [default: auto]
+  --timestamps TEXT             Comma-separated timestamp labels or zero-based indices to export
+  --incremental / --no-incremental
+                                Write per-timestep precipitation rasters
+  --cumulative / --no-cumulative
+                                Write cumulative-through-timestep precipitation rasters
+  --prefix TEXT                 Optional filename prefix
+  --no-overwrite                Fail if an output GeoTIFF already exists
 ```
 
 ## ras2cng query
