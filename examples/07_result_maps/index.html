@@ -12,13 +12,13 @@
         <meta name="author" content="William Katzenmeyer, P.E., C.F.M.">
       
       
-        <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/examples/02_export_results/">
+        <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/examples/07_result_maps/">
       
       
-        <link rel="prev" href="../01_export_geometry/">
+        <link rel="prev" href="../06_project_archive/">
       
       
-        <link rel="next" href="../03_duckdb_queries/">
+        <link rel="next" href="../../reference/data-structure/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>02 - Export Results - ras2cng — RAS to Cloud Native GIS</title>
+        <title>07 - Result Maps - ras2cng — RAS to Cloud Native GIS</title>
       
     
     
@@ -84,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#02-export-results" class="md-skip">
+        <a href="#07-result-maps" class="md-skip">
           Skip to content
         </a>
       
@@ -147,7 +147,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              02 - Export Results
+              07 - Result Maps
             
           </span>
         </div>
@@ -1097,37 +1097,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    02 - Export Results
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../02_export_results/" class="md-nav__link">
         
   
   
@@ -1143,59 +1116,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#what-it-demonstrates" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it demonstrates
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Notes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#run-it" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Run it
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1317,10 +1237,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../07_result_maps/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 - Result Maps
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1336,6 +1283,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-demonstrates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it demonstrates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-equivalents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI equivalents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements &amp; notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#expected-output-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expected output structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1989,10 +2011,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#notes" class="md-nav__link">
+  <a href="#run-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Notes
+        Run it
       
     </span>
   </a>
@@ -2000,10 +2022,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-it" class="md-nav__link">
+  <a href="#cli-equivalents" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run it
+        CLI equivalents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements &amp; notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#expected-output-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expected output structure
       
     </span>
   </a>
@@ -2030,25 +2074,72 @@
   
 
 
-<h1 id="02-export-results">02 — Export Results<a class="headerlink" href="#02-export-results" title="Permanent link">&para;</a></h1>
-<p><strong>Notebook</strong>: <a href="https://github.com/gpt-cmdr/ras2cng/blob/master/examples/02_export_results.py">examples/02_export_results.py</a></p>
-<p>Exports 2D mesh summary results from <code>BaldEagleCrkMulti2D</code> plan HDF files and joins them to
-polygon geometry.</p>
+<h1 id="07-result-maps">07 — Result Maps<a class="headerlink" href="#07-result-maps" title="Permanent link">&para;</a></h1>
+<p><strong>Notebook</strong>: <a href="https://github.com/gpt-cmdr/ras2cng/blob/master/examples/07_result_maps.py">examples/07_result_maps.py</a></p>
+<p>Rendered result rasters via the HEC-RAS mapping engine — both from a full
+project (<code>map</code>) and from <strong>minimal inputs</strong>: a plan HDF + terrain raster with
+no project at all (<code>map-hdf</code>).</p>
 <h2 id="what-it-demonstrates">What it demonstrates<a class="headerlink" href="#what-it-demonstrates" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Check for available plan HDF files (<code>.p??.hdf</code>) in the project</li>
-<li>Export <code>Maximum Depth</code> as point geometry</li>
-<li>Re-export joined to <code>mesh_cells</code> polygon geometry</li>
-<li>Export all available variables with <code>export_all_variables()</code></li>
-<li>Column name snake_case normalization</li>
-</ul>
-<h2 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
-<p><code>BaldEagleCrkMulti2D</code> does not include pre-computed plan results. The notebook guides you to
-either run the HEC-RAS model first, or explains what the output would look like with result files present.</p>
+<ol>
+<li><code>read_plan_hdf_metadata()</code> — everything the plan HDF carries (projection
+   WKT, units, plan ShortID, titles) that makes project-free mapping possible</li>
+<li><code>generate_result_maps()</code> on a full project — WSE/Depth at the Max profile</li>
+<li><code>build_scaffold()</code> + <code>generate_result_maps()</code> — the <code>map-hdf</code> path:
+   synthesize a barebones project around the HDF, build the terrain headlessly
+   from a raw DEM GeoTIFF via <code>RasProcess.exe CreateTerrain</code></li>
+<li>Whole-simulation map types — Arrival Time, Duration, Percent Time Inundated
+   with an <code>arrival_depth</code> wet/dry threshold</li>
+<li>Inspecting output rasters with rasterio</li>
+</ol>
 <h2 id="run-it">Run it<a class="headerlink" href="#run-it" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>marimo<span class="w"> </span>edit<span class="w"> </span>examples/02_export_results.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>marimo<span class="w"> </span>edit<span class="w"> </span>examples/07_result_maps.py
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># or</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>examples/02_export_results.py
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>examples/07_result_maps.py
+</code></pre></div>
+<h2 id="cli-equivalents">CLI equivalents<a class="headerlink" href="#cli-equivalents" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Full project</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>path/to/project<span class="w"> </span>./maps<span class="w"> </span>--render-mode<span class="w"> </span>sloping
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Plan HDF + raw terrain TIFF only (no project needed)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>ras2cng<span class="w"> </span>map-hdf<span class="w"> </span>results.p07.hdf<span class="w"> </span>./maps<span class="w"> </span>--terrain<span class="w"> </span>dem.tif
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Pre-built HEC-RAS terrain (skips the terrain build)</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>ras2cng<span class="w"> </span>map-hdf<span class="w"> </span>results.p07.hdf<span class="w"> </span>./maps<span class="w"> </span>--terrain-hdf<span class="w"> </span>Terrain50.hdf
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Whole-simulation products at a 0.5 ft wet/dry threshold</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>ras2cng<span class="w"> </span>map-hdf<span class="w"> </span>results.p07.hdf<span class="w"> </span>./maps<span class="w"> </span>--terrain<span class="w"> </span>dem.tif<span class="w"> </span>^
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span>--no-wse<span class="w"> </span>--no-depth<span class="w"> </span>--no-velocity<span class="w"> </span>^
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span>--arrival-time<span class="w"> </span>--duration<span class="w"> </span>--percent-inundated<span class="w"> </span>--arrival-depth<span class="w"> </span><span class="m">0</span>.5
+</code></pre></div>
+<h2 id="requirements-notes">Requirements &amp; notes<a class="headerlink" href="#requirements-notes" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Windows HEC-RAS install</strong> (6.6 recommended) — the mapping engine is
+  RasMapperLib; ras2cng drives it through ras-commander's bundled
+  <code>RasStoreMapHelper.exe</code></li>
+<li><strong>A computed plan HDF.</strong> <code>BaldEagleCrkMulti2D</code> ships without results — the
+  notebook has a <code>RUN_MODEL</code> flag to compute plan 07 first (several minutes),
+  or point <code>PLAN_HDF</code> at any computed plan HDF you already have. The filename
+  does not need to match the project convention; project name and plan number
+  are read from HDF attributes.</li>
+<li>Whole-simulation types ignore <code>--profile</code> and label outputs by threshold,
+  e.g. <code>Arrival Time (0.5ft hrs).tif</code>. They also trigger a large
+  <code>PostProcessing.hdf</code> cache, which ras2cng removes from the output directory
+  unless <code>--keep-postprocessing</code> is passed.</li>
+<li><code>--recession</code> is accepted but ignored with a warning — RasMapperLib has no
+  recession map type.</li>
+<li>The scaffold directory (<code>OUTPUT/_scaffold</code> by default) is reused across
+  reruns so the terrain build happens once; pass <code>--rm-scaffold</code> to delete it.</li>
+</ul>
+<h2 id="expected-output-structure">Expected output structure<a class="headerlink" href="#expected-output-structure" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>out/07_result_maps/
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── from_project/p07/
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│   ├── WSE (Max).Terrain50.baldeagledem.tif
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   └── Depth (Max).Terrain50.baldeagledem.tif
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>├── from_hdf_only/p07/            # minimal-inputs path (map-hdf)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>└── whole_simulation/p07/
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    ├── Arrival Time (0.5ft hrs).Terrain50.baldeagledem.tif
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    ├── Duration (0.5ft hrs).Terrain50.baldeagledem.tif
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    └── Percent Time Inundated (0.5ft).Terrain50.baldeagledem.tif
 </code></pre></div>
 
 
@@ -2072,7 +2163,7 @@ either run the HEC-RAS model first, or explains what the output would look like 
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 9, 2026 01:26:36 UTC">July 9, 2026</span>
   </span>
 
     
@@ -2082,7 +2173,7 @@ either run the HEC-RAS model first, or explains what the output would look like 
     <span class="md-icon" title="Created">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 9, 2026 01:26:36 UTC">July 9, 2026</span>
   </span>
 
     

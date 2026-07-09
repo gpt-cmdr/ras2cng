@@ -1230,6 +1230,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/07_result_maps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 - Result Maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1511,6 +1539,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ras2cng-spatial-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ras2cng spatial-index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ras2cng-geometry" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1592,6 +1631,17 @@
     <span class="md-ellipsis">
       
         ras2cng map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ras2cng-map-hdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ras2cng map-hdf
       
     </span>
   </a>
@@ -1728,6 +1778,34 @@
     
   
     mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scaffold/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scaffold
   
 
     
@@ -2065,6 +2143,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ras2cng-spatial-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ras2cng spatial-index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ras2cng-geometry" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2153,6 +2242,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ras2cng-map-hdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ras2cng map-hdf
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ras2cng-terrain-mod" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2206,16 +2306,17 @@
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>Commands:
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  inspect      Inspect a HEC-RAS project structure without extracting any data.
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  archive      Archive a HEC-RAS project to consolidated GeoParquet files.
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  geometry     Export HEC-RAS geometry to GeoParquet.
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  results      Export HEC-RAS 2D mesh summary results to GeoParquet.
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  precip       Export gridded precipitation and cumulative precipitation GeoTIFFs.
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  query        Query GeoParquet files using DuckDB SQL.
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  pmtiles      Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  sync         Sync GeoParquet data to PostGIS.
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>  terrain      Consolidate project terrains into a single merged TIFF.
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>  map          Generate result rasters (WSE, Depth, Velocity, etc.).
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>  terrain-mod  Export terrain with modifications as GeoTIFF.
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>  mannings     Export final Manning&#39;s n raster.
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  spatial-index Post-process an existing archive with Hilbert sorting and join indexes.
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  geometry     Export HEC-RAS geometry to GeoParquet.
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  results      Export HEC-RAS 2D mesh summary results to GeoParquet.
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  precip       Export gridded precipitation and cumulative precipitation GeoTIFFs.
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  query        Query GeoParquet files using DuckDB SQL.
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  pmtiles      Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>  sync         Sync GeoParquet data to PostGIS.
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>  terrain      Consolidate project terrains into a single merged TIFF.
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>  map          Generate result rasters (WSE, Depth, Velocity, etc.).
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>  terrain-mod  Export terrain with modifications as GeoTIFF.
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>  mannings     Export final Manning&#39;s n raster.
 </code></pre></div>
 <h2 id="ras2cng-inspect">ras2cng inspect<a class="headerlink" href="#ras2cng-inspect" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Usage: ras2cng inspect [OPTIONS] PROJECT
@@ -2248,187 +2349,283 @@
 <a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>  --terrain / --no-terrain    Convert terrain TIFFs to Cloud Optimized GeoTIFF
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>  --plan-geometry             Also extract geometry copy embedded in plan HDF files
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>  --plans TEXT                Comma-separated plan IDs to include, e.g. p01,p02 (default: all)
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>  --skip-errors / --fail-fast Skip individual layer errors vs abort
-<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>  --no-sort                   Disable Hilbert spatial sorting (on by default)
-<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>  --map / --no-map            Generate result rasters via RasStoreMapHelper
-<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>  --consolidate-terrain       Merge terrains into single COG
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>  --render-mode TEXT          Water surface render mode: horizontal, sloping, slopingPretty
-<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>  --ras-version TEXT          HEC-RAS version for RasProcess mapping
-<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>  --rasprocess PATH           Path to HEC-RAS install directory (for helper deployment)
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>  --result-variables TEXT     Comma-separated result summary variables or slugs to include
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>  --results-layout TEXT       Results output layout: plan or variable
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>  --results-geometry TEXT     Results geometry mode: polygon, point, or none
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>  --skip-errors / --fail-fast Skip individual layer errors vs abort
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>  --no-sort                   Disable Hilbert spatial post-processing (on by default)
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>  --map / --no-map            Generate result rasters via RasStoreMapHelper
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>  --consolidate-terrain       Merge terrains into single COG
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>  --render-mode TEXT          Water surface render mode: horizontal, sloping, slopingPretty
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>  --ras-version TEXT          HEC-RAS version for RasProcess mapping
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>  --rasprocess PATH           Path to HEC-RAS install directory (for helper deployment)
 </code></pre></div>
-<h2 id="ras2cng-geometry">ras2cng geometry<a class="headerlink" href="#ras2cng-geometry" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Usage: ras2cng geometry [OPTIONS] GEOM_FILE OUTPUT
+<p><code>archive</code> runs the same spatial post-processing pass as <code>spatial-index</code> by
+default. The pass adds <code>hilbert_index</code> to GeoParquet geometry, sorts rows by
+<code>layer,hilbert_index</code>, and preserves GeoParquet bbox <code>covering</code> metadata.
+Geometryless result tables receive <code>join_index</code>; when matching mesh geometry is
+available, they also inherit <code>hilbert_index</code> by <code>mesh_name</code> plus <code>cell_id</code> or
+<code>face_id</code>. Use <code>--no-sort</code> for extraction-only runs on memory-constrained
+workers, then run <code>ras2cng spatial-index ARCHIVE_DIR</code> later.</p>
+<h2 id="ras2cng-spatial-index">ras2cng spatial-index<a class="headerlink" href="#ras2cng-spatial-index" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Usage: ras2cng spatial-index [OPTIONS] ARCHIVE_DIR
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  Export HEC-RAS geometry to GeoParquet.
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  Post-process an existing archive with Hilbert sorting and join indexes.
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>Arguments:
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>  GEOM_FILE  HEC-RAS geometry file (*.g??) or geometry HDF (*.g??.hdf)
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  OUTPUT     Output GeoParquet file path
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>Options:
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_areas, cross_sections,
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>                    centerlines, bc_lines, breaklines, refinement_regions,
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>                    reference_lines, reference_points, structures, storage_areas
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>  ARCHIVE_DIR  ras2cng archive directory containing manifest.json
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>Options:
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>  --hilbert-level INTEGER     Hilbert curve level  [default: 16]
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>  --skip-errors / --fail-fast Skip individual parquet errors vs abort
 </code></pre></div>
-<h2 id="ras2cng-results">ras2cng results<a class="headerlink" href="#ras2cng-results" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Usage: ras2cng results [OPTIONS] PLAN_HDF OUTPUT
+<p><code>spatial-index</code> updates the archive in place and rewrites <code>manifest.json</code>
+schema 2.3 index metadata. Geometry layers record <code>hilbert_index</code>, <code>sort_order</code>,
+and bbox columns. Result variables record join metadata such as <code>index_column</code>,
+<code>geometry_filter</code>, <code>join_index</code>, <code>hilbert_index</code>, <code>sort_order</code>, and
+<code>index_status</code> (<code>spatial_join</code>, <code>join_key</code>, <code>skipped</code>, or <code>error</code>).</p>
+<h2 id="ras2cng-geometry">ras2cng geometry<a class="headerlink" href="#ras2cng-geometry" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Usage: ras2cng geometry [OPTIONS] GEOM_FILE OUTPUT
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  Export HEC-RAS 2D mesh summary results to GeoParquet.
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  Export HEC-RAS geometry to GeoParquet.
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>Arguments:
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  PLAN_HDF  HEC-RAS plan HDF file (*.p??.hdf)
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  OUTPUT    Output GeoParquet path (or directory when using --all)
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  GEOM_FILE  HEC-RAS geometry file (*.g??) or geometry HDF (*.g??.hdf)
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  OUTPUT     Output GeoParquet file path
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>Options:
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>  -g, --geometry PATH   Geometry GeoParquet for spatial join
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  -v, --var TEXT        Result variable to export  [default: Maximum Depth]
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  --all                 Export all available summary variables to the output directory
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_areas, cross_sections,
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>                    centerlines, bc_lines, breaklines, refinement_regions,
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>                    reference_lines, reference_points, structures, storage_areas
 </code></pre></div>
-<h2 id="ras2cng-precip">ras2cng precip<a class="headerlink" href="#ras2cng-precip" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Usage: ras2cng precip [OPTIONS] HDF_FILE OUTPUT
+<h2 id="ras2cng-results">ras2cng results<a class="headerlink" href="#ras2cng-results" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Usage: ras2cng results [OPTIONS] PLAN_HDF OUTPUT
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  Export gridded precipitation and cumulative precipitation GeoTIFFs.
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  Export HEC-RAS 2D mesh summary results to GeoParquet.
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>Arguments:
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  HDF_FILE  HEC-RAS plan or unsteady HDF file containing gridded precipitation
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  OUTPUT    Output directory for precipitation GeoTIFFs
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  PLAN_HDF  HEC-RAS plan HDF file (*.p??.hdf)
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  OUTPUT    Output GeoParquet path (or directory when using --all)
 <a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
 <a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>Options:
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>  --source TEXT                 Precipitation source: auto, processed, or imported
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>                                 [default: auto]
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>  --timestamps TEXT             Comma-separated timestamp labels or zero-based indices to export
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>  --incremental / --no-incremental
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>                                Write per-timestep precipitation rasters
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>  --cumulative / --no-cumulative
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>                                Write cumulative-through-timestep precipitation rasters
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>  --prefix TEXT                 Optional filename prefix
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>  --no-overwrite                Fail if an output GeoTIFF already exists
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>  -g, --geometry PATH   Geometry GeoParquet for spatial join
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>  -v, --var TEXT        Result variable to export  [default: Maximum Depth]
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>  --all                 Export all available summary variables to the output directory
 </code></pre></div>
-<h2 id="ras2cng-query">ras2cng query<a class="headerlink" href="#ras2cng-query" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Usage: ras2cng query [OPTIONS] INPUT_FILE SQL
+<h2 id="ras2cng-precip">ras2cng precip<a class="headerlink" href="#ras2cng-precip" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Usage: ras2cng precip [OPTIONS] HDF_FILE OUTPUT
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  Query GeoParquet files using DuckDB SQL.
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  Export gridded precipitation and cumulative precipitation GeoTIFFs.
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>Arguments:
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  INPUT_FILE  Input GeoParquet file
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  SQL         SQL query (use _ as table name)
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  HDF_FILE  HEC-RAS plan or unsteady HDF file containing gridded precipitation
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  OUTPUT    Output directory for precipitation GeoTIFFs
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>Options:
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>  -o, --output PATH  Optional output file (CSV or Parquet)
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>  --source TEXT                 Precipitation source: auto, processed, or imported
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>                                 [default: auto]
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>  --timestamps TEXT             Comma-separated timestamp labels or zero-based indices to export
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>  --incremental / --no-incremental
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>                                Write per-timestep precipitation rasters
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>  --cumulative / --no-cumulative
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>                                Write cumulative-through-timestep precipitation rasters
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>  --prefix TEXT                 Optional filename prefix
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>  --no-overwrite                Fail if an output GeoTIFF already exists
 </code></pre></div>
-<h2 id="ras2cng-pmtiles">ras2cng pmtiles<a class="headerlink" href="#ras2cng-pmtiles" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Usage: ras2cng pmtiles [OPTIONS] INPUT_FILE OUTPUT
+<h2 id="ras2cng-query">ras2cng query<a class="headerlink" href="#ras2cng-query" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Usage: ras2cng query [OPTIONS] INPUT_FILE SQL
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>  Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>  Query GeoParquet files using DuckDB SQL.
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>Arguments:
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>  INPUT_FILE  Input GeoParquet file or GeoTIFF
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>  OUTPUT      Output PMTiles file path
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>  INPUT_FILE  Input GeoParquet file
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>  SQL         SQL query (use _ as table name)
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>
 <a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>Options:
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>  -l, --layer TEXT    Vector tile layer name  [default: layer]
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>  --min-zoom INTEGER  Minimum zoom
-<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>  --max-zoom INTEGER  Maximum zoom
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>  -o, --output PATH  Optional output file (CSV or Parquet)
 </code></pre></div>
-<h2 id="ras2cng-sync">ras2cng sync<a class="headerlink" href="#ras2cng-sync" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Usage: ras2cng sync [OPTIONS] INPUT_FILE POSTGRES_URI TABLE_NAME
+<h2 id="ras2cng-pmtiles">ras2cng pmtiles<a class="headerlink" href="#ras2cng-pmtiles" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Usage: ras2cng pmtiles [OPTIONS] INPUT_FILE OUTPUT
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  Sync GeoParquet data to PostGIS.
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>Arguments:
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  INPUT_FILE    Input GeoParquet file
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>  POSTGRES_URI  PostgreSQL connection URI
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>  TABLE_NAME    Target table name
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>Options:
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>  -s, --schema TEXT    Target schema  [default: public]
-<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>  --if-exists TEXT     replace|append|fail  [default: replace]
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  INPUT_FILE  Input GeoParquet file or GeoTIFF
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>  OUTPUT      Output PMTiles file path
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>Options:
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>  -l, --layer TEXT    Vector tile layer name  [default: layer]
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>  --min-zoom INTEGER  Minimum zoom
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>  --max-zoom INTEGER  Maximum zoom
 </code></pre></div>
-<h2 id="ras2cng-terrain">ras2cng terrain<a class="headerlink" href="#ras2cng-terrain" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>Usage: ras2cng terrain [OPTIONS] PROJECT OUTPUT
+<h2 id="ras2cng-sync">ras2cng sync<a class="headerlink" href="#ras2cng-sync" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>Usage: ras2cng sync [OPTIONS] INPUT_FILE POSTGRES_URI TABLE_NAME
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>  Consolidate project terrains into a single merged TIFF and HEC-RAS terrain HDF.
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>  Sync GeoParquet data to PostGIS.
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>Arguments:
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  PROJECT  HEC-RAS project directory or .prj file
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  OUTPUT   Output directory for consolidated terrain files
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>Options:
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>  --name TEXT           Terrain name  [default: Consolidated]
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>  --downsample FLOAT    Downsample factor (2.0 = half resolution)
-<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>  --resolution FLOAT    Target cell size in project units
-<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>  --terrains TEXT       Comma-separated terrain names to include
-<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>  --units TEXT          Vertical units: Feet or Meters  [default: Feet]
-<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>  --ras-version TEXT    HEC-RAS version  [default: 6.6]
-<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>  --tiff-only           Only produce merged TIFF, skip HDF creation
-<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>  --no-register         Don&#39;t register new terrain in rasmap
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  INPUT_FILE    Input GeoParquet file
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  POSTGRES_URI  PostgreSQL connection URI
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>  TABLE_NAME    Target table name
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>Options:
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>  -s, --schema TEXT    Target schema  [default: public]
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>  --if-exists TEXT     replace|append|fail  [default: replace]
+</code></pre></div>
+<h2 id="ras2cng-terrain">ras2cng terrain<a class="headerlink" href="#ras2cng-terrain" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>Usage: ras2cng terrain [OPTIONS] PROJECT OUTPUT
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  Consolidate project terrains into a single merged TIFF and HEC-RAS terrain HDF.
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>Arguments:
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>  PROJECT  HEC-RAS project directory or .prj file
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>  OUTPUT   Output directory for consolidated terrain files
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>Options:
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>  --name TEXT           Terrain name  [default: Consolidated]
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>  --downsample FLOAT    Downsample factor (2.0 = half resolution)
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>  --resolution FLOAT    Target cell size in project units
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>  --terrains TEXT       Comma-separated terrain names to include
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>  --units TEXT          Vertical units: Feet or Meters  [default: Feet]
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>  --ras-version TEXT    HEC-RAS version  [default: 6.6]
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>  --tiff-only           Only produce merged TIFF, skip HDF creation
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>  --no-register         Don&#39;t register new terrain in rasmap
 </code></pre></div>
 <h2 id="ras2cng-map">ras2cng map<a class="headerlink" href="#ras2cng-map" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>Usage: ras2cng map [OPTIONS] PROJECT OUTPUT
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  Generate result rasters (WSE, Depth, Velocity, etc.) via RasStoreMapHelper.
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>  Renders completed plan results to GeoTIFF rasters using the HEC-RAS
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>  mapping engine via RasStoreMapHelper.exe (bundled with ras-commander).
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>Arguments:
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>  PROJECT  HEC-RAS project directory or .prj file
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>  OUTPUT   Output directory for result rasters
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>Options:
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>  --plans TEXT                   Comma-separated plan IDs (default: all with results)
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>  --profile TEXT                 Max, Min, or timestamp  [default: Max]
-<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>  --wse / --no-wse              Water Surface Elevation  [default: on]
-<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>  --depth / --no-depth          Depth  [default: on]
-<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>  --velocity / --no-velocity    Velocity  [default: on]
-<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>  --froude                      Froude number
-<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>  --shear-stress                Shear stress
-<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>  --dv                          Depth x Velocity
-<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>  --dv-sq                       Depth x Velocity²
-<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>  --inundation-boundary         Inundation boundary polygon
-<a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>  --arrival-time                Arrival time
-<a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>  --duration                    Duration
-<a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a>  --recession                   Recession
-<a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a>  --terrain TEXT                 Specific terrain name from rasmap
-<a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a>  --render-mode TEXT            Water surface render mode: horizontal, sloping, slopingPretty
-<a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a>  --ras-version TEXT            HEC-RAS version (e.g. 6.6)
-<a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a>  --rasprocess PATH             Path to HEC-RAS install directory (for helper deployment)
-<a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a>  --min-depth FLOAT             Min depth threshold  [default: 0.0]
-<a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a>  --wgs84                       Reproject output to WGS84
-<a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a>  --cog                         Convert output to Cloud Optimized GeoTIFF
-<a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a>  --timeout INTEGER             Per-plan timeout in seconds  [default: 10800]
-<a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a>  --skip-errors / --fail-fast   Skip errors vs abort
-</code></pre></div>
-<h2 id="ras2cng-terrain-mod">ras2cng terrain-mod<a class="headerlink" href="#ras2cng-terrain-mod" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>Usage: ras2cng terrain-mod [OPTIONS] PROJECT OUTPUT
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>Usage: ras2cng map [OPTIONS] PROJECT OUTPUT
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>  Export terrain with modifications (channels, levees, etc.) as GeoTIFF.
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>  Generate result rasters (WSE, Depth, Velocity, etc.) via RasStoreMapHelper.
 <a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>  Samples the modified terrain surface at full raster resolution via
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>  RasMapperLib. Requires HEC-RAS 6.6+ and pythonnet (Windows only).
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>  Renders completed plan results to GeoTIFF rasters using the HEC-RAS
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>  mapping engine via RasStoreMapHelper.exe (bundled with ras-commander).
 <a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>
 <a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>Arguments:
 <a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>  PROJECT  HEC-RAS project directory or .prj file
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>  OUTPUT   Output GeoTIFF path
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>  OUTPUT   Output directory for result rasters
 <a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>
 <a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>Options:
-<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>  -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
-<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>  --terrain TEXT        Specific terrain name from rasmap
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>  --plans TEXT                   Comma-separated plan IDs (default: all with results)
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>  --profile TEXT                 Max, Min, or timestamp  [default: Max]
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>  --wse / --no-wse              Water Surface Elevation  [default: on]
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>  --depth / --no-depth          Depth  [default: on]
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>  --velocity / --no-velocity    Velocity  [default: on]
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>  --froude                      Froude number
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>  --shear-stress                Shear stress
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>  --dv                          Depth x Velocity
+<a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>  --dv-sq                       Depth x Velocity²
+<a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a>  --inundation-boundary         Inundation boundary polygon
+<a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a>  --arrival-time                Arrival time (hours, whole-simulation)
+<a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a>  --duration                    Inundation duration (hours)
+<a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a>  --percent-inundated           Percent time inundated
+<a id="__codelineno-11-26" name="__codelineno-11-26" href="#__codelineno-11-26"></a>  --arrival-depth FLOAT         Wet/dry depth threshold for arrival/duration/
+<a id="__codelineno-11-27" name="__codelineno-11-27" href="#__codelineno-11-27"></a>                                percent-inundated  [default: 0.0]
+<a id="__codelineno-11-28" name="__codelineno-11-28" href="#__codelineno-11-28"></a>  --terrain TEXT                 Specific terrain name from rasmap
+<a id="__codelineno-11-29" name="__codelineno-11-29" href="#__codelineno-11-29"></a>  --render-mode TEXT            Water surface render mode: horizontal, sloping, slopingPretty
+<a id="__codelineno-11-30" name="__codelineno-11-30" href="#__codelineno-11-30"></a>  --ras-version TEXT            HEC-RAS version (e.g. 6.6)
+<a id="__codelineno-11-31" name="__codelineno-11-31" href="#__codelineno-11-31"></a>  --rasprocess PATH             Path to HEC-RAS install directory (for helper deployment)
+<a id="__codelineno-11-32" name="__codelineno-11-32" href="#__codelineno-11-32"></a>  --min-depth FLOAT             Min depth threshold  [default: 0.0]
+<a id="__codelineno-11-33" name="__codelineno-11-33" href="#__codelineno-11-33"></a>  --wgs84                       Reproject output to WGS84
+<a id="__codelineno-11-34" name="__codelineno-11-34" href="#__codelineno-11-34"></a>  --cog                         Convert output to Cloud Optimized GeoTIFF
+<a id="__codelineno-11-35" name="__codelineno-11-35" href="#__codelineno-11-35"></a>  --timeout INTEGER             Per-plan timeout in seconds  [default: 10800]
+<a id="__codelineno-11-36" name="__codelineno-11-36" href="#__codelineno-11-36"></a>  --skip-errors / --fail-fast   Skip errors vs abort
+<a id="__codelineno-11-37" name="__codelineno-11-37" href="#__codelineno-11-37"></a>  --keep-postprocessing         Keep the (large) PostProcessing.hdf cache in the output directory
+</code></pre></div>
+<p>Notes on whole-simulation types: <code>--arrival-time</code>, <code>--duration</code>, and
+<code>--percent-inundated</code> are computed over the entire simulation (the <code>--profile</code>
+option does not apply) and their filenames carry the <code>--arrival-depth</code>
+threshold, e.g. <code>Arrival Time (0.1ft hrs).tif</code>. Works with any ras-commander
+version: newer versions generate these natively; older versions are handled by
+a rasmap pre-injection shim inside ras2cng. <code>--recession</code> is accepted but
+ignored with a warning — RasMapperLib has no recession map type.</p>
+<h2 id="ras2cng-map-hdf">ras2cng map-hdf<a class="headerlink" href="#ras2cng-map-hdf" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>Usage: ras2cng map-hdf [OPTIONS] PLAN_HDF OUTPUT
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  Generate result rasters from just a plan HDF + terrain (no project needed).
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>  Synthesizes a barebones HEC-RAS project around the plan HDF (projection,
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  units, and plan metadata are read from the HDF itself), builds the HEC-RAS
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>  terrain from raw GeoTIFF(s) via RasProcess.exe CreateTerrain (or reuses a
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>  pre-built terrain HDF), then renders stored maps through RASMapper.
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>Arguments:
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>  PLAN_HDF  Computed plan results HDF (*.pNN.hdf, any filename)
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>  OUTPUT    Output directory for result rasters
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>Options:
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>  --terrain PATH                Raw terrain GeoTIFF (repeatable; tiles are stitched)
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>  --terrain-hdf PATH            Pre-built HEC-RAS terrain HDF (its .vrt and tile
+<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a>                                TIFFs must sit beside it)
+<a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a>  --projection PATH             ESRI .prj projection file (default: read WKT from
+<a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a>                                the plan HDF)
+<a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a>  --workdir PATH                Scaffold directory (default: OUTPUT/_scaffold;
+<a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a>                                reused across reruns)
+<a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a>  --rm-scaffold                 Delete the scaffold directory after the run
+<a id="__codelineno-12-23" name="__codelineno-12-23" href="#__codelineno-12-23"></a>  --profile TEXT                Max, Min, or timestamp  [default: Max]
+<a id="__codelineno-12-24" name="__codelineno-12-24" href="#__codelineno-12-24"></a>  --wse / --no-wse              Water Surface Elevation  [default: on]
+<a id="__codelineno-12-25" name="__codelineno-12-25" href="#__codelineno-12-25"></a>  --depth / --no-depth          Depth  [default: on]
+<a id="__codelineno-12-26" name="__codelineno-12-26" href="#__codelineno-12-26"></a>  --velocity / --no-velocity    Velocity  [default: on]
+<a id="__codelineno-12-27" name="__codelineno-12-27" href="#__codelineno-12-27"></a>  --froude                      Froude number
+<a id="__codelineno-12-28" name="__codelineno-12-28" href="#__codelineno-12-28"></a>  --shear-stress                Shear stress
+<a id="__codelineno-12-29" name="__codelineno-12-29" href="#__codelineno-12-29"></a>  --dv                          Depth x Velocity
+<a id="__codelineno-12-30" name="__codelineno-12-30" href="#__codelineno-12-30"></a>  --dv-sq                       Depth x Velocity²
+<a id="__codelineno-12-31" name="__codelineno-12-31" href="#__codelineno-12-31"></a>  --inundation-boundary         Inundation boundary polygon
+<a id="__codelineno-12-32" name="__codelineno-12-32" href="#__codelineno-12-32"></a>  --arrival-time                Arrival time (hours, whole-simulation)
+<a id="__codelineno-12-33" name="__codelineno-12-33" href="#__codelineno-12-33"></a>  --duration                    Inundation duration (hours)
+<a id="__codelineno-12-34" name="__codelineno-12-34" href="#__codelineno-12-34"></a>  --percent-inundated           Percent time inundated
+<a id="__codelineno-12-35" name="__codelineno-12-35" href="#__codelineno-12-35"></a>  --arrival-depth FLOAT         Wet/dry depth threshold for arrival/duration/
+<a id="__codelineno-12-36" name="__codelineno-12-36" href="#__codelineno-12-36"></a>                                percent-inundated  [default: 0.0]
+<a id="__codelineno-12-37" name="__codelineno-12-37" href="#__codelineno-12-37"></a>  --render-mode TEXT            Water surface render mode  [default: sloping]
+<a id="__codelineno-12-38" name="__codelineno-12-38" href="#__codelineno-12-38"></a>  --ras-version TEXT            HEC-RAS version  [default: 6.6]
+<a id="__codelineno-12-39" name="__codelineno-12-39" href="#__codelineno-12-39"></a>  --rasprocess PATH             Path to HEC-RAS install directory (for helper deployment)
+<a id="__codelineno-12-40" name="__codelineno-12-40" href="#__codelineno-12-40"></a>  --min-depth FLOAT             Min depth threshold  [default: 0.0]
+<a id="__codelineno-12-41" name="__codelineno-12-41" href="#__codelineno-12-41"></a>  --wgs84                       Reproject output to WGS84
+<a id="__codelineno-12-42" name="__codelineno-12-42" href="#__codelineno-12-42"></a>  --cog                         Convert output to Cloud Optimized GeoTIFF
+<a id="__codelineno-12-43" name="__codelineno-12-43" href="#__codelineno-12-43"></a>  --timeout INTEGER             Timeout in seconds  [default: 10800]
+<a id="__codelineno-12-44" name="__codelineno-12-44" href="#__codelineno-12-44"></a>  --keep-postprocessing         Keep the (large) PostProcessing.hdf cache in the output directory
+</code></pre></div>
+<p>Examples:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Raw terrain TIFF — terrain HDF is built headlessly via RasProcess.exe</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>ras2cng<span class="w"> </span>map-hdf<span class="w"> </span>results.p01.hdf<span class="w"> </span>./maps<span class="w"> </span>--terrain<span class="w"> </span>dem.tif
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Multiple terrain tiles (stitched)</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>ras2cng<span class="w"> </span>map-hdf<span class="w"> </span>results.p01.hdf<span class="w"> </span>./maps<span class="w"> </span>--terrain<span class="w"> </span>dem_a.tif<span class="w"> </span>--terrain<span class="w"> </span>dem_b.tif
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Pre-built HEC-RAS terrain (skips the terrain build)</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>ras2cng<span class="w"> </span>map-hdf<span class="w"> </span>results.p01.hdf<span class="w"> </span>./maps<span class="w"> </span>--terrain-hdf<span class="w"> </span>Terrain50.hdf
+</code></pre></div>
+<p>Requires a Windows HEC-RAS install (RasMapperLib + bundled GDAL). Exactly one
+of <code>--terrain</code> / <code>--terrain-hdf</code> must be given. The plan HDF must carry a
+<code>Projection</code> attribute or <code>--projection</code> must be supplied.</p>
+<h2 id="ras2cng-terrain-mod">ras2cng terrain-mod<a class="headerlink" href="#ras2cng-terrain-mod" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>Usage: ras2cng terrain-mod [OPTIONS] PROJECT OUTPUT
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>  Export terrain with modifications (channels, levees, etc.) as GeoTIFF.
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>  Samples the modified terrain surface at full raster resolution via
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>  RasMapperLib. Requires HEC-RAS 6.6+ and pythonnet (Windows only).
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>Arguments:
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>  PROJECT  HEC-RAS project directory or .prj file
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>  OUTPUT   Output GeoTIFF path
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>Options:
+<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a>  -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
+<a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>  --terrain TEXT        Specific terrain name from rasmap
 </code></pre></div>
 <h2 id="ras2cng-mannings">ras2cng mannings<a class="headerlink" href="#ras2cng-mannings" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>Usage: ras2cng mannings [OPTIONS] PROJECT OUTPUT
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  Export final Manning&#39;s n raster (base landcover + calibration overrides).
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>  Produces a full-resolution GeoTIFF of Manning&#39;s n values matching the
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  land cover raster grid, with all calibration region overrides applied.
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>Arguments:
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>  PROJECT  HEC-RAS project directory or .prj file
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>  OUTPUT   Output GeoTIFF path
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>Options:
-<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>  -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>Usage: ras2cng mannings [OPTIONS] PROJECT OUTPUT
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>  Export final Manning&#39;s n raster (base landcover + calibration overrides).
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>  Produces a full-resolution GeoTIFF of Manning&#39;s n values matching the
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>  land cover raster grid, with all calibration region overrides applied.
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>Arguments:
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>  PROJECT  HEC-RAS project directory or .prj file
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>  OUTPUT   Output GeoTIFF path
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>Options:
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>  -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
 </code></pre></div>
 
 
@@ -2452,7 +2649,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="June 14, 2026 18:56:40 UTC">June 14, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 9, 2026 01:26:36 UTC">July 9, 2026</span>
   </span>
 
     

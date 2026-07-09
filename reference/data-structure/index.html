@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://gpt-cmdr.github.io/ras2cng/reference/data-structure/">
       
       
-        <link rel="prev" href="../../examples/06_project_archive/">
+        <link rel="prev" href="../../examples/07_result_maps/">
       
       
         <link rel="next" href="../../api/">
@@ -1230,6 +1230,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/07_result_maps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 - Result Maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1394,6 +1422,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#mesh_faces-2d-flow-area-face-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mesh_faces — 2D Flow Area Face Lines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cross_sections-1d-cross-section-cut-lines" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1443,6 +1482,17 @@
     <span class="md-ellipsis">
       
         Schema — Polygons (with --geometry mesh_cells.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-attribute-tables-archive-results-geometry-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema — Attribute Tables (archive --results-geometry none)
       
     </span>
   </a>
@@ -1821,6 +1871,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/scaffold/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scaffold
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/terrain/" class="md-nav__link">
         
   
@@ -2138,6 +2216,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#mesh_faces-2d-flow-area-face-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mesh_faces — 2D Flow Area Face Lines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cross_sections-1d-cross-section-cut-lines" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2187,6 +2276,17 @@
     <span class="md-ellipsis">
       
         Schema — Polygons (with --geometry mesh_cells.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-attribute-tables-archive-results-geometry-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema — Attribute Tables (archive --results-geometry none)
       
     </span>
   </a>
@@ -2482,6 +2582,42 @@ Contains 10 geometry configurations (<code>g01</code>–<code>g13</code>) and mu
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">mesh_name</span><span class="p">,</span><span class="w"> </span><span class="n">cell_id</span><span class="p">,</span><span class="w"> </span><span class="n">ST_Area</span><span class="p">(</span><span class="n">geometry</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">area_ft2</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">FROM</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">ST_Area</span><span class="p">(</span><span class="n">geometry</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">20000</span><span class="p">;</span>
 </code></pre></div></p>
+<hr />
+<h2 id="mesh_faces-2d-flow-area-face-lines">mesh_faces — 2D Flow Area Face Lines<a class="headerlink" href="#mesh_faces-2d-flow-area-face-lines" title="Permanent link">&para;</a></h2>
+<p><strong>Source</strong>: <code>BaldEagleDamBrk.g01.hdf</code> via <code>HdfMesh.get_mesh_cell_faces()</code></p>
+<p><code>mesh_faces</code> uses native HEC-RAS face geometry where available. Face-level
+result variables, such as maximum face velocity, join this layer on
+<code>mesh_name</code> plus <code>face_id</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+<th>Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mesh_name</code></td>
+<td><code>str</code></td>
+<td>Name of 2D flow area</td>
+<td><code>"BaldEagleCr"</code></td>
+</tr>
+<tr>
+<td><code>face_id</code></td>
+<td><code>int64</code></td>
+<td>Face index (0-based)</td>
+<td><code>0</code>, <code>1</code>, <code>2</code>, ...</td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td><code>LineString</code></td>
+<td>Native mesh face line</td>
+<td><code>LINESTRING (...)</code></td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="cross_sections-1d-cross-section-cut-lines">cross_sections — 1D Cross Section Cut Lines<a class="headerlink" href="#cross_sections-1d-cross-section-cut-lines" title="Permanent link">&para;</a></h2>
 <p><strong>Source</strong>: <code>BaldEagleDamBrk.g06.hdf</code> via <code>HdfXsec.get_cross_sections()</code></p>
@@ -2920,6 +3056,62 @@ Run the model in HEC-RAS to generate them, then use <code>ras2cng results</code>
 </tr>
 </tbody>
 </table>
+<h3 id="schema-attribute-tables-archive-results-geometry-none">Schema — Attribute Tables (<code>archive --results-geometry none</code>)<a class="headerlink" href="#schema-attribute-tables-archive-results-geometry-none" title="Permanent link">&para;</a></h3>
+<p>Archive result tables can be written without geometry to avoid repeating large
+mesh geometry for every variable. These tables are plain Parquet and are keyed
+for viewer-side or SQL joins:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mesh_name</code></td>
+<td><code>str</code></td>
+<td>Name of 2D flow area</td>
+</tr>
+<tr>
+<td><code>cell_id</code></td>
+<td><code>int64</code></td>
+<td>Cell key for cell variables such as depth or WSE</td>
+</tr>
+<tr>
+<td><code>face_id</code></td>
+<td><code>int64</code></td>
+<td>Face key for face variables such as face velocity</td>
+</tr>
+<tr>
+<td><code>&lt;variable&gt;</code></td>
+<td>numeric</td>
+<td>Result value, e.g. <code>maximum_depth</code></td>
+</tr>
+<tr>
+<td><code>layer</code></td>
+<td><code>str</code></td>
+<td>Variable slug when exported from an archive</td>
+</tr>
+<tr>
+<td><code>join_index</code></td>
+<td><code>int64</code></td>
+<td>Added by spatial post-processing for deterministic key ordering</td>
+</tr>
+<tr>
+<td><code>hilbert_index</code></td>
+<td><code>uint64</code></td>
+<td>Added when a matching <code>mesh_cells</code> or <code>mesh_faces</code> layer can provide spatial order</td>
+</tr>
+</tbody>
+</table>
+<p>Each variable table carries the relevant mesh key: cell variables use <code>cell_id</code>,
+and face variables use <code>face_id</code>.
+Cell variables join geometry by <code>mesh_name, cell_id</code>; face variables join native
+<code>mesh_faces</code> by <code>mesh_name, face_id</code>. The manifest records
+<code>index_status=spatial_join</code> when <code>hilbert_index</code> was inherited from geometry and
+<code>index_status=join_key</code> when only key ordering was possible.</p>
 <h3 id="all-available-variables-typical-2d-unsteady-plan">All Available Variables (typical 2D unsteady plan)<a class="headerlink" href="#all-available-variables-typical-2d-unsteady-plan" title="Permanent link">&para;</a></h3>
 <p>ras-commander normalizes all variable names to <strong>snake_case</strong>:</p>
 <table>
@@ -2982,8 +3174,10 @@ Run the model in HEC-RAS to generate them, then use <code>ras2cng results</code>
 <li>Encoding: Well-Known Binary (WKB) via <code>geopandas.to_parquet()</code></li>
 <li>Compression: <strong>ZSTD</strong> for archive output (<code>archive_project()</code>), snappy for legacy single-file exports</li>
 <li>CRS: Preserved in parquet metadata (<code>geo</code> key)</li>
-<li>Archive output includes per-row bbox columns (<code>bbox_xmin</code>, <code>bbox_ymin</code>, <code>bbox_xmax</code>, <code>bbox_ymax</code>) with GeoParquet <code>covering</code> metadata for spatial predicate pushdown</li>
-<li>Archive output is Hilbert-sorted within each layer for optimal spatial locality</li>
+<li>Archive GeoParquet includes per-row bbox columns (<code>bbox_xmin</code>, <code>bbox_ymin</code>, <code>bbox_xmax</code>, <code>bbox_ymax</code>) with GeoParquet <code>covering</code> metadata for spatial predicate pushdown</li>
+<li>Spatial post-processing adds <code>hilbert_index</code> to GeoParquet geometry and sorts by <code>layer,hilbert_index</code>; <code>--no-sort</code> skips this during extraction and <code>ras2cng spatial-index ARCHIVE_DIR</code> can run it later</li>
+<li>Geometryless archive result tables get <code>join_index</code> and, when matching mesh geometry exists, inherit <code>hilbert_index</code> through <code>mesh_name</code> plus <code>cell_id</code> or <code>face_id</code></li>
+<li><code>manifest.json</code> schema 2.3 records index metadata, including <code>sort_order</code>, <code>index_column</code>, <code>geometry_filter</code>, and <code>index_status</code></li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
@@ -3098,7 +3292,7 @@ Run the model in HEC-RAS to generate them, then use <code>ras2cng results</code>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 03:21:51 UTC">March 10, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 9, 2026 01:26:36 UTC">July 9, 2026</span>
   </span>
 
     
