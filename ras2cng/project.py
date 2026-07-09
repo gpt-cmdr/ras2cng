@@ -10,10 +10,11 @@ Provides:
 from __future__ import annotations
 
 import json
+import gc
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import pandas as pd
 from ras_commander import init_ras_project
@@ -38,6 +39,9 @@ from ras2cng.geometry import (
 )
 
 console = Console()
+
+VALID_RESULTS_LAYOUTS = {"plan", "variable"}
+VALID_RESULTS_GEOMETRY_MODES = {"polygon", "point", "none"}
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +400,33 @@ def _write_geoparquet(gdf, output_path: Path) -> None:
         pq.write_table(table, output_path, compression="zstd")
 
 
+def _frame_has_geometry(frame) -> bool:
+    if "geometry" not in getattr(frame, "columns", []):
+        return False
+    try:
+        return frame.geometry.name == "geometry"
+    except Exception:
+        return False
+
+
+def _write_result_frame(frame, output_path: Path) -> None:
+    """Write either GeoParquet or plain Parquet depending on geometry presence."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if _frame_has_geometry(frame):
+        _write_geoparquet(frame, output_path)
+    else:
+        frame.to_parquet(output_path, compression="zstd", index=False)
+
+
+def _result_join_metadata(frame) -> tuple[str, str]:
+    """Return the result key column and matching geometry layer filter."""
+    if "face_id" in frame.columns and frame["face_id"].notna().any():
+        return "face_id", "mesh_faces"
+    if "cell_id" in frame.columns and frame["cell_id"].notna().any():
+        return "cell_id", "mesh_cells"
+    return "", ""
+
+
 # ---------------------------------------------------------------------------
 # Project metadata export
 # ---------------------------------------------------------------------------
@@ -442,6 +473,9 @@ def archive_project(
     plans: Optional[list[str]] = None,
     skip_errors: bool = True,
     sort: bool = True,
+    result_variables: Optional[Sequence[str]] = None,
+    results_layout: str = "plan",
+    results_geometry: str = "polygon",
     map_results: bool = False,
     consolidate_terrain: bool = False,
     render_mode: Optional[str] = None,
@@ -465,6 +499,14 @@ def archive_project(
             None = all plans with .hdf results
         skip_errors: If True, log and continue past per-layer extraction errors
         sort: If True (default), apply Hilbert spatial sort within each layer
+        result_variables: Restrict results to selected summary variable names/slugs.
+            None = all available variables.
+        results_layout: "plan" keeps the legacy one parquet per plan layout.
+            "variable" writes results/{plan_id}/{variable}.parquet one variable
+            at a time, which is safer for large 2D models.
+        results_geometry: "polygon" joins results to mesh-cell polygons,
+            "point" keeps ras-commander result points, and "none" writes
+            attribute-only tables keyed by mesh_name/cell_id or face_id.
         map_results: If True, generate result rasters via RasProcess after export
         consolidate_terrain: If True, merge terrains into single COG
         render_mode: Water surface render mode: "horizontal", "sloping", or "slopingPretty"
@@ -477,6 +519,14 @@ def archive_project(
     project_path = Path(project_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if results_layout not in VALID_RESULTS_LAYOUTS:
+        raise ValueError(f"Unsupported results_layout: {results_layout}. Expected one of {sorted(VALID_RESULTS_LAYOUTS)}")
+    if results_geometry not in VALID_RESULTS_GEOMETRY_MODES:
+        raise ValueError(
+            f"Unsupported results_geometry: {results_geometry}. "
+            f"Expected one of {sorted(VALID_RESULTS_GEOMETRY_MODES)}"
+        )
 
     project_dir, prj_file = resolve_project_path(project_path)
     console.print(f"\n[bold cyan]ras2cng archive[/bold cyan] -> {output_dir}")
@@ -628,15 +678,23 @@ def archive_project(
             console.print("\n[bold]Terrain:[/bold] No .tif files found in Terrain/")
 
     # -----------------------------------------------------------------
-    # Step 3: Plan results (opt-in, consolidated)
+    # Step 3: Plan results (opt-in)
     # -----------------------------------------------------------------
     if include_results:
-        from ras2cng.results import merge_all_variables, list_available_summary_variables
+        from ras2cng.results import (
+            extract_results_variable,
+            merge_all_variables,
+            result_variable_slug,
+            selected_summary_variables,
+        )
 
         plan_filter = set(plans) if plans else None
         plan_rows = ras.plan_df if ras.plan_df is not None and not ras.plan_df.empty else []
 
-        console.print(f"\n[bold]Results:[/bold] {len(plan_rows)} plan(s) in project")
+        console.print(
+            f"\n[bold]Results:[/bold] {len(plan_rows)} plan(s) in project "
+            f"(layout={results_layout}, geometry={results_geometry})"
+        )
 
         for _, row in (plan_rows.iterrows() if hasattr(plan_rows, "iterrows") else []):
             plan_num = str(row.get("plan_number", "")).zfill(2)
@@ -653,7 +711,7 @@ def archive_project(
             geom_num = str(row.get("geometry_number", "")).zfill(2)
             unsteady = row.get("unsteady_number")
             flow_id = f"u{str(unsteady).zfill(2)}" if unsteady else None
-            mesh_cells_gdf = mesh_cells_by_geom.get(geom_num)
+            mesh_cells_gdf = mesh_cells_by_geom.get(geom_num) if results_geometry == "polygon" else None
 
             # Determine completed status from results_df if available
             completed = None
@@ -664,6 +722,7 @@ def archive_project(
 
             parquet_name = f"{ras.project_name}.p{plan_num}.parquet"
             parquet_path = output_dir / parquet_name
+            plan_parquet = parquet_name if results_layout == "plan" else ""
 
             plan_entry = ManifestPlanEntry(
                 plan_id=plan_id,
@@ -672,24 +731,78 @@ def archive_project(
                 flow_id=flow_id,
                 hdf_exists=True,
                 completed=bool(completed) if completed is not None else True,
-                parquet=parquet_name,
+                parquet=plan_parquet,
+                layout=results_layout,
+                geometry_mode=results_geometry,
             )
 
-            console.print(f"  [{plan_id}] -> {parquet_name}")
+            console.print(f"  [{plan_id}] -> {parquet_name if results_layout == 'plan' else f'results/{plan_id}/'}")
             try:
-                results_gdf = merge_all_variables(plan_hdf, mesh_cells_gdf=mesh_cells_gdf)
-                if results_gdf is not None and len(results_gdf) > 0:
-                    _write_geoparquet(results_gdf, parquet_path)
+                if results_layout == "variable":
+                    selected_variables = selected_summary_variables(plan_hdf, result_variables)
+                    for variable in selected_variables:
+                        variable_slug = result_variable_slug(variable)
+                        variable_rel = Path("results") / plan_id / f"{variable_slug}.parquet"
+                        variable_path = output_dir / variable_rel
+                        try:
+                            frame = extract_results_variable(
+                                plan_hdf,
+                                variable,
+                                mesh_cells_gdf=mesh_cells_gdf,
+                                geometry_mode=results_geometry,
+                            )
+                            if frame is None or len(frame) == 0:
+                                continue
+                            frame["layer"] = variable_slug
+                            _write_result_frame(frame, variable_path)
+                            size_bytes = variable_path.stat().st_size
+                            index_column, geometry_filter = _result_join_metadata(frame)
+                            plan_entry.add_variable(ManifestResultVariable(
+                                variable=variable_slug,
+                                filter_value=variable_slug,
+                                rows=len(frame),
+                                parquet=variable_rel.as_posix(),
+                                geometry_mode=results_geometry,
+                                index_column=index_column,
+                                geometry_filter=geometry_filter,
+                                size_bytes=size_bytes,
+                            ))
+                            plan_entry.size_bytes += size_bytes
+                        except Exception as e:
+                            console.print(f"    [yellow]Warning:[/yellow] Results variable failed for {plan_id}/{variable}: {e}")
+                            if not skip_errors:
+                                raise
+                        finally:
+                            try:
+                                del frame
+                            except UnboundLocalError:
+                                pass
+                            gc.collect()
+                else:
+                    results_gdf = merge_all_variables(
+                        plan_hdf,
+                        mesh_cells_gdf=mesh_cells_gdf,
+                        variables=result_variables,
+                        geometry_mode=results_geometry,
+                    )
+                    if results_gdf is not None and len(results_gdf) > 0:
+                        _write_result_frame(results_gdf, parquet_path)
 
-                    for var_name in results_gdf["layer"].unique():
-                        var_subset = results_gdf[results_gdf["layer"] == var_name]
-                        plan_entry.add_variable(ManifestResultVariable(
-                            variable=var_name,
-                            filter_value=var_name,
-                            rows=len(var_subset),
-                        ))
+                        for var_name in results_gdf["layer"].unique():
+                            var_subset = results_gdf[results_gdf["layer"] == var_name]
+                            index_column, geometry_filter = _result_join_metadata(var_subset)
+                            plan_entry.add_variable(ManifestResultVariable(
+                                variable=var_name,
+                                filter_value=var_name,
+                                rows=len(var_subset),
+                                geometry_mode=results_geometry,
+                                index_column=index_column,
+                                geometry_filter=geometry_filter,
+                            ))
 
-                    plan_entry.size_bytes = parquet_path.stat().st_size
+                        plan_entry.size_bytes = parquet_path.stat().st_size
+                    del results_gdf
+                    gc.collect()
             except Exception as e:
                 console.print(f"  [yellow]Warning:[/yellow] Results export failed for {plan_id}: {e}")
                 if not skip_errors:
@@ -805,6 +918,32 @@ def archive_project(
         console.print(f"  [yellow]Warning:[/yellow] Project metadata export failed: {e}")
         if not skip_errors:
             raise
+
+    # -----------------------------------------------------------------
+    # Step 5: Spatial post-processing
+    # -----------------------------------------------------------------
+    if sort:
+        try:
+            from ras2cng.spatial_index import postprocess_archive
+
+            console.print("\n[bold]Spatial index:[/bold] Hilbert sorting and join indexing")
+            index_summary = postprocess_archive(
+                output_dir,
+                manifest=manifest,
+                write_manifest=False,
+                skip_errors=skip_errors,
+            )
+            console.print(
+                "  indexed "
+                f"{index_summary.get('geometry_file_count', 0)} geometry file(s), "
+                f"{index_summary.get('result_file_count', 0)} result file(s)"
+            )
+            if index_summary.get("error_count"):
+                console.print(f"  [yellow]Warning:[/yellow] {index_summary['error_count']} spatial index error(s)")
+        except Exception as e:
+            console.print(f"  [yellow]Warning:[/yellow] Spatial post-processing failed: {e}")
+            if not skip_errors:
+                raise
 
     # -----------------------------------------------------------------
     # Write manifest

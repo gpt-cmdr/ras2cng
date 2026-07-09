@@ -19,10 +19,28 @@ On Linux, RasProcess.exe runs under Wine. See the [Linux/Wine Setup](../user-gui
 | `shear_stress` | `--shear-stress` | Off | Shear Stress |
 | `depth_x_velocity` | `--dv` | Off | Depth x Velocity |
 | `depth_x_velocity_sq` | `--dv-sq` | Off | Depth x Velocity² |
-| `inundation_boundary` | `--inundation-boundary` | Off | Inundation Boundary |
-| `arrival_time` | `--arrival-time` | Off | Arrival Time |
-| `duration` | `--duration` | Off | Duration |
-| `recession` | `--recession` | Off | Recession |
+| `inundation_boundary` | `--inundation-boundary` | Off | Inundation Boundary (shapefile) |
+| `arrival_time` | `--arrival-time` | Off | Arrival Time (hours, whole-simulation) |
+| `duration` | `--duration` | Off | Inundation Duration (hours, whole-simulation) |
+| `percent_inundated` | `--percent-inundated` | Off | Percent Time Inundated (whole-simulation) |
+
+`--recession` is accepted for compatibility but ignored with a warning —
+RasMapperLib has no recession map type, and only RasMapperLib-native outputs
+are produced.
+
+### Whole-simulation map types
+
+`arrival_time`, `duration`, and `percent_inundated` are computed over the
+entire simulation — the `--profile` option does not apply to them. Their
+filenames carry the `--arrival-depth` wet/dry threshold instead of the profile
+name, e.g. `Arrival Time (0.1ft hrs).tif`. They work with any ras-commander
+version: newer versions generate them natively via `store_maps()`; on older
+versions ras2cng pre-injects the stored-map entries into the `.rasmap`
+(restored afterwards) so the same StoreAllMaps run produces them.
+
+Generating these types causes RasMapperLib to build a `PostProcessing.hdf`
+cache that can exceed the plan HDF in size; ras2cng deletes it from the output
+directory unless `--keep-postprocessing` is passed.
 
 ## Render Mode
 

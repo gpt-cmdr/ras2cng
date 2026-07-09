@@ -8,7 +8,11 @@ Provides:
 
 from __future__ import annotations
 
+import inspect
 import platform
+import shutil
+import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -43,6 +47,17 @@ MAP_TYPE_VARIABLES = {
     "arrival_time": "Arrival Time",
     "duration": "Duration",
     "recession": "Recession",
+    "percent_inundated": "Percent Time Inundated",
+}
+
+# Whole-simulation map types: RasMapperLib labels their outputs by the
+# ArrivalDepth threshold (e.g. "Arrival Time (0.1ft hrs)") instead of the
+# profile, and always computes them over the full simulation. XML MapType
+# names verified against the RasMapperLib.dll MapTypes table (6.6 and 7.0.1).
+ADR_MAP_TYPES = {
+    "arrival_time": ("arrival time", "Arrival Time"),
+    "duration": ("duration", "Duration"),
+    "percent_inundated": ("fraction inundated", "Percent Time Inundated"),
 }
 
 
@@ -63,6 +78,8 @@ def generate_result_maps(
     arrival_time: bool = False,
     duration: bool = False,
     recession: bool = False,
+    percent_inundated: bool = False,
+    arrival_depth: float = 0.0,
     terrain_name: Optional[str] = None,
     ras_version: Optional[str] = None,
     rasprocess_path: Optional[Path] = None,
@@ -72,6 +89,7 @@ def generate_result_maps(
     convert_cog: bool = False,
     timeout: int = 10800,
     skip_errors: bool = True,
+    keep_postprocessing: bool = False,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -91,9 +109,14 @@ def generate_result_maps(
         depth_x_velocity: Generate Depth x Velocity rasters
         depth_x_velocity_sq: Generate Depth x Velocity² rasters
         inundation_boundary: Generate Inundation Boundary polygon (shapefile)
-        arrival_time: Generate Arrival Time rasters
-        duration: Generate Duration rasters
-        recession: Generate Recession rasters
+        arrival_time: Generate Arrival Time rasters (hours; whole-simulation,
+            ignores `profile`)
+        duration: Generate Duration rasters (hours; whole-simulation)
+        recession: Not supported — RasMapperLib has no recession map type;
+            a warning is printed and the flag is ignored
+        percent_inundated: Generate Percent Time Inundated rasters
+        arrival_depth: Wet/dry depth threshold (model vertical units) for
+            arrival/duration/recession/percent_inundated (default: 0.0)
         terrain_name: Specific terrain name from rasmap to use for mapping
         ras_version: HEC-RAS version (auto-detected if None)
         rasprocess_path: Path to HEC-RAS install directory (for helper deployment)
@@ -104,6 +127,9 @@ def generate_result_maps(
         convert_cog: Convert output to Cloud Optimized GeoTIFF
         timeout: Per-plan timeout in seconds (default: 10800 = 3 hours)
         skip_errors: If True, log and continue past errors
+        keep_postprocessing: Keep the PostProcessing.hdf cache RasMapperLib
+            creates for derived map types (can exceed the plan HDF in size).
+            Default: delete it from the output directory.
 
     Returns:
         List of MapResult, one per processed plan
@@ -136,6 +162,15 @@ def generate_result_maps(
             else exe_path / "RasProcess.exe"
         )
 
+    # RasMapperLib has no recession MapType (verified 6.6/7.0.1) — only
+    # RasMapperLib-native products are generated.
+    if recession:
+        console.print(
+            "  [yellow]Warning:[/yellow] recession has no RasMapperLib map type "
+            "- skipping (arrival_time and duration are available)"
+        )
+        recession = False
+
     # Build list of requested map types
     requested_types = _build_requested_types(
         wse=wse, depth=depth, velocity=velocity,
@@ -144,12 +179,19 @@ def generate_result_maps(
         depth_x_velocity_sq=depth_x_velocity_sq,
         inundation_boundary=inundation_boundary,
         arrival_time=arrival_time, duration=duration,
-        recession=recession,
+        percent_inundated=percent_inundated,
     )
 
     if not requested_types:
         console.print("[yellow]Warning:[/yellow] No map types selected")
         return []
+
+    if "inundation_boundary" in requested_types and (reproject_wgs84 or convert_cog):
+        console.print(
+            "  [yellow]Note:[/yellow] raster post-processing (--wgs84/--cog) does "
+            "not apply to the inundation boundary shapefile - it stays in the "
+            "model CRS"
+        )
 
     console.print(f"  Map types: {', '.join(requested_types)}")
 
@@ -190,6 +232,8 @@ def generate_result_maps(
             # Build boolean flags for RasProcess.store_maps()
             type_flags = {t: (t in requested_types) for t in MAP_TYPE_VARIABLES}
 
+            plan_run_started = time.time() - 2  # filesystem mtime slack
+
             result_dict = _generate_plan_maps(
                 ras=ras,
                 plan_number=plan_num,
@@ -198,27 +242,47 @@ def generate_result_maps(
                 terrain_name=terrain_name,
                 render_mode=render_mode,
                 timeout=timeout,
+                arrival_depth=arrival_depth,
                 **type_flags,
             )
+
+            # Shapefile outputs (inundation boundary) are moved by store_maps
+            # but not included in its TIF-oriented return dict — glob them,
+            # restricted to files produced by this run.
+            if "inundation_boundary" in requested_types and not result_dict.get("inundation_boundary"):
+                shp_paths = sorted(
+                    p for p in plan_output.glob("*.shp")
+                    if p.stat().st_mtime >= plan_run_started
+                )
+                if shp_paths:
+                    result_dict["inundation_boundary"] = shp_paths
 
             for map_type in requested_types:
                 tif_paths = result_dict.get(map_type, [])
 
-                # Post-process: depth threshold
-                if map_type == "depth" and min_depth > 0.0:
-                    tif_paths = _apply_depth_threshold(tif_paths, min_depth)
+                # Raster post-processing does not apply to shapefile outputs
+                if map_type != "inundation_boundary":
+                    # Post-process: depth threshold
+                    if map_type == "depth" and min_depth > 0.0:
+                        tif_paths = _apply_depth_threshold(tif_paths, min_depth)
 
-                # Post-process: reproject to WGS84
-                if reproject_wgs84:
-                    tif_paths = _reproject_tifs(tif_paths, "EPSG:4326")
+                    # Post-process: reproject to WGS84
+                    if reproject_wgs84:
+                        tif_paths = _reproject_tifs(tif_paths, "EPSG:4326")
 
-                # Post-process: convert to COG
-                if convert_cog:
-                    tif_paths = _convert_to_cog(tif_paths)
+                    # Post-process: convert to COG
+                    if convert_cog:
+                        tif_paths = _convert_to_cog(tif_paths)
 
                 if tif_paths:
                     map_result.map_types[map_type] = tif_paths
                     console.print(f"    {map_type}: {len(tif_paths)} raster(s)")
+
+            postprocessing_hdf = plan_output / "PostProcessing.hdf"
+            if postprocessing_hdf.exists() and not keep_postprocessing:
+                size_mb = postprocessing_hdf.stat().st_size / 1e6
+                postprocessing_hdf.unlink()
+                console.print(f"    Removed PostProcessing.hdf cache ({size_mb:.0f} MB)")
 
         except Exception as e:
             error_msg = f"plan {plan_id}: {e}"
@@ -282,6 +346,75 @@ def _build_requested_types(**kwargs) -> list[str]:
     return [name for name, enabled in kwargs.items() if enabled]
 
 
+def _store_maps_supports_native_adr() -> bool:
+    """True if the installed ras-commander accepts arrival_time et al. natively."""
+    try:
+        return "arrival_time" in inspect.signature(RasProcess.store_maps).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _inject_adr_stored_maps(
+    rasmap_path: Path,
+    plan_hdf_name: str,
+    adr_requested: dict[str, bool],
+    arrival_depth: float,
+) -> None:
+    """Pre-inject ADR stored-map entries into the rasmap (older ras-commander shim).
+
+    Mirrors the XML schema of RasProcess._add_stored_map_to_rasmap, adding the
+    ArrivalDepth threshold attribute these whole-simulation map types require.
+    StoreAllMaps executes every stored map present in the rasmap, so entries
+    injected before RasProcess.store_maps() ride along in its single run.
+    """
+    tree = ET.parse(rasmap_path)
+    root = tree.getroot()
+
+    results_elem = root.find(".//Results")
+    if results_elem is None:
+        results_elem = ET.SubElement(root, "Results", {"Checked": "True"})
+
+    plan_layer = None
+    for layer in results_elem.findall("Layer"):
+        # Rasmap Filenames are backslash-relative (".\\Model.p01.hdf"); on
+        # POSIX, Path does not split on backslashes, so normalize first.
+        filename = layer.get("Filename", "").replace("\\", "/")
+        if Path(filename).name.lower() == plan_hdf_name.lower():
+            plan_layer = layer
+            break
+    if plan_layer is None:
+        plan_layer = ET.SubElement(results_elem, "Layer", {
+            "Name": Path(plan_hdf_name).stem,
+            "Type": "RASResults",
+            "Filename": f".\\{plan_hdf_name}",
+        })
+
+    for key, (xml_name, display_name) in ADR_MAP_TYPES.items():
+        if not adr_requested.get(key):
+            continue
+        # Folder-qualified like ras-commander's writer; RasMapperLib 6.x
+        # overrides the directory with the Plan ShortID folder either way.
+        stored = f".\\{Path(plan_hdf_name).stem}\\{display_name}.vrt"
+        layer_elem = ET.SubElement(plan_layer, "Layer", {
+            "Name": display_name,
+            "Type": "RASResultsMap",
+            "Checked": "True",
+            "Filename": stored,
+        })
+        ET.SubElement(layer_elem, "MapParameters", {
+            "MapType": xml_name,
+            "OutputMode": "Stored Current Terrain",
+            "StoredFilename": stored,
+            "ProfileIndex": "2147483647",
+            "ProfileName": "Max",
+            "ArrivalDepth": str(arrival_depth),
+        })
+
+    tree.write(rasmap_path, encoding="utf-8", xml_declaration=True)
+
+
+
+
 def _generate_plan_maps(
     ras,
     plan_number: str,
@@ -290,6 +423,7 @@ def _generate_plan_maps(
     terrain_name: Optional[str] = None,
     render_mode: Optional[str] = None,
     timeout: int = 600,
+    arrival_depth: float = 0.0,
     **type_flags,
 ) -> dict[str, list[Path]]:
     """Generate all requested map types for a plan via RasStoreMapHelper.exe.
@@ -311,7 +445,10 @@ def _generate_plan_maps(
     Returns:
         Dict mapping our type names to lists of output TIFF paths
     """
-    # Map our type names to RasProcess.store_maps() parameter names
+    # Map our type names to RasProcess.store_maps() parameter names.
+    # arrival_time/duration/percent_inundated are passed natively when the
+    # installed ras-commander supports them; otherwise handled via the
+    # rasmap pre-injection shim below.
     PARAM_MAP = {
         "wse": "wse",
         "depth": "depth",
@@ -321,9 +458,11 @@ def _generate_plan_maps(
         "depth_x_velocity": "depth_x_velocity",
         "depth_x_velocity_sq": "depth_x_velocity_sq",
         "inundation_boundary": "inundation_boundary",
-        "arrival_time": None,  # Not directly supported by store_maps
-        "duration": None,
-        "recession": None,
+    }
+
+    native_adr = _store_maps_supports_native_adr()
+    adr_requested = {
+        key: type_flags.get(key, False) for key in ADR_MAP_TYPES
     }
 
     # Build kwargs for store_maps
@@ -332,15 +471,61 @@ def _generate_plan_maps(
         if param_name and our_name in type_flags:
             store_kwargs[param_name] = type_flags[our_name]
 
-    raw_results = RasProcess.store_maps(
-        plan_number=plan_number,
-        output_path=str(output_dir),
-        profile=profile,
-        render_mode=render_mode,
-        timeout=timeout,
-        ras_object=ras,
-        **store_kwargs,
-    )
+    if native_adr:
+        store_kwargs.update(adr_requested)
+        store_kwargs["arrival_depth"] = arrival_depth
+
+    rasmap_path = Path(str(ras.project_folder)) / f"{ras.project_name}.rasmap"
+    plan_hdf_name = f"{ras.project_name}.p{plan_number}.hdf"
+    shim_needed = not native_adr and any(adr_requested.values())
+    shim_backup = rasmap_path.with_suffix(".rasmap.adrbak")
+
+    # A leftover backup from a hard-killed prior run must never be restored
+    # over the current rasmap (the user may have edited it since). Discard it
+    # loudly; this run tracks its own backup via shim_created.
+    if shim_backup.exists():
+        console.print(
+            f"    [yellow]Warning:[/yellow] discarding stale {shim_backup.name} "
+            f"from an interrupted previous run"
+        )
+        shim_backup.unlink()
+    shim_created = False
+
+    # Files generated by this run are identified by mtime >= run start (with
+    # filesystem-granularity slack) so output globs never claim stale files
+    # from previous runs in the same directory.
+    run_started = time.time() - 2
+
+    try:
+        if shim_needed:
+            # Pre-inject ADR stored-map entries into the rasmap so the same
+            # StoreAllMaps execution generates them. store_maps' own
+            # clear_existing pass would remove injected entries, so clear
+            # here first (same semantics) and disable it for the call.
+            shutil.copy2(rasmap_path, shim_backup)
+            shim_created = True
+            RasProcess._remove_stored_maps_from_rasmap(rasmap_path, plan_hdf_name)
+            _inject_adr_stored_maps(
+                rasmap_path,
+                plan_hdf_name,
+                adr_requested,
+                arrival_depth,
+            )
+            store_kwargs["clear_existing"] = False
+
+        raw_results = RasProcess.store_maps(
+            plan_number=plan_number,
+            output_path=str(output_dir),
+            profile=profile,
+            render_mode=render_mode,
+            timeout=timeout,
+            ras_object=ras,
+            **store_kwargs,
+        )
+    finally:
+        if shim_created:
+            shutil.copy2(shim_backup, rasmap_path)
+            shim_backup.unlink()
 
     # Normalize results: raw_results is Dict[str, List[Path]]
     # Map RasProcess output keys back to our type names
@@ -353,6 +538,9 @@ def _generate_plan_maps(
         "depth_x_velocity": "depth_x_velocity",
         "depth_x_velocity_sq": "depth_x_velocity_sq",
         "inundation_boundary": "inundation_boundary",
+        "arrival_time": "arrival_time",
+        "duration": "duration",
+        "percent_inundated": "percent_inundated",
     }
 
     result = {}
@@ -361,6 +549,27 @@ def _generate_plan_maps(
             norm_key = key.lower().replace(" ", "_")
             mapped = REVERSE_MAP.get(norm_key, norm_key)
             result[mapped] = [Path(p) for p in paths if Path(p).exists()]
+
+    # Shim path: ADR outputs were moved to output_dir by store_maps'
+    # move-loop but are absent from its return dict — collect them by their
+    # threshold-labeled display-name prefix (e.g. "Arrival Time (0.1ft hrs)"),
+    # restricted to files produced by THIS run so stale outputs from earlier
+    # runs at a different threshold are never misattributed.
+    if shim_needed:
+        for key, (_, display_name) in ADR_MAP_TYPES.items():
+            if adr_requested.get(key) and not result.get(key):
+                tifs = sorted(
+                    p for p in output_dir.glob(f"{display_name} (*.tif")
+                    if p.stat().st_mtime >= run_started
+                )
+                if tifs:
+                    result[key] = tifs
+                else:
+                    console.print(
+                        f"    [yellow]Warning:[/yellow] {key} was requested but "
+                        f"no output was produced (rasmap injection may not be "
+                        f"supported by this ras-commander/HEC-RAS combination)"
+                    )
 
     return result
 

@@ -87,6 +87,22 @@ FROM _ WHERE ST_Area(geometry) > 20000;
 
 ---
 
+## mesh_faces — 2D Flow Area Face Lines
+
+**Source**: `BaldEagleDamBrk.g01.hdf` via `HdfMesh.get_mesh_cell_faces()`
+
+`mesh_faces` uses native HEC-RAS face geometry where available. Face-level
+result variables, such as maximum face velocity, join this layer on
+`mesh_name` plus `face_id`.
+
+| Column | Type | Description | Sample |
+|---|---|---|---|
+| `mesh_name` | `str` | Name of 2D flow area | `"BaldEagleCr"` |
+| `face_id` | `int64` | Face index (0-based) | `0`, `1`, `2`, ... |
+| `geometry` | `LineString` | Native mesh face line | `LINESTRING (...)` |
+
+---
+
 ## cross_sections — 1D Cross Section Cut Lines
 
 **Source**: `BaldEagleDamBrk.g06.hdf` via `HdfXsec.get_cross_sections()`
@@ -202,6 +218,29 @@ Same as above but `geometry` is a `Polygon` (joined from `mesh_cells` on `mesh_n
 | `maximum_depth` | `float64` | Maximum water depth |
 | `geometry` | `Polygon` | Cell polygon (from mesh_cells join) |
 
+### Schema — Attribute Tables (`archive --results-geometry none`)
+
+Archive result tables can be written without geometry to avoid repeating large
+mesh geometry for every variable. These tables are plain Parquet and are keyed
+for viewer-side or SQL joins:
+
+| Column | Type | Description |
+|---|---|---|
+| `mesh_name` | `str` | Name of 2D flow area |
+| `cell_id` | `int64` | Cell key for cell variables such as depth or WSE |
+| `face_id` | `int64` | Face key for face variables such as face velocity |
+| `<variable>` | numeric | Result value, e.g. `maximum_depth` |
+| `layer` | `str` | Variable slug when exported from an archive |
+| `join_index` | `int64` | Added by spatial post-processing for deterministic key ordering |
+| `hilbert_index` | `uint64` | Added when a matching `mesh_cells` or `mesh_faces` layer can provide spatial order |
+
+Each variable table carries the relevant mesh key: cell variables use `cell_id`,
+and face variables use `face_id`.
+Cell variables join geometry by `mesh_name, cell_id`; face variables join native
+`mesh_faces` by `mesh_name, face_id`. The manifest records
+`index_status=spatial_join` when `hilbert_index` was inherited from geometry and
+`index_status=join_key` when only key ordering was possible.
+
 ### All Available Variables (typical 2D unsteady plan)
 
 ras-commander normalizes all variable names to **snake_case**:
@@ -236,8 +275,10 @@ All geometry is stored as **GeoParquet** (Apache Parquet + GeoArrow encoding):
 - Encoding: Well-Known Binary (WKB) via `geopandas.to_parquet()`
 - Compression: **ZSTD** for archive output (`archive_project()`), snappy for legacy single-file exports
 - CRS: Preserved in parquet metadata (`geo` key)
-- Archive output includes per-row bbox columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) with GeoParquet `covering` metadata for spatial predicate pushdown
-- Archive output is Hilbert-sorted within each layer for optimal spatial locality
+- Archive GeoParquet includes per-row bbox columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) with GeoParquet `covering` metadata for spatial predicate pushdown
+- Spatial post-processing adds `hilbert_index` to GeoParquet geometry and sorts by `layer,hilbert_index`; `--no-sort` skips this during extraction and `ras2cng spatial-index ARCHIVE_DIR` can run it later
+- Geometryless archive result tables get `join_index` and, when matching mesh geometry exists, inherit `hilbert_index` through `mesh_name` plus `cell_id` or `face_id`
+- `manifest.json` schema 2.3 records index metadata, including `sort_order`, `index_column`, `geometry_filter`, and `index_status`
 
 ```python
 import geopandas as gpd

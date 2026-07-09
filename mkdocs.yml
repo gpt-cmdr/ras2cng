@@ -114,6 +114,7 @@ nav:
     - 04 - Generate PMTiles: examples/04_generate_pmtiles.md
     - 05 - Cloud Native Stack: examples/05_cloud_native_stack.md
     - 06 - Project Archive: examples/06_project_archive.md
+    - 07 - Result Maps: examples/07_result_maps.md
   - Data Reference:
     - Output Schema: reference/data-structure.md
   - API Reference:
@@ -122,6 +123,7 @@ nav:
     - geometry: api/geometry.md
     - results: api/results.md
     - mapping: api/mapping.md
+    - scaffold: api/scaffold.md
     - terrain: api/terrain.md
     - duckdb_session: api/duckdb_session.md
     - pmtiles: api/pmtiles.md

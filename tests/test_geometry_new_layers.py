@@ -69,6 +69,26 @@ def test_extract_hdf_layer_unknown_name_raises(tmp_path):
         _extract_hdf_layer(tmp_path / "fake.g01.hdf", "nonexistent_layer")
 
 
+def test_extract_mesh_faces_uses_native_face_ids(tmp_path):
+    hdf_path = tmp_path / "fake.g01.hdf"
+    hdf_path.touch()
+    faces = gpd.GeoDataFrame(
+        {
+            "mesh_name": ["m1", "m1"],
+            "face_id": [0, 1],
+        },
+        geometry=[LineString([(0, 0), (1, 0)]), LineString([(1, 0), (1, 1)])],
+        crs="EPSG:4326",
+    )
+
+    with patch("ras2cng.geometry.HdfMesh.get_mesh_cell_faces", return_value=faces):
+        result = _extract_hdf_layer(hdf_path, "mesh_faces")
+
+    assert result is not None
+    assert "face_id" in result.columns
+    assert list(result["face_id"]) == [0, 1]
+
+
 # ---------------------------------------------------------------------------
 # export_all_hdf_layers
 # ---------------------------------------------------------------------------

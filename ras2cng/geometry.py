@@ -111,7 +111,16 @@ def _extract_mesh_cells(hdf_path: Path) -> Optional[object]:
 
 
 def _extract_mesh_faces(hdf_path: Path) -> Optional[object]:
-    """Extract mesh cell boundaries as LineStrings for line-based rendering."""
+    """Extract native mesh face LineStrings keyed by ``face_id``."""
+    try:
+        gdf = HdfMesh.get_mesh_cell_faces(hdf_path)
+        if len(gdf) > 0:
+            return gdf
+    except Exception as e:
+        print(f"Warning: Could not extract native mesh faces: {e}")
+
+    # Fallback for older ras-commander versions: cell boundaries are renderable
+    # but are keyed by cell_id and cannot join face-level result variables.
     gdf = _extract_mesh_cells(hdf_path)
     if gdf is None or len(gdf) == 0:
         return None

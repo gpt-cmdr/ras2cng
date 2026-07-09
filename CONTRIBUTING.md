@@ -155,7 +155,7 @@ Key conventions:
 - CLI entry point is `ras2cng.cli:app` (Typer application)
 - All geometry/results extraction goes through `ras-commander`
 - Output is always GeoParquet with a `layer` column for consolidated files
-- `manifest.json` catalogs the archive (schema v2.0)
+- `manifest.json` catalogs the archive (schema v2.2)
 
 ## Community Standards
 

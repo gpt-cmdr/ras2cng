@@ -104,9 +104,248 @@ def test_map_type_variables_keys():
     expected = {
         "wse", "depth", "velocity", "froude", "shear_stress",
         "depth_x_velocity", "depth_x_velocity_sq", "inundation_boundary",
-        "arrival_time", "duration", "recession",
+        "arrival_time", "duration", "recession", "percent_inundated",
     }
     assert set(MAP_TYPE_VARIABLES.keys()) == expected
+
+
+# ---------------------------------------------------------------------------
+# ADR: capability detection, rasmap injection shim, recession derivation
+# ---------------------------------------------------------------------------
+
+def test_store_maps_native_adr_detection():
+    from ras2cng.mapping import _store_maps_supports_native_adr
+
+    def native_signature(plan_number, arrival_time=False, arrival_depth=0.0, **kw):
+        pass
+
+    def legacy_signature(plan_number, wse=True, depth=True, **kw):
+        pass
+
+    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+        mock_rp.store_maps = native_signature
+        assert _store_maps_supports_native_adr() is True
+        mock_rp.store_maps = legacy_signature
+        assert _store_maps_supports_native_adr() is False
+
+
+def test_inject_adr_stored_maps_xml(tmp_path):
+    import xml.etree.ElementTree as ET
+    from ras2cng.mapping import _inject_adr_stored_maps
+
+    rasmap = tmp_path / "Model.rasmap"
+    rasmap.write_text(
+        '<RASMapper><Results Checked="True" /></RASMapper>', encoding="utf-8"
+    )
+
+    _inject_adr_stored_maps(
+        rasmap,
+        "Model.p01.hdf",
+        {"arrival_time": True, "duration": True, "percent_inundated": False},
+        arrival_depth=0.25,
+    )
+
+    root = ET.parse(rasmap).getroot()
+    plan_layers = root.findall(".//Results/Layer")
+    assert len(plan_layers) == 1
+    assert plan_layers[0].get("Filename") == ".\\Model.p01.hdf"
+
+    params = root.findall(".//MapParameters")
+    map_types = {p.get("MapType") for p in params}
+    assert map_types == {"arrival time", "duration"}
+    assert all(p.get("ArrivalDepth") == "0.25" for p in params)
+    assert all(p.get("ProfileIndex") == "2147483647" for p in params)
+    assert all(p.get("OutputMode") == "Stored Current Terrain" for p in params)
+
+
+def test_inject_adr_reuses_existing_plan_layer(tmp_path):
+    import xml.etree.ElementTree as ET
+    from ras2cng.mapping import _inject_adr_stored_maps
+
+    rasmap = tmp_path / "Model.rasmap"
+    rasmap.write_text(
+        '<RASMapper><Results Checked="True">'
+        '<Layer Name="P1" Type="RASResults" Filename=".\\Model.p01.hdf" />'
+        "</Results></RASMapper>",
+        encoding="utf-8",
+    )
+
+    _inject_adr_stored_maps(
+        rasmap, "Model.p01.hdf", {"arrival_time": True}, arrival_depth=0.0
+    )
+
+    root = ET.parse(rasmap).getroot()
+    assert len(root.findall(".//Results/Layer")) == 1  # no duplicate plan layer
+    assert len(root.findall(".//MapParameters")) == 1
+
+
+def test_generate_plan_maps_shim_injects_and_restores(tmp_path):
+    """Older ras-commander (no native ADR kwargs): rasmap pre-injection shim."""
+    import xml.etree.ElementTree as ET
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    ras.project_folder = project_dir  # Path for the shim's rasmap resolution
+    rasmap = project_dir / "TestModel.rasmap"
+    original_xml = '<RASMapper><Results Checked="True" /></RASMapper>'
+    rasmap.write_text(original_xml, encoding="utf-8")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    captured = {}
+
+    def legacy_store_maps(plan_number, output_path=None, **kwargs):
+        # Signature has no arrival_time -> shim path expected
+        captured["rasmap_at_call"] = rasmap.read_text(encoding="utf-8")
+        captured["kwargs"] = kwargs
+        # Simulate store_maps' move-loop relocating the ADR outputs
+        (output_dir / "Arrival Time (0.5ft hrs).TileA.tif").write_text("a")
+        (output_dir / "Duration (0.5ft hrs).TileA.tif").write_text("d")
+        return {"wse": []}
+
+    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+        mock_rp.store_maps = legacy_store_maps
+        mock_rp._remove_stored_maps_from_rasmap = MagicMock(return_value=0)
+        result = _generate_plan_maps(
+            ras=ras,
+            plan_number="01",
+            profile="Max",
+            output_dir=output_dir,
+            arrival_depth=0.5,
+            wse=False, depth=False, velocity=False,
+            arrival_time=True, duration=True,
+        )
+
+    # Injection was visible to store_maps
+    root = ET.fromstring(captured["rasmap_at_call"])
+    map_types = {p.get("MapType") for p in root.findall(".//MapParameters")}
+    assert map_types == {"arrival time", "duration"}
+    assert captured["kwargs"]["clear_existing"] is False
+    mock_rp._remove_stored_maps_from_rasmap.assert_called_once()
+
+    # rasmap restored afterwards and backup removed
+    assert rasmap.read_text(encoding="utf-8") == original_xml
+    assert not rasmap.with_suffix(".rasmap.adrbak").exists()
+
+    # ADR outputs collected by glob
+    assert [p.name for p in result["arrival_time"]] == [
+        "Arrival Time (0.5ft hrs).TileA.tif"
+    ]
+    assert [p.name for p in result["duration"]] == [
+        "Duration (0.5ft hrs).TileA.tif"
+    ]
+
+
+def test_generate_plan_maps_stale_adrbak_never_restored(tmp_path):
+    """A leftover .adrbak from a killed prior run must not clobber the rasmap."""
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    ras.project_folder = project_dir
+    rasmap = project_dir / "TestModel.rasmap"
+    current_xml = '<RASMapper><Results Checked="True"><!-- user edits --></Results></RASMapper>'
+    rasmap.write_text(current_xml, encoding="utf-8")
+
+    stale_backup = project_dir / "TestModel.rasmap.adrbak"
+    stale_backup.write_text("<RASMapper><!-- months old --></RASMapper>", encoding="utf-8")
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+        mock_rp.store_maps = lambda **kwargs: {"wse": []}
+        _generate_plan_maps(
+            ras=ras, plan_number="01", profile="Max", output_dir=output_dir,
+            wse=True, depth=False, velocity=False,
+        )
+
+    # Current rasmap untouched, stale backup discarded
+    assert rasmap.read_text(encoding="utf-8") == current_xml
+    assert not stale_backup.exists()
+
+
+def test_generate_plan_maps_shim_ignores_stale_adr_outputs(tmp_path):
+    """ADR glob must not claim rasters from a previous run at another threshold."""
+    import os as _os
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    ras.project_folder = project_dir
+    (project_dir / "TestModel.rasmap").write_text(
+        '<RASMapper><Results Checked="True" /></RASMapper>', encoding="utf-8"
+    )
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    # Stale raster from a previous run at a different threshold
+    stale = output_dir / "Arrival Time (0.1ft hrs).TileA.tif"
+    stale.write_text("old")
+    old_time = 946684800  # year 2000
+    _os.utime(stale, (old_time, old_time))
+
+    def legacy_store_maps(plan_number, output_path=None, **kwargs):
+        (output_dir / "Arrival Time (0.5ft hrs).TileA.tif").write_text("new")
+        return {}
+
+    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+        mock_rp.store_maps = legacy_store_maps
+        mock_rp._remove_stored_maps_from_rasmap = MagicMock(return_value=0)
+        result = _generate_plan_maps(
+            ras=ras, plan_number="01", profile="Max", output_dir=output_dir,
+            arrival_depth=0.5,
+            wse=False, depth=False, velocity=False, arrival_time=True,
+        )
+
+    assert [p.name for p in result["arrival_time"]] == [
+        "Arrival Time (0.5ft hrs).TileA.tif"
+    ]
+
+
+def test_generate_plan_maps_native_passthrough(tmp_path):
+    """Newer ras-commander: ADR kwargs passed straight through, no injection."""
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    ras.project_folder = project_dir
+    rasmap = project_dir / "TestModel.rasmap"
+    original_xml = '<RASMapper><Results Checked="True" /></RASMapper>'
+    rasmap.write_text(original_xml, encoding="utf-8")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    captured = {}
+
+    def native_store_maps(plan_number, output_path=None, arrival_time=False,
+                          duration=False, percent_inundated=False,
+                          arrival_depth=0.0, **kwargs):
+        captured["rasmap_at_call"] = rasmap.read_text(encoding="utf-8")
+        captured["arrival_time"] = arrival_time
+        captured["arrival_depth"] = arrival_depth
+        return {
+            "arrival_time": [output_dir / "Arrival Time (0.5ft hrs).TileA.tif"],
+        }
+
+    (output_dir / "Arrival Time (0.5ft hrs).TileA.tif").write_text("a")
+
+    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+        mock_rp.store_maps = native_store_maps
+        result = _generate_plan_maps(
+            ras=ras,
+            plan_number="01",
+            profile="Max",
+            output_dir=output_dir,
+            arrival_depth=0.5,
+            wse=False, depth=False, velocity=False,
+            arrival_time=True,
+        )
+
+    assert captured["arrival_time"] is True
+    assert captured["arrival_depth"] == 0.5
+    # No injection happened — rasmap untouched at call time
+    assert captured["rasmap_at_call"] == original_xml
+    assert [p.name for p in result["arrival_time"]] == [
+        "Arrival Time (0.5ft hrs).TileA.tif"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +355,10 @@ def test_map_type_variables_keys():
 @patch("ras2cng.mapping.RasProcess")
 def test_configure_rasprocess_with_explicit_path(mock_rp):
     exe_path = Path("/usr/bin/RasProcess.exe")
-    _configure_rasprocess(rasprocess_path=exe_path)
+    # The wine branch only runs on Linux; pin the platform so the test is
+    # deterministic regardless of host OS.
+    with patch("ras2cng.mapping.platform.system", return_value="Linux"):
+        _configure_rasprocess(rasprocess_path=exe_path)
     # configure_wine receives the directory containing RasProcess.exe
     mock_rp.configure_wine.assert_called_once_with(ras_install_dir=str(exe_path.parent))
 
