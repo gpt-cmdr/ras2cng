@@ -4,11 +4,12 @@
 
 ```
 ras2cng/
-├── cli.py           — Typer CLI (13 commands): inspect, archive, spatial-index, geometry, results, query, pmtiles, sync, terrain, map, map-hdf, terrain-mod, mannings
+├── cli.py           — Typer CLI (14 commands): inspect, archive, spatial-index, geometry, results, precip, query, pmtiles, sync, terrain, map, map-hdf, terrain-mod, mannings
 ├── project.py       — Full-project orchestration: inspect, archive, metadata export
 ├── catalog.py       — Manifest schema v2.3 for archive catalogs (manifest.json)
 ├── geometry.py      — HDF + text geometry export via ras-commander (10 HDF + 3 text layers)
 ├── results.py       — Plan HDF results export with polygon/point/geometryless modes and cell/face join keys
+├── precipitation.py — Gridded precipitation GeoTIFF export from HDF meteorology results
 ├── mapping.py       — Result raster generation via RasStoreMapHelper.exe (WSE, Depth, Velocity, etc.)
 ├── scaffold.py      — Barebones project synthesis from a plan HDF (powers map-hdf)
 ├── terrain.py       — Terrain discovery, consolidation, and downsampling
@@ -33,9 +34,9 @@ project.py (archive_project / inspect_project)
      │  Discovers all geometry, plan, and terrain files
      │  Orchestrates extraction via geometry.py / results.py / mapping.py / terrain.py
      ▼
-geometry.py / results.py          mapping.py / terrain.py
+geometry.py / results.py          precipitation.py / mapping.py / terrain.py
      │  ras-commander parses            │  RasStoreMapHelper.exe generates
-     │  HDF/text → GeoDataFrame         │  pixel-perfect rasters + terrain HDFs
+     │  HDF/text → GeoDataFrame         │  precipitation/result rasters + terrain HDFs
      ▼                                  ▼
 GeoParquet/Parquet (ZSTD, bbox, indexes)  GeoTIFF rasters + terrain HDFs
      │

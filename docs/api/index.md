@@ -27,6 +27,12 @@ from ras2cng import (
     export_results_layer,
     export_all_variables,
     merge_all_variables,
+    # Precipitation
+    export_precipitation_rasters,
+    list_precipitation_timestamps,
+    read_precipitation_grid_info,
+    PrecipitationExportResult,
+    PrecipitationGridInfo,
     # DuckDB
     DuckSession,
     query_parquet,
@@ -55,6 +61,7 @@ from ras2cng.project import archive_project, inspect_project, export_project_met
 from ras2cng.catalog import Manifest, ManifestLayer, ManifestGeomEntry, ManifestPlanEntry
 from ras2cng.geometry import export_geometry_layers, merge_all_layers, HDF_LAYERS
 from ras2cng.results import export_results_layer, export_all_variables, merge_all_variables
+from ras2cng.precipitation import export_precipitation_rasters, list_precipitation_timestamps
 from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
@@ -68,6 +75,7 @@ from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 - [CLI](cli.md) — Command-line interface reference
 - [geometry](geometry.md) — HDF and text geometry export (10 HDF + 3 text layers)
 - [results](results.md) — Plan results export and polygon join
+- [precipitation](precipitation.md) — Gridded precipitation GeoTIFF export from HDF meteorology results
 - [mapping](mapping.md) — Result raster generation via RasProcess.exe
 - [scaffold](scaffold.md) — Barebones project synthesis from a plan HDF (map-hdf)
 - [terrain](terrain.md) — Terrain discovery and consolidation
