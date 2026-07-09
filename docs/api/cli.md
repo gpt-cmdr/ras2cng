@@ -13,6 +13,7 @@ Usage: ras2cng [OPTIONS] COMMAND [ARGS]...
 Commands:
   inspect      Inspect a HEC-RAS project structure without extracting any data.
   archive      Archive a HEC-RAS project to consolidated GeoParquet files.
+  spatial-index Post-process an existing archive with Hilbert sorting and join indexes.
   geometry     Export HEC-RAS geometry to GeoParquet.
   results      Export HEC-RAS 2D mesh summary results to GeoParquet.
   precip       Export gridded precipitation and cumulative precipitation GeoTIFFs.
@@ -61,14 +62,46 @@ Options:
   --terrain / --no-terrain    Convert terrain TIFFs to Cloud Optimized GeoTIFF
   --plan-geometry             Also extract geometry copy embedded in plan HDF files
   --plans TEXT                Comma-separated plan IDs to include, e.g. p01,p02 (default: all)
+  --result-variables TEXT     Comma-separated result summary variables or slugs to include
+  --results-layout TEXT       Results output layout: plan or variable
+  --results-geometry TEXT     Results geometry mode: polygon, point, or none
   --skip-errors / --fail-fast Skip individual layer errors vs abort
-  --no-sort                   Disable Hilbert spatial sorting (on by default)
+  --no-sort                   Disable Hilbert spatial post-processing (on by default)
   --map / --no-map            Generate result rasters via RasStoreMapHelper
   --consolidate-terrain       Merge terrains into single COG
   --render-mode TEXT          Water surface render mode: horizontal, sloping, slopingPretty
   --ras-version TEXT          HEC-RAS version for RasProcess mapping
   --rasprocess PATH           Path to HEC-RAS install directory (for helper deployment)
 ```
+
+`archive` runs the same spatial post-processing pass as `spatial-index` by
+default. The pass adds `hilbert_index` to GeoParquet geometry, sorts rows by
+`layer,hilbert_index`, and preserves GeoParquet bbox `covering` metadata.
+Geometryless result tables receive `join_index`; when matching mesh geometry is
+available, they also inherit `hilbert_index` by `mesh_name` plus `cell_id` or
+`face_id`. Use `--no-sort` for extraction-only runs on memory-constrained
+workers, then run `ras2cng spatial-index ARCHIVE_DIR` later.
+
+## ras2cng spatial-index
+
+```
+Usage: ras2cng spatial-index [OPTIONS] ARCHIVE_DIR
+
+  Post-process an existing archive with Hilbert sorting and join indexes.
+
+Arguments:
+  ARCHIVE_DIR  ras2cng archive directory containing manifest.json
+
+Options:
+  --hilbert-level INTEGER     Hilbert curve level  [default: 16]
+  --skip-errors / --fail-fast Skip individual parquet errors vs abort
+```
+
+`spatial-index` updates the archive in place and rewrites `manifest.json`
+schema 2.3 index metadata. Geometry layers record `hilbert_index`, `sort_order`,
+and bbox columns. Result variables record join metadata such as `index_column`,
+`geometry_filter`, `join_index`, `hilbert_index`, `sort_order`, and
+`index_status` (`spatial_join`, `join_key`, `skipped`, or `error`).
 
 ## ras2cng geometry
 
@@ -223,9 +256,11 @@ Options:
   --dv                          Depth x Velocity
   --dv-sq                       Depth x Velocity²
   --inundation-boundary         Inundation boundary polygon
-  --arrival-time                Arrival time
-  --duration                    Duration
-  --recession                   Recession
+  --arrival-time                Arrival time (hours, whole-simulation)
+  --duration                    Inundation duration (hours)
+  --percent-inundated           Percent time inundated
+  --arrival-depth FLOAT         Wet/dry depth threshold for arrival/duration/
+                                percent-inundated  [default: 0.0]
   --terrain TEXT                 Specific terrain name from rasmap
   --render-mode TEXT            Water surface render mode: horizontal, sloping, slopingPretty
   --ras-version TEXT            HEC-RAS version (e.g. 6.6)
@@ -235,7 +270,82 @@ Options:
   --cog                         Convert output to Cloud Optimized GeoTIFF
   --timeout INTEGER             Per-plan timeout in seconds  [default: 10800]
   --skip-errors / --fail-fast   Skip errors vs abort
+  --keep-postprocessing         Keep the (large) PostProcessing.hdf cache in the output directory
 ```
+
+Notes on whole-simulation types: `--arrival-time`, `--duration`, and
+`--percent-inundated` are computed over the entire simulation (the `--profile`
+option does not apply) and their filenames carry the `--arrival-depth`
+threshold, e.g. `Arrival Time (0.1ft hrs).tif`. Works with any ras-commander
+version: newer versions generate these natively; older versions are handled by
+a rasmap pre-injection shim inside ras2cng. `--recession` is accepted but
+ignored with a warning — RasMapperLib has no recession map type.
+
+## ras2cng map-hdf
+
+```
+Usage: ras2cng map-hdf [OPTIONS] PLAN_HDF OUTPUT
+
+  Generate result rasters from just a plan HDF + terrain (no project needed).
+
+  Synthesizes a barebones HEC-RAS project around the plan HDF (projection,
+  units, and plan metadata are read from the HDF itself), builds the HEC-RAS
+  terrain from raw GeoTIFF(s) via RasProcess.exe CreateTerrain (or reuses a
+  pre-built terrain HDF), then renders stored maps through RASMapper.
+
+Arguments:
+  PLAN_HDF  Computed plan results HDF (*.pNN.hdf, any filename)
+  OUTPUT    Output directory for result rasters
+
+Options:
+  --terrain PATH                Raw terrain GeoTIFF (repeatable; tiles are stitched)
+  --terrain-hdf PATH            Pre-built HEC-RAS terrain HDF (its .vrt and tile
+                                TIFFs must sit beside it)
+  --projection PATH             ESRI .prj projection file (default: read WKT from
+                                the plan HDF)
+  --workdir PATH                Scaffold directory (default: OUTPUT/_scaffold;
+                                reused across reruns)
+  --rm-scaffold                 Delete the scaffold directory after the run
+  --profile TEXT                Max, Min, or timestamp  [default: Max]
+  --wse / --no-wse              Water Surface Elevation  [default: on]
+  --depth / --no-depth          Depth  [default: on]
+  --velocity / --no-velocity    Velocity  [default: on]
+  --froude                      Froude number
+  --shear-stress                Shear stress
+  --dv                          Depth x Velocity
+  --dv-sq                       Depth x Velocity²
+  --inundation-boundary         Inundation boundary polygon
+  --arrival-time                Arrival time (hours, whole-simulation)
+  --duration                    Inundation duration (hours)
+  --percent-inundated           Percent time inundated
+  --arrival-depth FLOAT         Wet/dry depth threshold for arrival/duration/
+                                percent-inundated  [default: 0.0]
+  --render-mode TEXT            Water surface render mode  [default: sloping]
+  --ras-version TEXT            HEC-RAS version  [default: 6.6]
+  --rasprocess PATH             Path to HEC-RAS install directory (for helper deployment)
+  --min-depth FLOAT             Min depth threshold  [default: 0.0]
+  --wgs84                       Reproject output to WGS84
+  --cog                         Convert output to Cloud Optimized GeoTIFF
+  --timeout INTEGER             Timeout in seconds  [default: 10800]
+  --keep-postprocessing         Keep the (large) PostProcessing.hdf cache in the output directory
+```
+
+Examples:
+
+```bash
+# Raw terrain TIFF — terrain HDF is built headlessly via RasProcess.exe
+ras2cng map-hdf results.p01.hdf ./maps --terrain dem.tif
+
+# Multiple terrain tiles (stitched)
+ras2cng map-hdf results.p01.hdf ./maps --terrain dem_a.tif --terrain dem_b.tif
+
+# Pre-built HEC-RAS terrain (skips the terrain build)
+ras2cng map-hdf results.p01.hdf ./maps --terrain-hdf Terrain50.hdf
+```
+
+Requires a Windows HEC-RAS install (RasMapperLib + bundled GDAL). Exactly one
+of `--terrain` / `--terrain-hdf` must be given. The plan HDF must carry a
+`Projection` attribute or `--projection` must be supplied.
 
 ## ras2cng terrain-mod
 

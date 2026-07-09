@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -42,7 +42,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 
 ## Architecture
 
-**CLI layer** (`cli.py`): Typer app with commands `inspect`, `archive`, `spatial-index`, `geometry`, `results`, `query`, `pmtiles`, `sync`, `terrain`, `map`, `map-hdf`, `terrain-mod`, `mannings`. Uses lazy imports — heavy dependencies are imported inside command functions, not at module level.
+**CLI layer** (`cli.py`): Typer app with 10 commands (`inspect`, `archive`, `geometry`, `results`, `query`, `pmtiles`, `sync`, `terrain`, `map`, `terrain-mod`, `mannings`). Uses lazy imports — heavy dependencies are imported inside command functions, not at module level.
 
 **Core modules** — each handles one concern:
 - `project.py` — Full-project orchestration. `archive_project()` produces consolidated GeoParquet files (one per geometry source, one per plan) with `layer` discriminator column. `export_project_metadata()` writes RasPrj dataframes to a plain Parquet with `_table` column. `_write_geoparquet()` helper adds per-row bbox columns and ZSTD compression with GeoParquet `covering` metadata. `inspect_project()` returns a `ProjectInfo` dataclass (no file extraction). **Note**: `init_ras_project` and `export_all_variables` are imported at module level (not lazy) to enable mock patching in tests.
@@ -53,8 +53,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - `pmtiles.py` — Dispatches between vector (GeoParquet → GeoJSON → tippecanoe → PMTiles) and raster (GeoTIFF → gdal_translate → pmtiles) pipelines. Requires external CLIs: `tippecanoe`, `gdal_translate`, `pmtiles`.
 - `postgis_sync.py` — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2 with automatic spatial index creation.
 - `terrain.py` — Terrain discovery, consolidation, and raster export. `discover_terrains()` finds terrain layers from rasmap. `consolidate_terrain()` merges multiple TIFFs. `export_modified_terrain()` produces a full-resolution GeoTIFF of terrain with modifications (channels, levees, etc.) applied via `RasTerrainMod.compute_modified_terrain_raster()`. `export_mannings_raster()` wraps `HdfLandCover.compute_final_mannings_raster()` to produce a Manning's n GeoTIFF. Both terrain-mod and Manning's n exports require HEC-RAS 6.6+ on Windows.
-- `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0). Deletes the large `PostProcessing.hdf` cache from outputs unless `keep_postprocessing=True`. Whole-simulation types `arrival_time`/`duration`/`percent_inundated` (threshold via `arrival_depth`; correct RasMapperLib XML names are `arrival time`/`duration`/`fraction inundated`) pass through natively on newer ras-commander or via a rasmap pre-injection shim on older versions (capability-detected from `store_maps`' signature). `recession` is a warned no-op — RasMapperLib has no recession MapType, and only RasMapperLib-native outputs are produced (a derived arrival+duration approach is sketched in `feature_dev_notes/adr_maps_implementation_plan.md` but intentionally not shipped pending methodology verification).
-- `scaffold.py` — Barebones project synthesis for `map-hdf`. `read_plan_hdf_metadata()` extracts project name, plan number, ShortID, units, and projection WKT from a plan HDF; `build_scaffold()` synthesizes `.prj`/`.pNN`/`.rasmap` stubs, hardlinks the HDF under its canonical name, and builds the HEC-RAS terrain from raw TIFFs (`RasTerrain.create_terrain_from_rasters`) or imports a pre-built terrain HDF sidecar set. The ESRI projection is written to `Terrain\Projection.prj` — never in the project root, where it would collide with the HEC-RAS `.prj`. Scaffolds carry a `.ras2cng-scaffold` marker and are reused across runs when the source HDF is unchanged.
+- `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0).
 
 **Data flow**: HEC-RAS files → ras-commander → GeoDataFrame → GeoParquet (ZSTD compression, bbox columns, Hilbert sorted). Archive output uses `_write_geoparquet()` which adds `covering` metadata for spatial predicate pushdown.
 

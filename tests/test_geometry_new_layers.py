@@ -42,9 +42,10 @@ def _fake_gdf(geom_type="LineString", n=3):
 
 def test_hdf_layers_dict_includes_all_expected():
     expected = {
-        "mesh_cells", "mesh_areas", "cross_sections", "centerlines",
-        "bc_lines", "breaklines", "refinement_regions", "reference_lines",
-        "reference_points", "structures",
+        "mesh_cells", "mesh_faces", "mesh_areas", "cross_sections",
+        "centerlines", "bank_lines", "bc_lines", "breaklines",
+        "refinement_regions", "reference_lines", "reference_points",
+        "structures",
     }
     assert expected == set(HDF_LAYERS.keys()), f"Missing: {expected - set(HDF_LAYERS.keys())}"
 
@@ -66,6 +67,26 @@ def test_all_text_layers_contains_expected():
 def test_extract_hdf_layer_unknown_name_raises(tmp_path):
     with pytest.raises(ValueError, match="Unknown HDF layer"):
         _extract_hdf_layer(tmp_path / "fake.g01.hdf", "nonexistent_layer")
+
+
+def test_extract_mesh_faces_uses_native_face_ids(tmp_path):
+    hdf_path = tmp_path / "fake.g01.hdf"
+    hdf_path.touch()
+    faces = gpd.GeoDataFrame(
+        {
+            "mesh_name": ["m1", "m1"],
+            "face_id": [0, 1],
+        },
+        geometry=[LineString([(0, 0), (1, 0)]), LineString([(1, 0), (1, 1)])],
+        crs="EPSG:4326",
+    )
+
+    with patch("ras2cng.geometry.HdfMesh.get_mesh_cell_faces", return_value=faces):
+        result = _extract_hdf_layer(hdf_path, "mesh_faces")
+
+    assert result is not None
+    assert "face_id" in result.columns
+    assert list(result["face_id"]) == [0, 1]
 
 
 # ---------------------------------------------------------------------------

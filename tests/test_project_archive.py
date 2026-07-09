@@ -83,7 +83,7 @@ def test_manifest_create(tmp_path):
     assert m.project["name"] == "TestProject"
     assert m.project["crs"] == "EPSG:4326"
     assert m.project["plan_count"] == 3
-    assert m.schema_version == "2.1"
+    assert m.schema_version == "2.3"
     assert m.geometry == []
     assert m.results == []
     assert m.terrain == []
@@ -204,7 +204,7 @@ def test_manifest_to_json_is_valid(tmp_path):
     m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
     json_str = m.to_json()
     parsed = json.loads(json_str)
-    assert parsed["schema_version"] == "2.1"
+    assert parsed["schema_version"] == "2.3"
     assert "project" in parsed
     assert "project_parquet" in parsed
 
@@ -312,11 +312,11 @@ def test_archive_geometry_only_creates_flat_parquet(
     assert (archive_out / "manifest.json").exists()
     # No results
     assert not (archive_out / "results").exists()
-    # Manifest v2.1 fields
+    # Manifest v2.3 fields
     assert len(manifest.geometry) >= 1
     assert manifest.geometry[0]["geom_id"] == "g01"
     assert manifest.geometry[0]["parquet"] == "FakeModel.g01.parquet"
-    assert manifest.schema_version == "2.1"
+    assert manifest.schema_version == "2.3"
 
 
 @patch("ras2cng.project.merge_all_layers")
@@ -397,6 +397,54 @@ def test_archive_results_flag_writes_consolidated_plan(
     assert (tmp_path / "out" / "FakeModel.p01.parquet").exists()
 
 
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_results_variable_layout_writes_attribute_tables(
+    mock_init, mock_merge, tmp_path
+):
+    ras, project_dir, hdf_path = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+
+    plan_hdf = project_dir / "FakeModel.p01.hdf"
+    plan_hdf.touch()
+
+    from ras2cng.project import archive_project
+
+    results_df = pd.DataFrame(
+        {
+            "mesh_name": ["M", "M"],
+            "cell_id": [1, 2],
+            "maximum_depth": [1.0, 2.0],
+        }
+    )
+
+    with (
+        patch("ras2cng.results.selected_summary_variables", return_value=["Maximum Depth"]),
+        patch("ras2cng.results.extract_results_variable", return_value=results_df),
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "out",
+            include_results=True,
+            sort=False,
+            result_variables=["maximum_depth"],
+            results_layout="variable",
+            results_geometry="none",
+        )
+
+    variable_path = tmp_path / "out" / "results" / "p01" / "maximum_depth.parquet"
+    assert variable_path.exists()
+    assert len(manifest.results) == 1
+    assert manifest.results[0]["layout"] == "variable"
+    assert manifest.results[0]["geometry_mode"] == "none"
+    assert manifest.results[0]["parquet"] == ""
+    assert manifest.results[0]["variables"][0]["parquet"] == "results/p01/maximum_depth.parquet"
+    assert manifest.results[0]["variables"][0]["index_column"] == "cell_id"
+    assert manifest.results[0]["variables"][0]["geometry_filter"] == "mesh_cells"
+    assert "geometry" not in pd.read_parquet(variable_path).columns
+
+
 # ---------------------------------------------------------------------------
 # export_project_metadata
 # ---------------------------------------------------------------------------
@@ -430,7 +478,7 @@ def test_export_project_metadata(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Manifest v2.1 — maps field
+# Manifest v2.3 — maps field
 # ---------------------------------------------------------------------------
 
 def test_manifest_map_entry(tmp_path):

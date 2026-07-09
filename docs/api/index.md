@@ -45,6 +45,11 @@ from ras2cng import (
     # Mapping (result rasters)
     generate_result_maps,
     MapResult,
+    # Scaffold (maps from plan HDF + terrain only)
+    build_scaffold,
+    read_plan_hdf_metadata,
+    PlanHdfMetadata,
+    ScaffoldInfo,
     # Terrain
     consolidate_terrain,
     discover_terrains,
@@ -61,16 +66,18 @@ from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
 from ras2cng.mapping import generate_result_maps, MapResult
+from ras2cng.scaffold import build_scaffold, read_plan_hdf_metadata
 from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 ```
 
 ## Modules
 
-- [CLI](cli.md) — Command-line interface reference (12 commands)
+- [CLI](cli.md) — Command-line interface reference
 - [geometry](geometry.md) — HDF and text geometry export (10 HDF + 3 text layers)
 - [results](results.md) — Plan results export and polygon join
 - [precipitation](precipitation.md) — Gridded precipitation GeoTIFF export from HDF meteorology results
 - [mapping](mapping.md) — Result raster generation via RasProcess.exe
+- [scaffold](scaffold.md) — Barebones project synthesis from a plan HDF (map-hdf)
 - [terrain](terrain.md) — Terrain discovery and consolidation
 - [duckdb_session](duckdb_session.md) — DuckDB wrapper with spatial extension
 - [pmtiles](pmtiles.md) — Vector/raster PMTiles pipeline

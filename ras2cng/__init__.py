@@ -53,9 +53,16 @@ from ras2cng.catalog import (
     ManifestMapEntry,
 )
 from ras2cng.mapping import generate_result_maps, MapResult
+from ras2cng.scaffold import (
+    build_scaffold,
+    read_plan_hdf_metadata,
+    PlanHdfMetadata,
+    ScaffoldInfo,
+)
+from ras2cng.spatial_index import postprocess_archive, postprocess_geoparquet, postprocess_result_table
 from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 __all__ = [
     # Geometry
     "export_geometry_layers",
@@ -98,6 +105,15 @@ __all__ = [
     # Mapping
     "generate_result_maps",
     "MapResult",
+    # Scaffold (map-hdf)
+    "build_scaffold",
+    "read_plan_hdf_metadata",
+    "PlanHdfMetadata",
+    "ScaffoldInfo",
+    # Spatial indexing
+    "postprocess_archive",
+    "postprocess_geoparquet",
+    "postprocess_result_table",
     # Terrain
     "consolidate_terrain",
     "discover_terrains",

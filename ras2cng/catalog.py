@@ -15,7 +15,7 @@ from typing import Optional
 
 
 # Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.3"
 
 
 @dataclass
@@ -26,6 +26,8 @@ class ManifestLayer:
     rows: int
     geometry_type: str
     crs: Optional[str] = None
+    hilbert_index: str = ""   # Column name when Hilbert indexed
+    sort_order: str = ""      # Persisted sort order description
 
 
 @dataclass
@@ -49,6 +51,15 @@ class ManifestResultVariable:
     variable: str
     filter_value: str         # Value of the `layer` column to filter on
     rows: int
+    parquet: str = ""         # Optional variable-level parquet path
+    geometry_mode: str = ""   # polygon, point, or none
+    index_column: str = ""    # cell_id or face_id when the result can join geometry
+    geometry_filter: str = "" # mesh_cells or mesh_faces for viewer-side joins
+    hilbert_index: str = ""   # Column name when spatially indexed
+    join_index: str = ""      # Column name when join-key indexed
+    sort_order: str = ""      # Persisted sort order description
+    index_status: str = ""    # spatial_join, join_key, skipped, or error
+    size_bytes: int = 0
 
 
 @dataclass
@@ -63,6 +74,8 @@ class ManifestPlanEntry:
     parquet: str = ""                       # relative path from archive root
     variables: list[dict] = field(default_factory=list)
     size_bytes: int = 0
+    layout: str = "plan"                    # plan or variable
+    geometry_mode: str = "polygon"          # polygon, point, or none
 
     def add_variable(self, var: ManifestResultVariable) -> None:
         self.variables.append(asdict(var))
@@ -97,6 +110,7 @@ class Manifest:
     results: list[dict] = field(default_factory=list)
     terrain: list[dict] = field(default_factory=list)
     maps: list[dict] = field(default_factory=list)
+    postprocessing: dict = field(default_factory=dict)
     schema_version: str = SCHEMA_VERSION
 
     # -----------------------------------------------------------------------
@@ -157,6 +171,8 @@ class Manifest:
         }
         if self.maps:
             d["maps"] = self.maps
+        if self.postprocessing:
+            d["postprocessing"] = self.postprocessing
         return d
 
     def to_json(self, indent: int = 2) -> str:
@@ -178,6 +194,7 @@ class Manifest:
             results=data.get("results", []),
             terrain=data.get("terrain", []),
             maps=data.get("maps", []),
+            postprocessing=data.get("postprocessing", {}),
             schema_version=data.get("schema_version", SCHEMA_VERSION),
         )
 
@@ -209,4 +226,8 @@ class Manifest:
             pq = p.get("parquet")
             if pq:
                 paths.add(pq)
+            for variable in p.get("variables", []):
+                variable_pq = variable.get("parquet")
+                if variable_pq:
+                    paths.add(variable_pq)
         return sorted(paths)

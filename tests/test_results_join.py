@@ -3,7 +3,13 @@ from pathlib import Path
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 
-from ras2cng.results import export_results_layer
+from ras2cng.results import export_results_layer, result_variable_index_column
+
+
+def test_result_variable_index_column_uses_tokens():
+    assert result_variable_index_column("Maximum Water Surface") == "cell_id"
+    assert result_variable_index_column("Maximum Face Velocity") == "face_id"
+    assert result_variable_index_column("maximum_face_velocity") == "face_id"
 
 
 def test_results_join_points_to_polys(monkeypatch, tmp_path: Path):

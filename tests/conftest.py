@@ -233,18 +233,25 @@ def _scan_all_files() -> dict[str, list[str]]:
 
 
 def _load_file_cache() -> dict[str, list[str]]:
-    """Load cached file lists, rescanning if cache is missing."""
-    if _FILE_CACHE.exists():
-        data = json.loads(_FILE_CACHE.read_text(encoding="utf-8"))
-        # Validate cache has expected keys
-        if all(k in data for k in ("geometry_hdf", "text_geometry", "plan_hdf")):
-            return data
+    """Load cached file lists, rescanning if cache is missing.
 
-    # Cache miss — scan (slow on first run)
-    data = _scan_all_files()
-    _FILE_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    _FILE_CACHE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    return data
+    Degrades to empty lists when the test-model drive (OUTPUT_BASE) is not
+    mounted, so unit tests remain runnable on machines without it.
+    """
+    try:
+        if _FILE_CACHE.exists():
+            data = json.loads(_FILE_CACHE.read_text(encoding="utf-8"))
+            # Validate cache has expected keys
+            if all(k in data for k in ("geometry_hdf", "text_geometry", "plan_hdf")):
+                return data
+
+        # Cache miss — scan (slow on first run)
+        data = _scan_all_files()
+        _FILE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _FILE_CACHE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return data
+    except OSError:
+        return {"geometry_hdf": [], "text_geometry": [], "plan_hdf": []}
 
 
 def _is_geometry_hdf(p: Path) -> bool:

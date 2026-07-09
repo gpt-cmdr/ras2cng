@@ -24,13 +24,24 @@ with `WHERE layer = 'mesh_cells'` and avoids directory proliferation.
 
 ```
 {output_dir}/
-├── manifest.json                         # Project catalog (schema v2.0, always written)
+├── manifest.json                         # Project catalog (schema v2.3, index metadata)
 ├── {ProjectName}.parquet                 # Project metadata (RasPrj dataframes, _table column)
 ├── {ProjectName}.g01.parquet             # All geometry from g01 (HDF + text layers)
 ├── {ProjectName}.g06.parquet             # All geometry from g06
 ├── {ProjectName}.p01.parquet             # All results from p01, layer column (--results)
 └── terrain/                              # Only with --terrain
     └── Terrain50_cog.tif
+```
+
+Large 2D projects can also use a partitioned results layout:
+
+```
+{output_dir}/
+├── {ProjectName}.g01.parquet
+└── results/
+    └── p01/
+        ├── maximum_depth.parquet
+        └── maximum_water_surface.parquet
 ```
 
 ### Querying consolidated files
@@ -54,8 +65,9 @@ SELECT DISTINCT layer FROM 'BaldEagle.g01.parquet'
 ### GeoParquet features
 
 - **ZSTD compression** — Better compression ratios than snappy
-- **Per-row bbox columns** — `bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax` with GeoParquet `covering` metadata for spatial predicate pushdown
-- **Hilbert spatial sorting** — Rows sorted by Hilbert curve within each layer for optimal spatial locality (disable with `--no-sort`)
+- **Per-row bbox columns** — `bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax` with GeoParquet `covering` metadata for spatial predicate pushdown; the metadata is preserved during post-processing
+- **Hilbert spatial indexing** — The default post-processing pass adds `hilbert_index` to GeoParquet geometry and sorts by `layer,hilbert_index` (disable with `--no-sort`)
+- **Result join indexes** — Geometryless result tables get `join_index`; when matching mesh geometry exists, they inherit `hilbert_index` through `mesh_name` plus `cell_id` or `face_id`
 - **Text layer suffix** — Text geometry layers get a `_text` suffix (e.g., `cross_sections_text`) to avoid collision with HDF layers
 
 ---
@@ -96,6 +108,13 @@ ras2cng archive path/to/project /output/archive --plan-geometry
 # Specific plans only
 ras2cng archive path/to/project /output/archive --results --plans p01,p02
 
+# Large-project-safe selected results: one table per plan/variable, no repeated geometry
+ras2cng archive path/to/project /output/archive --results \
+  --result-variables maximum_depth,maximum_water_surface \
+  --results-layout variable \
+  --results-geometry none \
+  --no-sort
+
 # Full archive
 ras2cng archive path/to/project /output/archive --results --terrain
 
@@ -108,12 +127,53 @@ ras2cng archive path/to/project /output/archive --results --map --render-mode sl
 # Consolidate terrains into a single COG
 ras2cng archive path/to/project /output/archive --terrain --consolidate-terrain
 
-# Disable Hilbert spatial sorting
+# Skip spatial post-processing during extraction
 ras2cng archive path/to/project /output/archive --no-sort
+
+# Post-process an existing archive later
+ras2cng spatial-index /output/archive
 
 # Fail fast on any extraction error (default: skip and continue)
 ras2cng archive path/to/project /output/archive --fail-fast
 ```
+
+---
+
+## Large 2D Result Archives
+
+The default `--results` mode writes one GeoParquet per plan and repeats geometry
+inside each result variable. That is convenient for direct map rendering, but it
+can create large memory spikes on multi-million-cell 2D meshes.
+
+For large projects, prefer:
+
+- `--results-layout variable` — writes one parquet per plan/variable, so ras2cng
+  does not hold every variable for a plan in memory at once.
+- `--results-geometry none` — writes attribute tables keyed by `mesh_name` plus
+  `cell_id` or `face_id`. Mesh geometry remains in the geometry parquet once.
+- `--result-variables ...` — restricts export to display or analysis variables
+  that are actually needed.
+- `--no-sort` — skips the default post-processing pass when the extraction
+  worker is memory constrained. Run `ras2cng spatial-index /output/archive`
+  later on a worker with enough RAM to add `hilbert_index` to geometry and
+  `join_index` or inherited `hilbert_index` to geometryless result tables
+  without re-extracting the model.
+
+Geometryless result tables are not directly renderable by MapLibre as a layer.
+They are the canonical DRY storage form. A viewer or tile service should join
+them to the geometry parquet on `mesh_name, cell_id` for cell variables or
+`mesh_name, face_id` for face variables. If a standalone renderable layer is
+required, use `--results-geometry point` or `--results-geometry polygon` for a
+small selected subset of variables, or generate derived map rasters/tiles.
+
+When spatial post-processing is enabled (the default for `archive_project()`
+unless `sort=False` or `--no-sort` is used), geometry parquet files are sorted
+by `layer,hilbert_index` and keep their GeoParquet bbox `covering` metadata.
+Geometryless result tables are sorted by matching geometry `hilbert_index` when
+the archive has a joinable `mesh_cells` or `mesh_faces` layer; otherwise they
+fall back to deterministic `mesh_name` plus cell/face key ordering. The manifest
+records `index_status=spatial_join` for inherited spatial ordering and
+`index_status=join_key` for key-only ordering.
 
 ---
 
@@ -168,7 +228,7 @@ manifest = archive_project(
     include_results=True,
     include_terrain=True,
     include_plan_geometry=True,  # Also extract geometry from plan HDFs
-    sort=False,                  # Disable Hilbert sorting
+    sort=False,                  # Skip spatial post-processing
     skip_errors=False,           # Fail fast on errors
 )
 ```
@@ -177,11 +237,11 @@ manifest = archive_project(
 
 ## manifest.json Schema
 
-Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.).
+Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 2.3 also records spatial post-processing metadata when the archive has been indexed.
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "2.3",
   "project": {
     "name": "BaldEagleDamBrk",
     "prj_file": "BaldEagleDamBrk.prj",
@@ -207,7 +267,10 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
           "filter_value": "mesh_cells",
           "rows": 87039,
           "geometry_type": "Polygon",
-          "crs": "EPSG:2271"
+          "crs": "EPSG:2271",
+          "hilbert_index": "hilbert_index",
+          "sort_order": "layer,hilbert_index",
+          "bbox_columns": ["bbox_xmin", "bbox_ymin", "bbox_xmax", "bbox_ymax"]
         },
         {
           "layer": "bc_lines",
@@ -235,12 +298,23 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
       "flow_id": "u01",
       "hdf_exists": true,
       "completed": true,
-      "parquet": "BaldEagleDamBrk.p01.parquet",
+      "parquet": "",
+      "layout": "variable",
+      "geometry_mode": "none",
       "variables": [
         {
           "variable": "maximum_depth",
           "filter_value": "maximum_depth",
-          "rows": 87039
+          "rows": 87039,
+          "parquet": "results/p01/maximum_depth.parquet",
+          "geometry_mode": "none",
+          "index_column": "cell_id",
+          "geometry_filter": "mesh_cells",
+          "hilbert_index": "hilbert_index",
+          "join_index": "join_index",
+          "sort_order": "hilbert_index",
+          "index_status": "spatial_join",
+          "size_bytes": 3145728
         }
       ],
       "size_bytes": 3145728
@@ -253,7 +327,17 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
       "size_bytes": 12582912,
       "crs": "EPSG:2271"
     }
-  ]
+  ],
+  "postprocessing": {
+    "spatial_index": {
+      "hilbert_column": "hilbert_index",
+      "join_index_column": "join_index",
+      "hilbert_level": 16,
+      "geometry_file_count": 1,
+      "result_file_count": 1,
+      "error_count": 0
+    }
+  }
 }
 ```
 
@@ -266,9 +350,9 @@ m = Manifest.load(Path("/output/archive/manifest.json"))
 print(m.geom_ids)      # ['g01', 'g06', ...]
 print(m.plan_ids)      # ['p01', 'p02', ...]
 
-# List consolidated parquet files
+# List geometry and result parquet files
 print(m.layer_paths())   # ['BaldEagle.g01.parquet', ...]
-print(m.result_paths())  # ['BaldEagle.p01.parquet', ...]
+print(m.result_paths())  # ['BaldEagle.p01.parquet', 'results/p01/maximum_depth.parquet', ...]
 
 # Browse geometry layers within each consolidated file
 for entry in m.geometry:
@@ -291,7 +375,7 @@ for entry in m.geometry:
 | `--render-mode` | Set water surface render mode: `horizontal`, `sloping`, or `slopingPretty` |
 | `--plan-geometry` | Also extract the geometry copy embedded in plan HDF files |
 | `--plans p01,p02` | Only specific scenarios are relevant (saves time/space on large projects) |
-| `--no-sort` | Disable Hilbert spatial sorting (on by default) |
+| `--no-sort` | Skip default spatial post-processing; run `ras2cng spatial-index ARCHIVE_DIR` later |
 | `--fail-fast` | Debugging extraction issues; default is to skip and continue |
 | `--ras-version` | Specify HEC-RAS version for RasProcess mapping |
 | `--rasprocess` | Path to HEC-RAS install directory (required on Linux/Wine) |

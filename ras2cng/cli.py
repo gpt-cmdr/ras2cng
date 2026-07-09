@@ -57,11 +57,29 @@ def archive_command(
     plans: Optional[str] = typer.Option(
         None, "--plans", help="Comma-separated plan IDs to include, e.g. p01,p02 (default: all)"
     ),
+    result_variables: Optional[str] = typer.Option(
+        None,
+        "--result-variables",
+        help=(
+            "Comma-separated result summary variables or slugs to include "
+            "(default: all available variables)"
+        ),
+    ),
+    results_layout: str = typer.Option(
+        "plan",
+        "--results-layout",
+        help="Results output layout: plan or variable",
+    ),
+    results_geometry: str = typer.Option(
+        "polygon",
+        "--results-geometry",
+        help="Results geometry mode: polygon, point, or none",
+    ),
     skip_errors: bool = typer.Option(
         True, "--skip-errors/--fail-fast", help="Skip individual layer errors vs abort"
     ),
     no_sort: bool = typer.Option(
-        False, "--no-sort", help="Disable Hilbert spatial sorting (on by default)"
+        False, "--no-sort", help="Disable Hilbert spatial post-processing (on by default)"
     ),
     map_results: bool = typer.Option(
         False, "--map/--no-map", help="Generate result rasters via RasStoreMapHelper"
@@ -91,6 +109,7 @@ def archive_command(
     from ras2cng.project import archive_project
 
     plans_list = [p.strip() for p in plans.split(",")] if plans else None
+    result_variables_list = [v.strip() for v in result_variables.split(",")] if result_variables else None
 
     try:
         archive_project(
@@ -100,6 +119,9 @@ def archive_command(
             include_terrain=terrain,
             include_plan_geometry=plan_geometry,
             plans=plans_list,
+            result_variables=result_variables_list,
+            results_layout=results_layout,
+            results_geometry=results_geometry,
             skip_errors=skip_errors,
             sort=not no_sort,
             map_results=map_results,
@@ -107,6 +129,35 @@ def archive_command(
             render_mode=render_mode,
             ras_version=ras_version,
             rasprocess_path=rasprocess,
+        )
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("spatial-index")
+def spatial_index_command(
+    archive_dir: Path = typer.Argument(..., help="ras2cng archive directory containing manifest.json"),
+    hilbert_level: int = typer.Option(16, "--hilbert-level", help="Hilbert curve level"),
+    skip_errors: bool = typer.Option(
+        True, "--skip-errors/--fail-fast", help="Skip individual parquet errors vs abort"
+    ),
+):
+    """Post-process an existing archive with Hilbert sorting and join indexes."""
+
+    from ras2cng.spatial_index import postprocess_archive
+
+    try:
+        summary = postprocess_archive(
+            archive_dir,
+            hilbert_level=hilbert_level,
+            skip_errors=skip_errors,
+        )
+        console.print(
+            "[green]OK[/green] Spatial index complete: "
+            f"{summary.get('geometry_file_count', 0)} geometry file(s), "
+            f"{summary.get('result_file_count', 0)} result file(s), "
+            f"{summary.get('error_count', 0)} error(s)"
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -124,19 +175,27 @@ def export_geometry(
         "--layer",
         "-l",
         help=(
-            "Geometry layer: mesh_cells, mesh_areas, cross_sections, centerlines, "
-            "bc_lines, breaklines, refinement_regions, reference_lines, "
-            "reference_points, structures, storage_areas"
+            "Geometry layer: mesh_cells, mesh_faces, mesh_areas, cross_sections, "
+            "centerlines, bank_lines, bc_lines, breaklines, refinement_regions, "
+            "reference_lines, reference_points, structures, storage_areas"
         ),
+    ),
+    out_crs: Optional[str] = typer.Option(
+        "EPSG:4326",
+        "--out-crs",
+        help="Output CRS (default EPSG:4326). Set to empty string to skip reprojection.",
     ),
 ):
     """Export HEC-RAS geometry to GeoParquet."""
 
     from ras2cng.geometry import export_geometry_layers
 
+    # Treat empty string as None (no reprojection)
+    effective_crs = out_crs if out_crs else None
+
     console.print(f"[bold blue]Exporting geometry:[/bold blue] {geom_file}")
     try:
-        export_geometry_layers(geom_file, output, layer=layer)
+        export_geometry_layers(geom_file, output, layer=layer, out_crs=effective_crs)
         console.print(f"[green]OK[/green] Exported to {output}")
     except Exception as e:
         console.print(f"[red]ERROR:[/red] {e}")
@@ -425,9 +484,14 @@ def map_command(
     dv: bool = typer.Option(False, "--dv", help="Depth x Velocity"),
     dv_sq: bool = typer.Option(False, "--dv-sq", help="Depth x Velocity²"),
     inundation_boundary: bool = typer.Option(False, "--inundation-boundary", help="Inundation boundary polygon"),
-    arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time"),
-    duration: bool = typer.Option(False, "--duration", help="Duration"),
-    recession: bool = typer.Option(False, "--recession", help="Recession"),
+    arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time (hours, whole-simulation)"),
+    duration: bool = typer.Option(False, "--duration", help="Inundation duration (hours)"),
+    recession: bool = typer.Option(False, "--recession", help="Not supported (no RasMapperLib map type); ignored with a warning"),
+    percent_inundated: bool = typer.Option(False, "--percent-inundated", help="Percent time inundated"),
+    arrival_depth: float = typer.Option(
+        0.0, "--arrival-depth",
+        help="Wet/dry depth threshold for arrival/duration/recession/percent-inundated",
+    ),
     terrain_name: Optional[str] = typer.Option(
         None, "--terrain", help="Specific terrain name from rasmap"
     ),
@@ -450,6 +514,10 @@ def map_command(
     ),
     skip_errors: bool = typer.Option(
         True, "--skip-errors/--fail-fast", help="Skip errors vs abort"
+    ),
+    keep_postprocessing: bool = typer.Option(
+        False, "--keep-postprocessing",
+        help="Keep the (large) PostProcessing.hdf cache in the output directory",
     ),
 ):
     """Generate result rasters (WSE, Depth, Velocity, etc.) via RasStoreMapHelper.
@@ -479,6 +547,8 @@ def map_command(
             arrival_time=arrival_time,
             duration=duration,
             recession=recession,
+            percent_inundated=percent_inundated,
+            arrival_depth=arrival_depth,
             terrain_name=terrain_name,
             ras_version=ras_version,
             rasprocess_path=rasprocess,
@@ -488,10 +558,164 @@ def map_command(
             convert_cog=cog,
             timeout=timeout,
             skip_errors=skip_errors,
+            keep_postprocessing=keep_postprocessing,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
         raise typer.Exit(1)
+
+
+@app.command("map-hdf")
+def map_hdf_command(
+    plan_hdf: Path = typer.Argument(
+        ..., help="Computed plan results HDF (*.pNN.hdf, any filename)"
+    ),
+    output: Path = typer.Argument(
+        ..., help="Output directory for result rasters"
+    ),
+    terrain: Optional[list[Path]] = typer.Option(
+        None, "--terrain", help="Raw terrain GeoTIFF (repeatable; tiles are stitched)"
+    ),
+    terrain_hdf: Optional[Path] = typer.Option(
+        None, "--terrain-hdf",
+        help="Pre-built HEC-RAS terrain HDF (its .vrt and tile TIFFs must sit beside it)",
+    ),
+    projection: Optional[Path] = typer.Option(
+        None, "--projection",
+        help="ESRI .prj projection file (default: read WKT from the plan HDF)",
+    ),
+    workdir: Optional[Path] = typer.Option(
+        None, "--workdir",
+        help="Scaffold directory (default: OUTPUT/_scaffold; reused across reruns)",
+    ),
+    rm_scaffold: bool = typer.Option(
+        False, "--rm-scaffold", help="Delete the scaffold directory after the run"
+    ),
+    profile: str = typer.Option(
+        "Max", "--profile", help="Max, Min, or timestamp (default: Max)"
+    ),
+    wse: bool = typer.Option(True, "--wse/--no-wse", help="Water Surface Elevation (default: on)"),
+    depth: bool = typer.Option(True, "--depth/--no-depth", help="Depth (default: on)"),
+    velocity: bool = typer.Option(True, "--velocity/--no-velocity", help="Velocity (default: on)"),
+    froude: bool = typer.Option(False, "--froude", help="Froude number"),
+    shear_stress: bool = typer.Option(False, "--shear-stress", help="Shear stress"),
+    dv: bool = typer.Option(False, "--dv", help="Depth x Velocity"),
+    dv_sq: bool = typer.Option(False, "--dv-sq", help="Depth x Velocity²"),
+    inundation_boundary: bool = typer.Option(False, "--inundation-boundary", help="Inundation boundary polygon"),
+    arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time (hours, whole-simulation)"),
+    duration: bool = typer.Option(False, "--duration", help="Inundation duration (hours)"),
+    recession: bool = typer.Option(False, "--recession", help="Not supported (no RasMapperLib map type); ignored with a warning"),
+    percent_inundated: bool = typer.Option(False, "--percent-inundated", help="Percent time inundated"),
+    arrival_depth: float = typer.Option(
+        0.0, "--arrival-depth",
+        help="Wet/dry depth threshold for arrival/duration/recession/percent-inundated",
+    ),
+    render_mode: Optional[str] = typer.Option(
+        "sloping", "--render-mode", help="Water surface render mode: horizontal, sloping, slopingPretty"
+    ),
+    ras_version: str = typer.Option(
+        "6.6", "--ras-version", help="HEC-RAS version (default: 6.6)"
+    ),
+    rasprocess: Optional[Path] = typer.Option(
+        None, "--rasprocess", help="Path to HEC-RAS install directory (for helper deployment)"
+    ),
+    min_depth: float = typer.Option(
+        0.0, "--min-depth", help="Min depth threshold (default: 0.0)"
+    ),
+    wgs84: bool = typer.Option(False, "--wgs84", help="Reproject output to WGS84"),
+    cog: bool = typer.Option(False, "--cog", help="Convert output to Cloud Optimized GeoTIFF"),
+    timeout: int = typer.Option(
+        10800, "--timeout", help="Timeout in seconds (default: 10800 = 3 hours)"
+    ),
+    keep_postprocessing: bool = typer.Option(
+        False, "--keep-postprocessing",
+        help="Keep the (large) PostProcessing.hdf cache in the output directory",
+    ),
+):
+    """Generate result rasters from just a plan HDF + terrain (no project needed).
+
+    Synthesizes a barebones HEC-RAS project around the plan HDF (projection,
+    units, and plan metadata are read from the HDF itself), builds the HEC-RAS
+    terrain from raw GeoTIFF(s) via RasProcess.exe CreateTerrain (or reuses a
+    pre-built terrain HDF), then renders stored maps through RASMapper.
+
+    Examples:
+
+        ras2cng map-hdf results.p01.hdf ./maps --terrain dem.tif
+
+        ras2cng map-hdf results.p01.hdf ./maps --terrain-hdf Terrain50.hdf
+    """
+    import shutil
+
+    from ras2cng.mapping import generate_result_maps
+    from ras2cng.scaffold import SCAFFOLD_MARKER, build_scaffold
+
+    console = Console()
+
+    if bool(terrain) == bool(terrain_hdf):
+        console.print("[red]ERROR:[/red] Provide exactly one of --terrain or --terrain-hdf")
+        raise typer.Exit(1)
+
+    if rasprocess and terrain:
+        console.print(
+            "[yellow]Warning:[/yellow] the terrain build locates HEC-RAS by "
+            "--ras-version, not --rasprocess; a portable install may not be "
+            "found for the CreateTerrain step"
+        )
+
+    scaffold_dir = workdir if workdir is not None else output / "_scaffold"
+
+    try:
+        info = build_scaffold(
+            plan_hdf,
+            scaffold_dir,
+            terrain_tifs=list(terrain) if terrain else None,
+            terrain_hdf=terrain_hdf,
+            projection_file=projection,
+            render_mode=render_mode or "sloping",
+            ras_version=ras_version,
+        )
+        console.print(
+            f"  Scaffold: {info.project_dir} "
+            f"({info.meta.project_name} p{info.meta.plan_number})"
+        )
+
+        generate_result_maps(
+            info.prj_file,
+            output,
+            plans=[f"p{info.meta.plan_number}"],
+            profile=profile,
+            wse=wse,
+            depth=depth,
+            velocity=velocity,
+            froude=froude,
+            shear_stress=shear_stress,
+            depth_x_velocity=dv,
+            depth_x_velocity_sq=dv_sq,
+            inundation_boundary=inundation_boundary,
+            arrival_time=arrival_time,
+            duration=duration,
+            recession=recession,
+            percent_inundated=percent_inundated,
+            arrival_depth=arrival_depth,
+            ras_version=ras_version,
+            rasprocess_path=rasprocess,
+            render_mode=render_mode,
+            min_depth=min_depth,
+            reproject_wgs84=wgs84,
+            convert_cog=cog,
+            timeout=timeout,
+            skip_errors=False,
+            keep_postprocessing=keep_postprocessing,
+        )
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+    finally:
+        # Only ever delete a directory this tool owns — the marker proves it
+        # is a ras2cng scaffold, not a user directory passed via --workdir.
+        if rm_scaffold and (scaffold_dir / SCAFFOLD_MARKER).exists():
+            shutil.rmtree(scaffold_dir, ignore_errors=True)
 
 
 @app.command("terrain-mod")

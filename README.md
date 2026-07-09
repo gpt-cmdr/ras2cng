@@ -11,7 +11,9 @@
 
 Full-project archival and cloud-native export tool for HEC-RAS. Extracts geometry, results, and
 terrain from any HEC-RAS project into hierarchical GeoParquet archives with a `manifest.json`
-catalog — ready for DuckDB analytics, PMTiles tile delivery, and PostGIS sync.
+catalog and spatial index metadata — ready for DuckDB analytics, PMTiles tile delivery, and
+PostGIS sync. Archives are spatially post-processed by default for predicate pushdown and
+stable viewer-side joins.
 
 Built on [`ras-commander`](https://github.com/gpt-cmdr/ras-commander) by [CLB Engineering Corporation](https://clbengineering.com/).
 
@@ -46,12 +48,17 @@ ras2cng archive path/to/MyProject/ ./archive/ --results
 
 # Also convert terrain TIFFs to Cloud Optimized GeoTIFF
 ras2cng archive path/to/MyProject/ ./archive/ --results --terrain
+
+# Constrained-worker workflow: extract now, index later on a larger worker
+ras2cng archive path/to/MyProject/ ./archive/ --results \
+  --results-layout variable --results-geometry none --no-sort
+ras2cng spatial-index ./archive/
 ```
 
 Output structure (consolidated parquet per source file):
 ```
 archive/
-├── manifest.json              # Project catalog (schema v2.0)
+├── manifest.json              # Project catalog (schema v2.3, index metadata)
 ├── MyProject.parquet          # Project metadata (RasPrj dataframes, _table column)
 ├── MyProject.g01.parquet      # All geometry from g01 (HDF + text), layer column
 ├── MyProject.g06.parquet      # All geometry from g06
@@ -66,6 +73,11 @@ SELECT * FROM 'MyProject.g01.parquet' WHERE layer = 'mesh_cells'
 SELECT * FROM 'MyProject.p01.parquet' WHERE layer = 'maximum_depth'
 SELECT * FROM 'MyProject.parquet' WHERE _table = 'plan_df'
 ```
+
+Archive GeoParquet files keep bbox `covering` metadata and, unless `--no-sort` was used,
+include a persisted `hilbert_index` sorted by `layer,hilbert_index`. Geometryless result
+tables get `join_index`; when matching `mesh_cells` or `mesh_faces` geometry is present,
+they also inherit `hilbert_index` for spatially local joins.
 
 ### Single-File Export
 
@@ -139,6 +151,7 @@ df = query_parquet(Path("max_depth.parquet"), "SELECT * FROM _ WHERE maximum_dep
 | Layer | Geometry | Source |
 |---|---|---|
 | `mesh_cells` | Polygon (Point fallback) | `HdfMesh` |
+| `mesh_faces` | LineString | `HdfMesh` native faces, keyed by `face_id` |
 | `mesh_areas` | Polygon | `HdfMesh` |
 | `bc_lines` | LineString | `HdfBndry` |
 | `breaklines` | LineString | `HdfBndry` |

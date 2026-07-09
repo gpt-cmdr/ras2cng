@@ -29,6 +29,7 @@ python examples/01_export_geometry.py
 | [04_generate_pmtiles.py](https://github.com/gpt-cmdr/ras2cng/blob/master/examples/04_generate_pmtiles.py) | Generate PMTiles for web visualization (requires tippecanoe + pmtiles on PATH) |
 | [05_cloud_native_stack.py](https://github.com/gpt-cmdr/ras2cng/blob/master/examples/05_cloud_native_stack.py) | Full end-to-end workflow: extract → geometry → results → DuckDB → PMTiles → PostGIS |
 | [06_project_archive.py](https://github.com/gpt-cmdr/ras2cng/blob/master/examples/06_project_archive.py) | Full-project archival: inspect project structure, export all geometry layers, browse manifest.json |
+| [07_result_maps.py](https://github.com/gpt-cmdr/ras2cng/blob/master/examples/07_result_maps.py) | Result rasters via RASMapper: full-project `map`, minimal-inputs `map-hdf` (plan HDF + terrain only), and whole-simulation Arrival Time / Duration / Percent Time Inundated |
 
 ## Output
 
