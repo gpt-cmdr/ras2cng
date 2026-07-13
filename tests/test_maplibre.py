@@ -82,7 +82,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
 
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
-    monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda _: footprint)
+    monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
     monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_viewer(
@@ -119,6 +119,14 @@ def test_package_requires_a_geometry_hdf_for_every_archive_geometry(tmp_path: Pa
         assert "Missing geometry HDF mapping" in str(error)
     else:
         raise AssertionError("Expected API footprint mapping validation to fail")
+
+
+def test_wgs84_conversion_accepts_a_verified_fallback_crs():
+    unknown_crs = gpd.GeoDataFrame(geometry=[box(-85.0, 40.0, -84.9, 40.1)])
+
+    converted = maplibre._to_wgs84(unknown_crs, Path("model.g01.hdf"), "EPSG:4326")
+
+    assert converted.crs.to_epsg() == 4326
 
 
 def test_cli_passes_hdf_mappings_and_vector_results(monkeypatch, tmp_path: Path):

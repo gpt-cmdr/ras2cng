@@ -31,6 +31,11 @@ model elements, rather than a bounding box or an approximation reconstructed fro
 Install ras-commander from current `main`; the released package before the footprint API
 will be rejected with a clear error.
 
+Some legacy HDF files omit their projection while the archive's sibling `project.json`
+records a verified CRS from packaged projection material. In that case the command uses
+the archive CRS. A validated CRS can be supplied explicitly with `--crs`; an unknown CRS
+remains a hard error.
+
 ## Layer Behavior
 
 - Geometry is delivered as one vector PMTiles file, with source layers for every archive

@@ -97,6 +97,10 @@ ras2cng maplibre ./archive ./viewer \
   --vector-results
 ```
 
+When a geometry HDF lacks its projection but the archive's `project.json` has a verified
+CRS, the bundle uses that archive CRS for the API footprint and delivery layers. Use
+`--crs` only to supply the same validated project CRS explicitly.
+
 The bundle contains `viewer/manifest.json`, `viewer/model_extent.geojson`, and PMTiles
 under `viewer/tiles/`. Geometry and vector results are separate tile sources. Vector
 results are explicitly identified as raw HDF values; RASMapper stored-map COGs remain the

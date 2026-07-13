@@ -135,9 +135,15 @@ def _read_layer(path: Path, filter_value: str) -> gpd.GeoDataFrame:
     return gdf
 
 
-def _to_wgs84(gdf: gpd.GeoDataFrame, source: Path) -> gpd.GeoDataFrame:
+def _to_wgs84(
+    gdf: gpd.GeoDataFrame,
+    source: Path,
+    fallback_crs: str | None = None,
+) -> gpd.GeoDataFrame:
     if gdf.crs is None:
-        raise ValueError(f"GeoParquet layer has no CRS and cannot be published: {source}")
+        if not fallback_crs:
+            raise ValueError(f"GeoParquet layer has no CRS and cannot be published: {source}")
+        gdf = gdf.set_crs(fallback_crs)
     gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].copy()
     if gdf.empty:
         return gdf
@@ -184,7 +190,7 @@ def _run_tippecanoe(
     subprocess.run(command, check=True, capture_output=True, text=True)
 
 
-def _extent_from_hdf(hdf_path: Path) -> gpd.GeoDataFrame:
+def _extent_from_hdf(hdf_path: Path, fallback_crs: str | None = None) -> gpd.GeoDataFrame:
     """Return the authoritative no-buffer footprint from ras-commander."""
 
     from ras_commander.hdf import HdfProject
@@ -203,7 +209,7 @@ def _extent_from_hdf(hdf_path: Path) -> gpd.GeoDataFrame:
         ) from error
     if footprint.empty:
         raise ValueError(f"No model footprint was returned for {hdf_path}")
-    return _to_wgs84(footprint, hdf_path)
+    return _to_wgs84(footprint, hdf_path, fallback_crs)
 
 
 def _result_style(variable: str) -> dict[str, float | str]:
@@ -246,6 +252,7 @@ def package_maplibre_viewer(
     geometry_hdfs: Mapping[str, Path],
     title: str | None = None,
     source_project: str | None = None,
+    crs: str | None = None,
     include_vector_results: bool = False,
     min_zoom: int = 0,
     max_zoom: int = 17,
@@ -281,10 +288,11 @@ def package_maplibre_viewer(
         if not Path(hdf_path).is_file():
             raise FileNotFoundError(f"Geometry HDF for {geom_id} does not exist: {hdf_path}")
 
+    metadata = _project_metadata(archive_dir)
+    project_crs = crs or metadata.get("crs") or archive.get("project", {}).get("crs")
     _require_cli("tippecanoe")
     output_dir.mkdir(parents=True, exist_ok=True)
     tiles_dir = output_dir / "tiles"
-    metadata = _project_metadata(archive_dir)
     viewer_title = title or metadata.get("title") or archive.get("project", {}).get("name") or archive_dir.name
     source_project = source_project or metadata.get("href") or "../project.json"
 
@@ -309,7 +317,7 @@ def package_maplibre_viewer(
                 }
             )
 
-            extent = _extent_from_hdf(Path(geometry_hdfs[entry["geom_id"]]))
+            extent = _extent_from_hdf(Path(geometry_hdfs[entry["geom_id"]]), project_crs)
             extent["geometry_id"] = geom_id
             extent_source = f"{group_id}-model-extents"
             extent_path = work_dir / "geometry" / f"{extent_source}.ndgeojson"
@@ -341,7 +349,11 @@ def package_maplibre_viewer(
                 filter_value = layer.get("filter_value") or kind
                 if not kind or not filter_value:
                     continue
-                gdf = _to_wgs84(_read_layer(archive_geometry_path, filter_value), archive_geometry_path)
+                gdf = _to_wgs84(
+                    _read_layer(archive_geometry_path, filter_value),
+                    archive_geometry_path,
+                    project_crs,
+                )
                 if gdf.empty:
                     continue
                 geometry_cache[(geom_id, kind)] = gdf
@@ -457,6 +469,7 @@ def package_maplibre_viewer(
         "bounds": list(final_bounds),
         "center": center,
         "zoom": _default_zoom(final_bounds),
+        "sourceCrs": project_crs,
         "tilesets": [
             {
                 "id": "geometry",

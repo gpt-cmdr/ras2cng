@@ -389,6 +389,11 @@ def maplibre_command(
         "--source-project",
         help="Public project metadata URL or relative path",
     ),
+    crs: Optional[str] = typer.Option(
+        None,
+        "--crs",
+        help="Validated project CRS override when it is absent from the geometry HDF",
+    ),
     vector_results: bool = typer.Option(
         False,
         "--vector-results/--geometry-only",
@@ -426,6 +431,7 @@ def maplibre_command(
             geometry_hdfs=mappings,
             title=title,
             source_project=source_project,
+            crs=crs,
             include_vector_results=vector_results,
             min_zoom=min_zoom,
             max_zoom=max_zoom,
