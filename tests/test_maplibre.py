@@ -126,6 +126,37 @@ def test_package_requires_a_geometry_hdf_for_every_archive_geometry(tmp_path: Pa
         raise AssertionError("Expected API footprint mapping validation to fail")
 
 
+def test_geometry_only_package_streams_dense_mesh_delivery(monkeypatch, tmp_path: Path):
+    archive_dir, hdf = _write_archive(tmp_path)
+    calls: list[tuple[Path, list[tuple[str, Path]], Path]] = []
+    sources: dict[str, str] = {}
+
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+        calls.append((output, list(layers), temporary_directory))
+        for source_layer, source_path in layers:
+            sources[source_layer] = source_path.read_text(encoding="utf-8")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"pmtiles")
+
+    footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
+    monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
+    monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
+    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+
+    maplibre.package_maplibre_viewer(
+        archive_dir,
+        tmp_path / "viewer",
+        geometry_hdfs={"g01": hdf},
+        scratch_dir=tmp_path / "scratch",
+    )
+
+    detail_call = next(call for call in calls if call[0].name == "geometry-detail.pmtiles")
+    delivery = sources[detail_call[1][0][0]]
+    assert '"cell_id":7.0' in delivery
+    assert "hilbert_index" not in delivery
+    assert detail_call[2].is_relative_to(tmp_path / "scratch")
+
+
 def test_wgs84_conversion_accepts_a_verified_fallback_crs():
     unknown_crs = gpd.GeoDataFrame(geometry=[box(-85.0, 40.0, -84.9, 40.1)])
 

@@ -18,6 +18,9 @@ import tempfile
 from typing import Any, Iterable, Mapping, Sequence
 
 import geopandas as gpd
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import shapely
 
 from ras2cng.pmtiles import _require_cli
@@ -32,6 +35,21 @@ _INTERNAL_COLUMNS = {
     "bbox_ymax",
     "hilbert_index",
     "join_index",
+}
+
+_DELIVERY_ATTRIBUTE_COLUMNS = {
+    "mesh_areas": ("mesh_name", "Name", "SA-2D"),
+    "mesh_cells": ("mesh_name", "cell_id"),
+    "mesh_faces": ("mesh_name", "face_id"),
+    "bc_lines": ("Name", "SA-2D", "bc_line_id"),
+    "breaklines": ("Name", "bl_id"),
+    "refinement_regions": ("Name", "rr_id"),
+    "reference_lines": ("Name", "refln_id"),
+    "reference_points": ("Name",),
+    "storage_areas": ("Name",),
+    "centerlines": ("River", "Reach"),
+    "cross_sections": ("River", "Reach", "RS"),
+    "structures": ("Name", "Type", "Connection", "SA-2D", "River", "Reach", "RS"),
 }
 
 _GEOMETRY_LABELS = {
@@ -168,6 +186,60 @@ def _write_ndgeojson(gdf: gpd.GeoDataFrame, path: Path) -> tuple[int, list[str],
             json.dump(feature, handle, default=str, separators=(",", ":"))
             handle.write("\n")
     return len(cleaned), sorted(set(cleaned.geom_type.dropna())), _bounds(cleaned)
+
+
+def _stream_dense_layer_ndgeojson(
+    source: Path,
+    filter_value: str,
+    kind: str,
+    path: Path,
+    fallback_crs: str | None,
+    batch_size: int = 20_000,
+) -> tuple[int, list[str], list[float]]:
+    """Write a dense delivery layer without loading its full mesh into memory."""
+
+    parquet = pq.ParquetFile(source)
+    available_columns = set(parquet.schema_arrow.names)
+    columns = ["geometry", "layer"]
+    columns.extend(
+        column
+        for column in _DELIVERY_ATTRIBUTE_COLUMNS.get(kind, ())
+        if column in available_columns
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    geometry_types: set[str] = set()
+    bounds: list[Sequence[float]] = []
+
+    with path.open("w", encoding="utf-8") as handle:
+        for batch in parquet.iter_batches(batch_size=batch_size, columns=columns):
+            table = pa.Table.from_batches([batch]).filter(
+                pc.equal(batch.column(batch.schema.get_field_index("layer")), filter_value)
+            )
+            if not table.num_rows:
+                continue
+            gdf = _to_wgs84(gpd.GeoDataFrame.from_arrow(table), source, fallback_crs)
+            if gdf.empty:
+                continue
+            cleaned = _drop_internal_columns(gdf)
+            # Only emit a property in batches where the source layer has a value.
+            cleaned = cleaned.drop(
+                columns=[
+                    column
+                    for column in cleaned.columns
+                    if column != cleaned.geometry.name and not cleaned[column].notna().any()
+                ]
+            )
+            for feature in cleaned.iterfeatures(drop_id=True, na="null", show_bbox=False):
+                json.dump(feature, handle, default=str, separators=(",", ":"))
+                handle.write("\n")
+            count += len(cleaned)
+            geometry_types.update(cleaned.geom_type.dropna())
+            bounds.append(_bounds(cleaned))
+
+    if not count:
+        raise ValueError(f"No {kind} features were written from {source}")
+    return count, sorted(geometry_types), _merge_bounds(bounds)
 
 
 def _run_tippecanoe(
@@ -377,18 +449,29 @@ def package_maplibre_viewer(
                 filter_value = layer.get("filter_value") or kind
                 if not kind or not filter_value:
                     continue
-                gdf = _to_wgs84(
-                    _read_layer(archive_geometry_path, filter_value),
-                    archive_geometry_path,
-                    project_crs,
-                )
-                if gdf.empty:
-                    continue
-                if (geom_id, kind) in result_geometry_keys:
-                    geometry_cache[(geom_id, kind)] = gdf
                 source_layer = f"{group_id}-{_slug(kind)}"
                 source_path = work_dir / "geometry" / f"{source_layer}.ndgeojson"
-                count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
+                cache_geometry = (geom_id, kind) in result_geometry_keys
+                gdf: gpd.GeoDataFrame | None = None
+                if _is_detail_geometry(kind) and not cache_geometry:
+                    count, geometry_types, bounds = _stream_dense_layer_ndgeojson(
+                        archive_geometry_path,
+                        filter_value,
+                        kind,
+                        source_path,
+                        project_crs,
+                    )
+                else:
+                    gdf = _to_wgs84(
+                        _read_layer(archive_geometry_path, filter_value),
+                        archive_geometry_path,
+                        project_crs,
+                    )
+                    if gdf.empty:
+                        continue
+                    if cache_geometry:
+                        geometry_cache[(geom_id, kind)] = gdf
+                    count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
                 source_layers = (
                     geometry_detail_sources if _is_detail_geometry(kind) else geometry_overview_sources
                 )
@@ -413,7 +496,7 @@ def package_maplibre_viewer(
                         "queryable": True,
                     }
                 )
-                if (geom_id, kind) not in result_geometry_keys:
+                if gdf is not None and not cache_geometry:
                     del gdf
 
             if geometry_index == 0:
