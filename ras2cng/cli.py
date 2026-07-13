@@ -374,6 +374,72 @@ def generate_pmtiles(
         raise typer.Exit(1)
 
 
+@app.command("maplibre")
+def maplibre_command(
+    archive_dir: Path = typer.Argument(..., help="ras2cng archive directory containing manifest.json"),
+    output: Path = typer.Argument(..., help="Empty output directory for the MapLibre viewer bundle"),
+    geometry_hdf: List[str] = typer.Option(
+        ...,
+        "--geometry-hdf",
+        help="Original geometry HDF mapping, repeat as g01=path/to/model.g01.hdf",
+    ),
+    title: Optional[str] = typer.Option(None, "--title", help="Viewer title (default: archive project title)"),
+    source_project: Optional[str] = typer.Option(
+        None,
+        "--source-project",
+        help="Public project metadata URL or relative path",
+    ),
+    vector_results: bool = typer.Option(
+        False,
+        "--vector-results/--geometry-only",
+        help="Publish raw HDF vector result values joined to source geometry",
+    ),
+    min_zoom: int = typer.Option(0, "--min-zoom", help="Tippecanoe minimum zoom"),
+    max_zoom: int = typer.Option(17, "--max-zoom", help="Tippecanoe maximum zoom"),
+):
+    """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
+
+    Geometry HDF mappings are required so model footprints come from
+    ``HdfProject.get_project_extent(geometry_type='footprint')``. Raster
+    results are deliberately excluded; publish RasProcess stored-map COGs in a
+    later raster-results step.
+    """
+
+    from ras2cng.maplibre import package_maplibre_viewer
+
+    mappings: dict[str, Path] = {}
+    for item in geometry_hdf:
+        if "=" not in item:
+            console.print("[red]ERROR:[/red] --geometry-hdf must use geom_id=path syntax")
+            raise typer.Exit(2)
+        geom_id, raw_path = item.split("=", 1)
+        geom_id = geom_id.strip()
+        if not geom_id or not raw_path.strip():
+            console.print("[red]ERROR:[/red] --geometry-hdf must use geom_id=path syntax")
+            raise typer.Exit(2)
+        mappings[geom_id] = Path(raw_path.strip())
+
+    try:
+        summary = package_maplibre_viewer(
+            archive_dir,
+            output,
+            geometry_hdfs=mappings,
+            title=title,
+            source_project=source_project,
+            include_vector_results=vector_results,
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+        )
+        console.print(
+            "[green]OK[/green] MapLibre bundle created: "
+            f"{summary.geometry_layer_count} geometry layer(s), "
+            f"{summary.result_layer_count} raw result layer(s)"
+        )
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
 @app.command("sync")
 def sync_to_postgis(
     input_file: Path = typer.Argument(..., help="Input GeoParquet file"),

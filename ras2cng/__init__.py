@@ -37,6 +37,7 @@ from ras2cng.precipitation import (
 )
 from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
+from ras2cng.maplibre import package_maplibre_viewer, PackageSummary
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
 from ras2cng.project import (
     archive_project,
@@ -87,6 +88,8 @@ __all__ = [
     "spatial_join",
     # PMTiles
     "generate_pmtiles_from_input",
+    "package_maplibre_viewer",
+    "PackageSummary",
     # PostGIS
     "sync_to_postgres",
     "read_from_postgres",

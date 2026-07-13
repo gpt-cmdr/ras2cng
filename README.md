@@ -79,6 +79,29 @@ include a persisted `hilbert_index` sorted by `layer,hilbert_index`. Geometryles
 tables get `join_index`; when matching `mesh_cells` or `mesh_faces` geometry is present,
 they also inherit `hilbert_index` for spatially local joins.
 
+### MapLibre Project Bundle
+
+Use the completed archive as the source of a browser-ready geometry bundle. The original
+geometry HDF is required for every geometry ID so the published model extent is the
+authoritative `HdfProject.get_project_extent(..., geometry_type="footprint")` polygon,
+not a tile-derived approximation.
+
+```bash
+# Geometry-only default: first geometry group is active; its mesh cells are visible.
+ras2cng maplibre ./archive ./viewer \
+  --geometry-hdf g01=path/to/MyProject.g01.hdf
+
+# Optional vector results are raw HDF summary values joined to their source elements.
+ras2cng maplibre ./archive ./viewer \
+  --geometry-hdf g01=path/to/MyProject.g01.hdf \
+  --vector-results
+```
+
+The bundle contains `viewer/manifest.json`, `viewer/model_extent.geojson`, and PMTiles
+under `viewer/tiles/`. Geometry and vector results are separate tile sources. Vector
+results are explicitly identified as raw HDF values; RASMapper stored-map COGs remain the
+separate source for interpolated raster result display.
+
 ### Single-File Export
 
 ```bash
@@ -196,6 +219,7 @@ Use `ras2cng precip model.p01.hdf ./precipitation/` for the CLI workflow.
 | DuckDB SQL | `query` | `pip install "ras2cng[duckdb]"` |
 | Vector PMTiles | `pmtiles` | tippecanoe + pmtiles CLIs |
 | Raster PMTiles | `pmtiles` | gdal_translate + pmtiles CLIs |
+| MapLibre project bundle | `maplibre` | tippecanoe and ras-commander footprint API |
 | PostGIS | `sync` | `pip install "ras2cng[postgis]"` |
 
 ## External CLIs for PMTiles / COG
