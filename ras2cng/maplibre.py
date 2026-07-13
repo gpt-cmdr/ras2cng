@@ -175,6 +175,7 @@ def _run_tippecanoe(
     layers: Sequence[tuple[str, Path]],
     min_zoom: int,
     max_zoom: int,
+    temporary_directory: Path | None = None,
 ) -> None:
     if not layers:
         raise ValueError("Tippecanoe needs at least one non-empty source layer.")
@@ -191,6 +192,9 @@ def _run_tippecanoe(
         "--output",
         str(output),
     ]
+    if temporary_directory is not None:
+        temporary_directory.mkdir(parents=True, exist_ok=True)
+        command.extend(["--temporary-directory", str(temporary_directory)])
     for source_layer, source_path in layers:
         command.extend(["-L", f"{source_layer}:{source_path}"])
     subprocess.run(command, check=True, capture_output=True, text=True)
@@ -262,6 +266,7 @@ def package_maplibre_viewer(
     include_vector_results: bool = False,
     min_zoom: int = 0,
     max_zoom: int = 17,
+    scratch_dir: Path | None = None,
 ) -> PackageSummary:
     """Create a MapLibre viewer bundle from a completed ras2cng archive.
 
@@ -301,8 +306,19 @@ def package_maplibre_viewer(
     tiles_dir = output_dir / "tiles"
     viewer_title = title or metadata.get("title") or archive.get("project", {}).get("name") or archive_dir.name
     source_project = source_project or metadata.get("href") or "../project.json"
+    if scratch_dir is not None:
+        scratch_dir = Path(scratch_dir).resolve()
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        if not scratch_dir.is_dir():
+            raise ValueError(f"MapLibre scratch directory is not a directory: {scratch_dir}")
 
     geometry_cache: dict[tuple[str, str], gpd.GeoDataFrame] = {}
+    result_geometry_keys = {
+        (str(plan.get("geom_id", "")).lower(), str(variable["geometry_filter"]))
+        for plan in archive.get("results", [])
+        for variable in plan.get("variables", [])
+        if include_vector_results and variable.get("geometry_filter")
+    }
     geometry_overview_sources: list[tuple[str, Path]] = []
     geometry_detail_sources: list[tuple[str, Path]] = []
     geometry_overview_layers: list[dict[str, Any]] = []
@@ -312,7 +328,10 @@ def package_maplibre_viewer(
     extent_features: list[dict[str, Any]] = []
     all_bounds: list[Sequence[float]] = []
 
-    with tempfile.TemporaryDirectory(prefix="ras2cng-maplibre-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="ras2cng-maplibre-",
+        dir=str(scratch_dir) if scratch_dir is not None else None,
+    ) as temporary:
         work_dir = Path(temporary)
         for geometry_index, entry in enumerate(geometry_entries):
             geom_id = entry["geom_id"].lower()
@@ -365,7 +384,8 @@ def package_maplibre_viewer(
                 )
                 if gdf.empty:
                     continue
-                geometry_cache[(geom_id, kind)] = gdf
+                if (geom_id, kind) in result_geometry_keys:
+                    geometry_cache[(geom_id, kind)] = gdf
                 source_layer = f"{group_id}-{_slug(kind)}"
                 source_path = work_dir / "geometry" / f"{source_layer}.ndgeojson"
                 count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
@@ -393,6 +413,8 @@ def package_maplibre_viewer(
                         "queryable": True,
                     }
                 )
+                if (geom_id, kind) not in result_geometry_keys:
+                    del gdf
 
             if geometry_index == 0:
                 _set_primary_geometry_default(group_layers)
@@ -406,7 +428,13 @@ def package_maplibre_viewer(
                 target_layers.append(layer)
 
         geometry_pmtiles = tiles_dir / "geometry.pmtiles"
-        _run_tippecanoe(geometry_pmtiles, geometry_overview_sources, min_zoom, max_zoom)
+        _run_tippecanoe(
+            geometry_pmtiles,
+            geometry_overview_sources,
+            min_zoom,
+            max_zoom,
+            work_dir / "tippecanoe-overview",
+        )
         geometry_detail_pmtiles: Path | None = None
         if geometry_detail_sources:
             geometry_detail_pmtiles = tiles_dir / "geometry-detail.pmtiles"
@@ -415,6 +443,7 @@ def package_maplibre_viewer(
                 geometry_detail_sources,
                 max(min_zoom, 13),
                 max_zoom,
+                work_dir / "tippecanoe-detail",
             )
 
         result_sources: list[tuple[str, Path]] = []
@@ -482,7 +511,13 @@ def package_maplibre_viewer(
         result_pmtiles: Path | None = None
         if result_sources:
             result_pmtiles = tiles_dir / "results.pmtiles"
-            _run_tippecanoe(result_pmtiles, result_sources, min_zoom, max_zoom)
+            _run_tippecanoe(
+                result_pmtiles,
+                result_sources,
+                min_zoom,
+                max_zoom,
+                work_dir / "tippecanoe-results",
+            )
 
     final_bounds = _merge_bounds(all_bounds)
     center = [

@@ -399,6 +399,11 @@ def maplibre_command(
         "--vector-results/--geometry-only",
         help="Publish raw HDF vector result values joined to source geometry",
     ),
+    scratch_dir: Optional[Path] = typer.Option(
+        None,
+        "--scratch-dir",
+        help="Large local scratch directory for temporary GeoJSON and Tippecanoe work files",
+    ),
     min_zoom: int = typer.Option(0, "--min-zoom", help="Tippecanoe minimum zoom"),
     max_zoom: int = typer.Option(17, "--max-zoom", help="Tippecanoe maximum zoom"),
 ):
@@ -433,6 +438,7 @@ def maplibre_command(
             source_project=source_project,
             crs=crs,
             include_vector_results=vector_results,
+            scratch_dir=scratch_dir,
             min_zoom=min_zoom,
             max_zoom=max_zoom,
         )

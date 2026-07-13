@@ -13,7 +13,8 @@ configuration in the archive:
 ```bash
 ras2cng maplibre ARCHIVE_DIR VIEWER_DIR \
   --geometry-hdf g01=/models/Example.g01.hdf \
-  --geometry-hdf g02=/models/Example.g02.hdf
+  --geometry-hdf g02=/models/Example.g02.hdf \
+  --scratch-dir /large-local-scratch
 ```
 
 The command calls:
@@ -30,6 +31,10 @@ This makes the published extent an API-derived model footprint based on the 1D a
 model elements, rather than a bounding box or an approximation reconstructed from tiles.
 Install ras-commander from current `main`; the released package before the footprint API
 will be rejected with a clear error.
+
+For large 2D models, pass `--scratch-dir` on a local volume with substantially more free
+space than the system temporary directory. ras2cng writes temporary NDGeoJSON there and
+directs Tippecanoe's own workspace beneath it; no source features are simplified or dropped.
 
 Some legacy HDF files omit their projection while the archive's sibling `project.json`
 records a verified CRS from packaged projection material. In that case the command uses

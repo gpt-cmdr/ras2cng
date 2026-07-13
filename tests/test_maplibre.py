@@ -75,8 +75,8 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     archive_dir, hdf = _write_archive(tmp_path)
     calls: list[tuple[Path, list[tuple[str, Path]]]] = []
 
-    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int):
-        calls.append((output, list(layers)))
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+        calls.append((output, list(layers), temporary_directory))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
 
@@ -90,6 +90,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
         tmp_path / "viewer",
         geometry_hdfs={"g01": hdf},
         include_vector_results=True,
+        scratch_dir=tmp_path / "scratch",
     )
 
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
@@ -110,6 +111,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     assert summary.geometry_layer_count == 3
     assert summary.result_layer_count == 1
     assert len(calls) == 3
+    assert all(call[2].is_relative_to(tmp_path / "scratch") for call in calls)
     assert summary.result_pmtiles and summary.result_pmtiles.is_file()
 
 
@@ -166,9 +168,12 @@ def test_cli_passes_hdf_mappings_and_vector_results(monkeypatch, tmp_path: Path)
             "--geometry-hdf",
             "g01=model.g01.hdf",
             "--vector-results",
+            "--scratch-dir",
+            str(tmp_path / "scratch"),
         ],
     )
 
     assert result.exit_code == 0, result.output
     assert received["geometry_hdfs"] == {"g01": Path("model.g01.hdf")}
     assert received["include_vector_results"] is True
+    assert received["scratch_dir"] == tmp_path / "scratch"
