@@ -44,6 +44,9 @@ remains a hard error.
   preferred default; for a 1D model the first useful line layer is selected instead.
 - Every additional geometry and every other sublayer remains available in the manifest but
   starts hidden.
+- Browser delivery is always 2D. A source geometry with a `NaN` Z ordinate is normalized
+  to 2D before reprojection so it cannot invalidate a PMTiles layer; the archived
+  GeoParquet remains unchanged.
 - `--vector-results` creates a separate source, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
   record identifies its raw HDF source and geometry join key.

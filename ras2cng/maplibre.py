@@ -18,6 +18,7 @@ import tempfile
 from typing import Any, Iterable, Mapping, Sequence
 
 import geopandas as gpd
+import shapely
 
 from ras2cng.pmtiles import _require_cli
 
@@ -147,6 +148,11 @@ def _to_wgs84(
     gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].copy()
     if gdf.empty:
         return gdf
+    # HEC-RAS sometimes writes a NaN Z ordinate on otherwise valid polygons.
+    # GeoParquet preserves that source value, but GEOS cannot reproject an
+    # unclosed 3D ring whose closing NaN does not compare equal. Browser tiles
+    # are 2D by definition, so drop Z only in this delivery copy.
+    gdf.geometry = shapely.force_2d(gdf.geometry.values)
     return gdf.to_crs("EPSG:4326")
 
 

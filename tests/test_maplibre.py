@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import geopandas as gpd
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Point, box
 from typer.testing import CliRunner
 
 from ras2cng import maplibre
@@ -127,6 +127,14 @@ def test_wgs84_conversion_accepts_a_verified_fallback_crs():
     converted = maplibre._to_wgs84(unknown_crs, Path("model.g01.hdf"), "EPSG:4326")
 
     assert converted.crs.to_epsg() == 4326
+
+
+def test_wgs84_conversion_drops_delivery_only_z_coordinates():
+    three_dimensional = gpd.GeoDataFrame(geometry=[Point(-85.0, 40.0, 4.0)], crs="EPSG:4326")
+
+    converted = maplibre._to_wgs84(three_dimensional, Path("model.g01.hdf"))
+
+    assert converted.geometry.iloc[0].has_z is False
 
 
 def test_cli_passes_hdf_mappings_and_vector_results(monkeypatch, tmp_path: Path):
