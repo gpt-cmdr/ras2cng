@@ -47,6 +47,9 @@ remains a hard error.
 - Browser delivery is always 2D. A source geometry with a `NaN` Z ordinate is normalized
   to 2D before reprojection so it cannot invalidate a PMTiles layer; the archived
   GeoParquet remains unchanged.
+- Dense `2D Mesh Cells` and `2D Mesh Faces` are delivered in a separate PMTiles source
+  with a minimum zoom of 13. This preserves full mesh fidelity without forcing a large
+  cell layer into the initial overview request.
 - `--vector-results` creates a separate source, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
   record identifies its raw HDF source and geometry join key.
@@ -61,6 +64,7 @@ viewer/
 ├── model_extent.geojson
 └── tiles/
     ├── geometry.pmtiles
+    ├── geometry-detail.pmtiles  # Dense mesh cells/faces, zoom 13+
     └── results.pmtiles       # Only with --vector-results
 ```
 

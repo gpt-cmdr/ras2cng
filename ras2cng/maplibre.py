@@ -303,7 +303,10 @@ def package_maplibre_viewer(
     source_project = source_project or metadata.get("href") or "../project.json"
 
     geometry_cache: dict[tuple[str, str], gpd.GeoDataFrame] = {}
-    geometry_sources: list[tuple[str, Path]] = []
+    geometry_overview_sources: list[tuple[str, Path]] = []
+    geometry_detail_sources: list[tuple[str, Path]] = []
+    geometry_overview_layers: list[dict[str, Any]] = []
+    geometry_detail_layers: list[dict[str, Any]] = []
     geometry_layers: list[dict[str, Any]] = []
     groups: list[dict[str, Any]] = []
     extent_features: list[dict[str, Any]] = []
@@ -328,7 +331,7 @@ def package_maplibre_viewer(
             extent_source = f"{group_id}-model-extents"
             extent_path = work_dir / "geometry" / f"{extent_source}.ndgeojson"
             count, geometry_types, bounds = _write_ndgeojson(extent, extent_path)
-            geometry_sources.append((extent_source, extent_path))
+            geometry_overview_sources.append((extent_source, extent_path))
             all_bounds.append(bounds)
             group_layers.append(
                 {
@@ -366,7 +369,10 @@ def package_maplibre_viewer(
                 source_layer = f"{group_id}-{_slug(kind)}"
                 source_path = work_dir / "geometry" / f"{source_layer}.ndgeojson"
                 count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
-                geometry_sources.append((source_layer, source_path))
+                source_layers = (
+                    geometry_detail_sources if _is_detail_geometry(kind) else geometry_overview_sources
+                )
+                source_layers.append((source_layer, source_path))
                 all_bounds.append(bounds)
                 group_layers.append(
                     {
@@ -391,9 +397,25 @@ def package_maplibre_viewer(
             if geometry_index == 0:
                 _set_primary_geometry_default(group_layers)
             geometry_layers.extend(group_layers)
+            for layer in group_layers:
+                target_layers = (
+                    geometry_detail_layers
+                    if _is_detail_geometry(layer["kind"])
+                    else geometry_overview_layers
+                )
+                target_layers.append(layer)
 
         geometry_pmtiles = tiles_dir / "geometry.pmtiles"
-        _run_tippecanoe(geometry_pmtiles, geometry_sources, min_zoom, max_zoom)
+        _run_tippecanoe(geometry_pmtiles, geometry_overview_sources, min_zoom, max_zoom)
+        geometry_detail_pmtiles: Path | None = None
+        if geometry_detail_sources:
+            geometry_detail_pmtiles = tiles_dir / "geometry-detail.pmtiles"
+            _run_tippecanoe(
+                geometry_detail_pmtiles,
+                geometry_detail_sources,
+                max(min_zoom, 13),
+                max_zoom,
+            )
 
         result_sources: list[tuple[str, Path]] = []
         result_layers: list[dict[str, Any]] = []
@@ -467,6 +489,27 @@ def package_maplibre_viewer(
         (final_bounds[0] + final_bounds[2]) / 2.0,
         (final_bounds[1] + final_bounds[3]) / 2.0,
     ]
+    geometry_tilesets: list[dict[str, Any]] = [
+        {
+            "id": "geometry",
+            "type": "vector",
+            "href": "tiles/geometry.pmtiles",
+            "bytes": geometry_pmtiles.stat().st_size,
+            "layers": geometry_overview_layers,
+        }
+    ]
+    if geometry_detail_pmtiles:
+        geometry_tilesets.append(
+            {
+                "id": "geometry-detail",
+                "type": "vector",
+                "href": "tiles/geometry-detail.pmtiles",
+                "bytes": geometry_detail_pmtiles.stat().st_size,
+                "layers": geometry_detail_layers,
+                "minzoom": max(min_zoom, 13),
+            }
+        )
+
     manifest: dict[str, Any] = {
         "schema": MAPLIBRE_SCHEMA,
         "generatedBy": "ras2cng maplibre",
@@ -476,15 +519,7 @@ def package_maplibre_viewer(
         "center": center,
         "zoom": _default_zoom(final_bounds),
         "sourceCrs": project_crs,
-        "tilesets": [
-            {
-                "id": "geometry",
-                "type": "vector",
-                "href": "tiles/geometry.pmtiles",
-                "bytes": geometry_pmtiles.stat().st_size,
-                "layers": geometry_layers,
-            }
-        ],
+        "tilesets": geometry_tilesets,
         "groups": groups,
         "notes": (
             "Geometry is delivered as PMTiles. Vector Results are raw HEC-RAS "
@@ -541,6 +576,12 @@ def _geometry_sort(kind: str) -> int:
         "bc_lines": 80,
     }
     return order.get(kind, 90)
+
+
+def _is_detail_geometry(kind: str) -> bool:
+    """Dense mesh delivery belongs in a high-zoom source, never the overview."""
+
+    return kind in {"mesh_cells", "mesh_faces"}
 
 
 def _set_primary_geometry_default(layers: list[dict[str, Any]]) -> None:

@@ -93,20 +93,23 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     )
 
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
-    geometry_tiles = manifest["tilesets"][0]
-    layers = {layer["kind"]: layer for layer in geometry_tiles["layers"]}
+    geometry_tiles = [tileset for tileset in manifest["tilesets"] if tileset["id"].startswith("geometry")]
+    layers = {layer["kind"]: layer for tileset in geometry_tiles for layer in tileset["layers"]}
     assert layers["mesh_cells"]["visible"] is True
     assert layers["centerlines"]["visible"] is False
     assert layers["model_extents"]["extentSource"].startswith("HdfProject.get_project_extent")
     assert manifest["groups"][0] == {"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True}
     assert manifest["groups"][1]["id"] == "ras-results-p01"
     assert manifest["groups"][1]["resultKind"] == "raw_hdf"
-    assert manifest["tilesets"][1]["resultKind"] == "raw_hdf"
-    result_layer = manifest["tilesets"][1]["layers"][0]
+    detail_tiles = next(tileset for tileset in geometry_tiles if tileset["id"] == "geometry-detail")
+    assert detail_tiles["minzoom"] == 13
+    result_tiles = next(tileset for tileset in manifest["tilesets"] if tileset["id"] == "results")
+    assert result_tiles["resultKind"] == "raw_hdf"
+    result_layer = result_tiles["layers"][0]
     assert result_layer["rawResult"]["source"] == "Raw HEC-RAS HDF summary result values"
     assert summary.geometry_layer_count == 3
     assert summary.result_layer_count == 1
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert summary.result_pmtiles and summary.result_pmtiles.is_file()
 
 
