@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import LineString, Point, box
 from typer.testing import CliRunner
 
@@ -155,6 +156,89 @@ def test_geometry_only_package_streams_dense_mesh_delivery(monkeypatch, tmp_path
     assert '"cell_id":7.0' in delivery
     assert "hilbert_index" not in delivery
     assert detail_call[2].is_relative_to(tmp_path / "scratch")
+
+
+def test_package_splits_steady_cross_section_results_by_profile(monkeypatch, tmp_path: Path):
+    archive_dir, hdf = _write_archive(tmp_path)
+    geometry = gpd.GeoDataFrame(
+        {
+            "layer": ["cross_sections", "cross_sections"],
+            "River": ["River A", "River A"],
+            "Reach": ["Reach A", "Reach A"],
+            "RS": ["1000", "900"],
+        },
+        geometry=[
+            LineString([(-85.0, 40.0), (-84.99, 40.0)]),
+            LineString([(-85.0, 40.01), (-84.99, 40.01)]),
+        ],
+        crs="EPSG:4326",
+    )
+    geometry.to_parquet(archive_dir / "model.g01.parquet")
+    raw_results = pd.DataFrame(
+        {
+            "river": ["River A"] * 4,
+            "reach": ["Reach A"] * 4,
+            "node_id": ["1000", "900", "1000", "900"],
+            "profile": ["10-percent AEP", "10-percent AEP", "1-percent AEP", "1-percent AEP"],
+            "wsel": [101.0, 100.5, 102.0, 101.5],
+            "flow": [1000.0, 1000.0, 1500.0, 1500.0],
+        }
+    )
+    raw_results.to_parquet(archive_dir / "results.p01.steady_cross_sections.parquet")
+    manifest_path = archive_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["geometry"][0]["layers"] = [{"layer": "cross_sections", "filter_value": "cross_sections"}]
+    manifest["results"] = [
+        {
+            "plan_id": "p01",
+            "geom_id": "g01",
+            "variables": [
+                {
+                    "variable": "steady_cross_sections",
+                    "parquet": "results.p01.steady_cross_sections.parquet",
+                    "geometry_filter": "cross_sections",
+                    "join_columns": {"River": "river", "Reach": "reach", "RS": "node_id"},
+                    "profile_column": "profile",
+                    "source": "Raw HEC-RAS HDF steady cross-section result values",
+                }
+            ],
+        }
+    ]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    sources: dict[str, str] = {}
+
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+        for source_layer, source_path in layers:
+            sources[source_layer] = source_path.read_text(encoding="utf-8")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"pmtiles")
+
+    footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
+    monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
+    monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
+    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+
+    summary = maplibre.package_maplibre_viewer(
+        archive_dir,
+        tmp_path / "viewer",
+        geometry_hdfs={"g01": hdf},
+        include_vector_results=True,
+        scratch_dir=tmp_path / "scratch",
+    )
+
+    viewer_manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
+    result_tiles = next(tileset for tileset in viewer_manifest["tilesets"] if tileset["id"] == "results")
+    assert summary.result_layer_count == 2
+    assert [layer["rawResult"]["profile"] for layer in result_tiles["layers"]] == [
+        "10-percent AEP",
+        "1-percent AEP",
+    ]
+    assert all(layer["rawResult"]["joinColumns"]["RS"] == "node_id" for layer in result_tiles["layers"])
+    result_sources = [source for name, source in sources.items() if "steady-cross-sections" in name]
+    assert len(result_sources) == 2
+    assert all(len([json.loads(line) for line in source.splitlines()]) == 2 for source in result_sources)
+    assert all('"river"' not in source and '"node_id"' not in source for source in result_sources)
 
 
 def test_wgs84_conversion_accepts_a_verified_fallback_crs():

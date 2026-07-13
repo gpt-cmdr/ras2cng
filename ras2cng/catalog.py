@@ -15,7 +15,7 @@ from typing import Optional
 
 
 # Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "2.4"
 
 
 @dataclass
@@ -55,6 +55,9 @@ class ManifestResultVariable:
     geometry_mode: str = ""   # polygon, point, or none
     index_column: str = ""    # cell_id or face_id when the result can join geometry
     geometry_filter: str = "" # mesh_cells or mesh_faces for viewer-side joins
+    join_columns: dict[str, str] = field(default_factory=dict)  # geometry column -> result column
+    profile_column: str = ""  # Split raw rows into one browser layer per profile
+    source: str = ""          # Clear provenance for browser result identification
     hilbert_index: str = ""   # Column name when spatially indexed
     join_index: str = ""      # Column name when join-key indexed
     sort_order: str = ""      # Persisted sort order description

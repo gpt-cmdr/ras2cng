@@ -58,6 +58,10 @@ remains a hard error.
 - `--vector-results` creates a separate source, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
   record identifies its raw HDF source and geometry join key.
+- Steady 1D cross-section results are split into one layer per HDF profile. Each layer joins
+  to its source cross section on `River`, `Reach`, and `RS`, so a profile selection does not
+  create duplicate coincident features. The records remain raw HDF element values, not an
+  interpolated water-surface or velocity surface.
 - This command does not create interpolated result maps. Generate RASMapper stored maps
   with `RasProcess.store_maps`, publish their COGs, and add those as raster result sources.
 

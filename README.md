@@ -43,7 +43,7 @@ ras2cng inspect path/to/MyProject/
 # Archive all geometry from all geometry files (default — safe, no results duplication)
 ras2cng archive path/to/MyProject/ ./archive/
 
-# Also export plan results summary variables
+# Also export plan results (2D summary variables and 1D steady cross sections)
 ras2cng archive path/to/MyProject/ ./archive/ --results
 
 # Also convert terrain TIFFs to Cloud Optimized GeoTIFF
@@ -58,7 +58,7 @@ ras2cng spatial-index ./archive/
 Output structure (consolidated parquet per source file):
 ```
 archive/
-├── manifest.json              # Project catalog (schema v2.3, index metadata)
+├── manifest.json              # Project catalog (schema v2.4, index metadata)
 ├── MyProject.parquet          # Project metadata (RasPrj dataframes, _table column)
 ├── MyProject.g01.parquet      # All geometry from g01 (HDF + text), layer column
 ├── MyProject.g06.parquet      # All geometry from g06
@@ -91,7 +91,7 @@ not a tile-derived approximation.
 ras2cng maplibre ./archive ./viewer \
   --geometry-hdf g01=path/to/MyProject.g01.hdf
 
-# Optional vector results are raw HDF summary values joined to their source elements.
+# Optional vector results are raw HDF values joined to their source elements.
 ras2cng maplibre ./archive ./viewer \
   --geometry-hdf g01=path/to/MyProject.g01.hdf \
   --vector-results
@@ -103,7 +103,8 @@ CRS, the bundle uses that archive CRS for the API footprint and delivery layers.
 
 The bundle contains `viewer/manifest.json`, `viewer/model_extent.geojson`, and PMTiles
 under `viewer/tiles/`. Geometry and vector results are separate tile sources. Vector
-results are explicitly identified as raw HDF values; RASMapper stored-map COGs remain the
+results are explicitly identified as raw HDF values. Steady 1D results are split by profile
+and joined to cross sections on River, Reach, and RS; RASMapper stored-map COGs remain the
 separate source for interpolated raster result display.
 
 ### Single-File Export

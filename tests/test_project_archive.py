@@ -83,7 +83,7 @@ def test_manifest_create(tmp_path):
     assert m.project["name"] == "TestProject"
     assert m.project["crs"] == "EPSG:4326"
     assert m.project["plan_count"] == 3
-    assert m.schema_version == "2.3"
+    assert m.schema_version == "2.4"
     assert m.geometry == []
     assert m.results == []
     assert m.terrain == []
@@ -204,7 +204,7 @@ def test_manifest_to_json_is_valid(tmp_path):
     m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
     json_str = m.to_json()
     parsed = json.loads(json_str)
-    assert parsed["schema_version"] == "2.3"
+    assert parsed["schema_version"] == "2.4"
     assert "project" in parsed
     assert "project_parquet" in parsed
 
@@ -312,11 +312,11 @@ def test_archive_geometry_only_creates_flat_parquet(
     assert (archive_out / "manifest.json").exists()
     # No results
     assert not (archive_out / "results").exists()
-    # Manifest v2.3 fields
+    # Manifest v2.4 fields
     assert len(manifest.geometry) >= 1
     assert manifest.geometry[0]["geom_id"] == "g01"
     assert manifest.geometry[0]["parquet"] == "FakeModel.g01.parquet"
-    assert manifest.schema_version == "2.3"
+    assert manifest.schema_version == "2.4"
 
 
 @patch("ras2cng.project.merge_all_layers")
@@ -443,6 +443,51 @@ def test_archive_results_variable_layout_writes_attribute_tables(
     assert manifest.results[0]["variables"][0]["index_column"] == "cell_id"
     assert manifest.results[0]["variables"][0]["geometry_filter"] == "mesh_cells"
     assert "geometry" not in pd.read_parquet(variable_path).columns
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_steady_results_write_profiled_cross_section_attributes(
+    mock_init, mock_merge, tmp_path
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+    (project_dir / "FakeModel.p01.hdf").touch()
+    steady_results = pd.DataFrame(
+        {
+            "river": ["River A", "River A"],
+            "reach": ["Reach A", "Reach A"],
+            "node_id": ["1000", "1000"],
+            "profile": ["10-percent AEP", "1-percent AEP"],
+            "wsel": [101.0, 102.0],
+            "flow": [1000.0, 1500.0],
+        }
+    )
+
+    from ras2cng.project import archive_project
+
+    with patch(
+        "ras2cng.results.extract_steady_cross_section_results",
+        return_value=steady_results,
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "out",
+            include_results=True,
+            results_layout="variable",
+            results_geometry="none",
+            sort=False,
+        )
+
+    result_path = tmp_path / "out" / "results" / "p01" / "steady_cross_sections.parquet"
+    assert result_path.is_file()
+    variable = manifest.results[0]["variables"][0]
+    assert variable["geometry_filter"] == "cross_sections"
+    assert variable["join_columns"] == {"River": "river", "Reach": "reach", "RS": "node_id"}
+    assert variable["profile_column"] == "profile"
+    assert variable["source"] == "Raw HEC-RAS HDF steady cross-section result values"
+    assert pd.read_parquet(result_path)["profile"].tolist() == ["10-percent AEP", "1-percent AEP"]
 
 
 # ---------------------------------------------------------------------------

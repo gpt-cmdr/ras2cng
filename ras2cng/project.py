@@ -42,6 +42,15 @@ console = Console()
 
 VALID_RESULTS_LAYOUTS = {"plan", "variable"}
 VALID_RESULTS_GEOMETRY_MODES = {"polygon", "point", "none"}
+_STEADY_RESULT_JOIN_COLUMNS = {"River": "river", "Reach": "reach", "RS": "node_id"}
+
+
+def _steady_results_requested(result_variables: Optional[Sequence[str]]) -> bool:
+    """Return whether a steady cross-section result table was requested."""
+    if not result_variables:
+        return True
+    requested = {str(value).strip().lower().replace(" ", "_") for value in result_variables}
+    return bool(requested & {"steady_cross_sections", "cross_sections"})
 
 
 # ---------------------------------------------------------------------------
@@ -682,6 +691,8 @@ def archive_project(
     # -----------------------------------------------------------------
     if include_results:
         from ras2cng.results import (
+            STEADY_CROSS_SECTION_RESULT_VARIABLE,
+            extract_steady_cross_section_results,
             extract_results_variable,
             merge_all_variables,
             result_variable_slug,
@@ -738,7 +749,37 @@ def archive_project(
 
             console.print(f"  [{plan_id}] -> {parquet_name if results_layout == 'plan' else f'results/{plan_id}/'}")
             try:
-                if results_layout == "variable":
+                steady_results = extract_steady_cross_section_results(plan_hdf)
+                if not steady_results.empty:
+                    if _steady_results_requested(result_variables):
+                        steady_results["layer"] = STEADY_CROSS_SECTION_RESULT_VARIABLE
+                        if results_layout == "variable":
+                            variable_rel = Path("results") / plan_id / f"{STEADY_CROSS_SECTION_RESULT_VARIABLE}.parquet"
+                            variable_path = output_dir / variable_rel
+                            _write_result_frame(steady_results, variable_path)
+                            result_parquet = variable_rel.as_posix()
+                        else:
+                            _write_result_frame(steady_results, parquet_path)
+                            result_parquet = parquet_name
+
+                        size_bytes = (output_dir / result_parquet).stat().st_size
+                        plan_entry.geometry_mode = "none"
+                        plan_entry.add_variable(ManifestResultVariable(
+                            variable=STEADY_CROSS_SECTION_RESULT_VARIABLE,
+                            filter_value=STEADY_CROSS_SECTION_RESULT_VARIABLE,
+                            rows=len(steady_results),
+                            parquet=result_parquet,
+                            geometry_mode="none",
+                            geometry_filter="cross_sections",
+                            join_columns=_STEADY_RESULT_JOIN_COLUMNS,
+                            profile_column="profile",
+                            source="Raw HEC-RAS HDF steady cross-section result values",
+                            size_bytes=size_bytes,
+                        ))
+                        plan_entry.size_bytes = size_bytes
+                    del steady_results
+                    gc.collect()
+                elif results_layout == "variable":
                     selected_variables = selected_summary_variables(plan_hdf, result_variables)
                     for variable in selected_variables:
                         variable_slug = result_variable_slug(variable)

@@ -24,7 +24,7 @@ with `WHERE layer = 'mesh_cells'` and avoids directory proliferation.
 
 ```
 {output_dir}/
-├── manifest.json                         # Project catalog (schema v2.3, index metadata)
+├── manifest.json                         # Project catalog (schema v2.4, index metadata)
 ├── {ProjectName}.parquet                 # Project metadata (RasPrj dataframes, _table column)
 ├── {ProjectName}.g01.parquet             # All geometry from g01 (HDF + text layers)
 ├── {ProjectName}.g06.parquet             # All geometry from g06
@@ -177,6 +177,27 @@ records `index_status=spatial_join` for inherited spatial ordering and
 
 ---
 
+## 1D Steady Result Archives
+
+Computed steady-flow plan HDFs are archived as raw cross-section records rather than as
+interpolated surfaces. Each row retains the source `river`, `reach`, `node_id`, and `profile`,
+with the HDF values available at that element, such as WSEL, flow, total top width, and total
+flow area. Optional variables that are not stored in a row-aligned HDF dataset remain null.
+
+Use the same memory-safe archive command for a 1D steady model:
+
+```bash
+ras2cng archive path/to/SteadyModel /output/archive --results \
+  --results-layout variable --results-geometry none
+```
+
+The result table is stored as `results/pNN/steady_cross_sections.parquet`. Its manifest entry
+declares the exact viewer join: `River -> river`, `Reach -> reach`, and `RS -> node_id`.
+No terrain or floodplain surface is fabricated. RASMapper Stored Map COGs are the separate,
+authoritative delivery path when an interpolated raster display is available.
+
+---
+
 ## Python API
 
 ```python
@@ -237,11 +258,11 @@ manifest = archive_project(
 
 ## manifest.json Schema
 
-Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 2.3 also records spatial post-processing metadata when the archive has been indexed.
+Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 2.4 also records spatial post-processing metadata and composite raw-result joins when the archive has been indexed.
 
 ```json
 {
-  "schema_version": "2.3",
+  "schema_version": "2.4",
   "project": {
     "name": "BaldEagleDamBrk",
     "prj_file": "BaldEagleDamBrk.prj",
@@ -307,9 +328,12 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
           "filter_value": "maximum_depth",
           "rows": 87039,
           "parquet": "results/p01/maximum_depth.parquet",
-          "geometry_mode": "none",
-          "index_column": "cell_id",
-          "geometry_filter": "mesh_cells",
+           "geometry_mode": "none",
+           "index_column": "cell_id",
+           "geometry_filter": "mesh_cells",
+           "join_columns": {},
+           "profile_column": "",
+           "source": "",
           "hilbert_index": "hilbert_index",
           "join_index": "join_index",
           "sort_order": "hilbert_index",

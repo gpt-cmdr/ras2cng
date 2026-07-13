@@ -10,10 +10,25 @@ import geopandas as gpd
 import h5py
 import pandas as pd
 
-from ras_commander.hdf import HdfBase, HdfResultsMesh, HdfUtils
+from ras_commander.hdf import HdfBase, HdfResultsMesh, HdfResultsPlan, HdfUtils
 
 
 VALID_RESULTS_GEOMETRY_MODES = {"polygon", "point", "none"}
+STEADY_CROSS_SECTION_RESULT_VARIABLE = "steady_cross_sections"
+
+
+def extract_steady_cross_section_results(plan_hdf: Path) -> pd.DataFrame:
+    """Extract raw 1D steady-flow cross-section results from a plan HDF.
+
+    The returned rows retain their HEC-RAS source identity through
+    ``river``, ``reach``, ``node_id``, and ``profile``. They intentionally
+    have no geometry: the browser delivery step joins them to the matching
+    cross-section feature with that composite identity.
+    """
+    plan_path = Path(plan_hdf)
+    if not HdfResultsPlan.is_steady_plan(plan_path):
+        return pd.DataFrame()
+    return HdfResultsPlan.get_steady_results(plan_path)
 
 
 def result_variable_slug(variable: str) -> str:

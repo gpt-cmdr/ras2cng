@@ -18,6 +18,7 @@ import tempfile
 from typing import Any, Iterable, Mapping, Sequence
 
 import geopandas as gpd
+import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -305,18 +306,56 @@ def _result_style(variable: str) -> dict[str, float | str]:
 def _join_raw_result(
     result_path: Path,
     geometry: gpd.GeoDataFrame,
-    index_column: str,
+    index_column: str = "",
+    *,
+    join_columns: Mapping[str, str] | None = None,
+    filters: Mapping[str, Any] | None = None,
 ) -> gpd.GeoDataFrame:
     """Join raw HDF values to the feature geometry solely for vector delivery."""
 
-    result = gpd.read_parquet(result_path)
-    if index_column not in result.columns or index_column not in geometry.columns:
-        raise ValueError(
-            f"Cannot join raw results from {result_path}: index '{index_column}' "
-            "is not present in both the results and geometry tables."
-        )
+    result = pd.read_parquet(result_path)
+    if filters:
+        for column, value in filters.items():
+            if column not in result.columns:
+                raise ValueError(f"Cannot filter raw results from {result_path}: '{column}' is absent.")
+            result = result.loc[result[column] == value]
     attributes = result.drop(columns=["geometry"], errors="ignore")
-    joined = geometry.merge(attributes, on=index_column, how="inner", suffixes=("", "_result"))
+    if index_column:
+        if index_column not in attributes.columns or index_column not in geometry.columns:
+            raise ValueError(
+                f"Cannot join raw results from {result_path}: index '{index_column}' "
+                "is not present in both the results and geometry tables."
+            )
+        joined = geometry.merge(attributes, on=index_column, how="inner", suffixes=("", "_result"))
+    elif join_columns:
+        geometry_columns = list(join_columns)
+        result_columns = list(join_columns.values())
+        missing_geometry = [column for column in geometry_columns if column not in geometry.columns]
+        missing_result = [column for column in result_columns if column not in attributes.columns]
+        if missing_geometry or missing_result:
+            raise ValueError(
+                f"Cannot join raw results from {result_path}: missing geometry columns "
+                f"{missing_geometry} or result columns {missing_result}."
+            )
+        if attributes.duplicated(subset=result_columns).any():
+            raise ValueError(
+                f"Cannot join raw results from {result_path}: composite result keys are not unique."
+            )
+        delivery_geometry = geometry.copy()
+        delivery_attributes = attributes.copy()
+        for geometry_column, result_column in join_columns.items():
+            delivery_geometry[geometry_column] = delivery_geometry[geometry_column].astype("string").str.strip()
+            delivery_attributes[result_column] = delivery_attributes[result_column].astype("string").str.strip()
+        joined = delivery_geometry.merge(
+            delivery_attributes,
+            left_on=geometry_columns,
+            right_on=result_columns,
+            how="inner",
+            suffixes=("", "_result"),
+        )
+        joined = joined.drop(columns=result_columns, errors="ignore")
+    else:
+        raise ValueError(f"Cannot join raw results from {result_path}: no join key was declared.")
     return gpd.GeoDataFrame(joined, geometry="geometry", crs=geometry.crs)
 
 
@@ -539,47 +578,71 @@ def package_maplibre_viewer(
                 for variable in plan.get("variables", []):
                     variable_path = variable.get("parquet")
                     geometry_kind = variable.get("geometry_filter")
-                    index_column = variable.get("index_column")
+                    index_column = str(variable.get("index_column") or "")
+                    join_columns = variable.get("join_columns") or {}
                     geom_id = str(plan.get("geom_id", "")).lower()
-                    if not variable_path or not geometry_kind or not index_column:
+                    if not variable_path or not geometry_kind or not (index_column or join_columns):
                         continue
                     geometry = geometry_cache.get((geom_id, geometry_kind))
                     if geometry is None:
                         continue
                     raw_path = archive_dir / variable_path
-                    joined = _join_raw_result(raw_path, geometry, index_column)
-                    if joined.empty:
-                        continue
                     variable_name = variable.get("variable") or variable.get("filter_value") or raw_path.stem
-                    source_layer = f"{result_group_id}-{_slug(variable_name)}"
-                    source_path = work_dir / "results" / f"{source_layer}.ndgeojson"
-                    count, geometry_types, bounds = _write_ndgeojson(joined, source_path)
-                    result_sources.append((source_layer, source_path))
-                    all_bounds.append(bounds)
-                    plan_layers.append(
-                        {
-                            "id": source_layer,
-                            "name": _display_name(variable_name),
-                            "sourceLayer": source_layer,
-                            "groupId": result_group_id,
-                            "visible": False,
-                            "kind": f"{plan_id}_{variable_name}",
-                            "style": _result_style(variable_name),
-                            "featureCount": count,
-                            "geometryTypes": geometry_types,
-                            "bounds": bounds,
-                            "sort": 100,
-                            "queryable": True,
-                            "rawResult": {
-                                "source": "Raw HEC-RAS HDF summary result values",
-                                "plan": plan_id,
-                                "variable": variable_name,
-                                "geometryJoin": geometry_kind,
-                                "indexColumn": index_column,
-                                "archiveParquet": variable_path,
-                            },
+                    profile_column = str(variable.get("profile_column") or "")
+                    profiles: list[Any] = [None]
+                    if profile_column:
+                        profile_values = pd.read_parquet(raw_path, columns=[profile_column])[profile_column]
+                        profiles = list(pd.unique(profile_values.dropna()))
+                    for profile_index, profile in enumerate(profiles):
+                        filters = {profile_column: profile} if profile_column else None
+                        joined = _join_raw_result(
+                            raw_path,
+                            geometry,
+                            index_column,
+                            join_columns=join_columns,
+                            filters=filters,
+                        )
+                        if joined.empty:
+                            continue
+                        profile_suffix = f"-{_slug(str(profile))}" if profile is not None else ""
+                        source_layer = f"{result_group_id}-{_slug(variable_name)}{profile_suffix}"
+                        source_path = work_dir / "results" / f"{source_layer}.ndgeojson"
+                        count, geometry_types, bounds = _write_ndgeojson(joined, source_path)
+                        result_sources.append((source_layer, source_path))
+                        all_bounds.append(bounds)
+                        layer_name = _display_name(variable_name)
+                        if profile is not None:
+                            layer_name = f"{layer_name} - {profile}"
+                        raw_result = {
+                            "source": variable.get("source") or "Raw HEC-RAS HDF summary result values",
+                            "plan": plan_id,
+                            "variable": variable_name,
+                            "geometryJoin": geometry_kind,
+                            "archiveParquet": variable_path,
                         }
-                    )
+                        if index_column:
+                            raw_result["indexColumn"] = index_column
+                        if join_columns:
+                            raw_result["joinColumns"] = join_columns
+                        if profile is not None:
+                            raw_result["profile"] = profile
+                        plan_layers.append(
+                            {
+                                "id": source_layer,
+                                "name": layer_name,
+                                "sourceLayer": source_layer,
+                                "groupId": result_group_id,
+                                "visible": False,
+                                "kind": f"{plan_id}_{variable_name}{profile_suffix}",
+                                "style": _result_style(variable_name),
+                                "featureCount": count,
+                                "geometryTypes": geometry_types,
+                                "bounds": bounds,
+                                "sort": 100 + profile_index,
+                                "queryable": True,
+                                "rawResult": raw_result,
+                            }
+                        )
                 if plan_layers:
                     groups.append(
                         {
