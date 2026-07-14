@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -106,6 +107,23 @@ class PackageSummary:
 
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+def _tippecanoe_command() -> str:
+    """Return the executable used for vector tile generation.
+
+    ``tippecanoe`` is the portable default. Windows hosts that bridge to a
+    Linux Tippecanoe installation can provide the full wrapper path through
+    ``RAS2CNG_TIPPECANOE``.
+    """
+
+    return os.environ.get("RAS2CNG_TIPPECANOE", "tippecanoe")
+
+
+def _pmtiles_command() -> str:
+    """Return the PMTiles conversion executable for vector tile delivery."""
+
+    return os.environ.get("RAS2CNG_PMTILES", "pmtiles")
 
 
 def _display_name(value: str) -> str:
@@ -253,8 +271,9 @@ def _run_tippecanoe(
     if not layers:
         raise ValueError("Tippecanoe needs at least one non-empty source layer.")
     output.parent.mkdir(parents=True, exist_ok=True)
+    mbtiles_path = output.with_suffix(".mbtiles")
     command = [
-        "tippecanoe",
+        _tippecanoe_command(),
         "--force",
         "--read-parallel",
         "--no-tile-size-limit",
@@ -263,14 +282,23 @@ def _run_tippecanoe(
         f"--minimum-zoom={min_zoom}",
         f"--maximum-zoom={max_zoom}",
         "--output",
-        str(output),
+        str(mbtiles_path),
     ]
     if temporary_directory is not None:
         temporary_directory.mkdir(parents=True, exist_ok=True)
         command.extend(["--temporary-directory", str(temporary_directory)])
     for source_layer, source_path in layers:
         command.extend(["-L", f"{source_layer}:{source_path}"])
-    subprocess.run(command, check=True, capture_output=True, text=True)
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(
+            [_pmtiles_command(), "convert", str(mbtiles_path), str(output)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        mbtiles_path.unlink(missing_ok=True)
 
 
 def _extent_from_hdf(hdf_path: Path, fallback_crs: str | None = None) -> gpd.GeoDataFrame:
@@ -412,7 +440,8 @@ def package_maplibre_viewer(
 
     metadata = _project_metadata(archive_dir)
     project_crs = crs or metadata.get("crs") or archive.get("project", {}).get("crs")
-    _require_cli("tippecanoe")
+    _require_cli(_tippecanoe_command())
+    _require_cli(_pmtiles_command())
     output_dir.mkdir(parents=True, exist_ok=True)
     tiles_dir = output_dir / "tiles"
     viewer_title = title or metadata.get("title") or archive.get("project", {}).get("name") or archive_dir.name

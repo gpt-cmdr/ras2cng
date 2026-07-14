@@ -172,6 +172,32 @@ def test_default_visibility_uses_2d_refinement_context_when_present() -> None:
     assert layers["mesh_faces"]["visible"] is False
 
 
+def test_tippecanoe_command_allows_a_host_wrapper(monkeypatch) -> None:
+    monkeypatch.setenv("RAS2CNG_TIPPECANOE", r"C:\\tools\\tippecanoe.cmd")
+
+    assert maplibre._tippecanoe_command() == r"C:\\tools\\tippecanoe.cmd"
+
+
+def test_run_tippecanoe_converts_mbtiles_to_pmtiles(monkeypatch, tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    output = tmp_path / "tiles" / "geometry.pmtiles"
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[0] == "tippecanoe":
+            Path(command[command.index("--output") + 1]).write_bytes(b"mbtiles")
+        else:
+            Path(command[-1]).write_bytes(b"pmtiles")
+
+    monkeypatch.setattr(maplibre.subprocess, "run", fake_run)
+    maplibre._run_tippecanoe(output, [("geometry", tmp_path / "geometry.ndgeojson")], 0, 17)
+
+    assert calls[0][calls[0].index("--output") + 1] == str(output.with_suffix(".mbtiles"))
+    assert calls[1] == ["pmtiles", "convert", str(output.with_suffix(".mbtiles")), str(output)]
+    assert output.read_bytes() == b"pmtiles"
+    assert not output.with_suffix(".mbtiles").exists()
+
+
 def test_package_requires_a_geometry_hdf_for_every_archive_geometry(tmp_path: Path):
     archive_dir, _ = _write_archive(tmp_path)
 
