@@ -15,7 +15,7 @@ from typing import Optional
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from ras_commander.hdf import HdfMesh, HdfXsec, HdfBndry, HdfStruc
+from ras_commander.hdf import HdfBase, HdfBndry, HdfMesh, HdfPipe, HdfStruc, HdfXsec
 from ras_commander.geom import GeomParser
 from ras_commander.geom import GeomStorage
 
@@ -39,11 +39,14 @@ HDF_LAYERS: dict[str, tuple] = {
     "reference_lines":      (HdfBndry, "get_reference_lines"),
     "reference_points":     (HdfBndry, "get_reference_points"),
     "structures":           (HdfStruc, "get_structures"),
+    "pipe_conduits":        (HdfPipe, "get_pipe_conduits"),
+    "pipe_nodes":           (HdfPipe, "get_pipe_nodes"),
 }
 
 # All known layer names (for validation / documentation)
 ALL_HDF_LAYERS = list(HDF_LAYERS.keys())
 ALL_TEXT_LAYERS = ["cross_sections", "centerlines", "storage_areas"]
+_PIPE_HDF_LAYERS = {"pipe_conduits", "pipe_nodes"}
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +145,19 @@ def _extract_hdf_layer(hdf_path: Path, layer: str) -> Optional[object]:
 
     cls, method_name = HDF_LAYERS[layer]
     try:
-        gdf = getattr(cls, method_name)(hdf_path)
+        if layer in _PIPE_HDF_LAYERS:
+            # HdfPipe does not infer CRS from geometry HDF files. Passing the
+            # HDF projection preserves native model coordinates rather than
+            # silently assigning its legacy EPSG:4326 default.
+            gdf = getattr(cls, method_name)(
+                hdf_path,
+                crs=HdfBase.get_projection(hdf_path),
+            )
+        else:
+            gdf = getattr(cls, method_name)(hdf_path)
         if len(gdf) > 0:
+            if gdf.geometry.name != "geometry":
+                gdf = gdf.rename_geometry("geometry")
             return gdf
     except Exception as e:
         print(f"Warning: Could not extract '{layer}': {e}")
@@ -165,10 +179,11 @@ def export_geometry_layers(
     Args:
         geom_input: Path to *.g?? or *.g??.hdf
         output: Output GeoParquet path
-        layer: Layer name (mesh_cells, mesh_faces, cross_sections, centerlines,
-               bank_lines, bc_lines, breaklines, refinement_regions,
-               reference_lines, reference_points, structures, mesh_areas,
-               storage_areas). None = auto-select best.
+        layer: Layer name (mesh_cells, mesh_faces, mesh_areas, cross_sections,
+               centerlines, bank_lines, bc_lines, breaklines,
+               refinement_regions, reference_lines, reference_points,
+               structures, pipe_conduits, pipe_nodes, storage_areas).
+               None = auto-select best.
         out_crs: Output CRS (e.g. "EPSG:4326"). If set and differs from data
                  CRS, the GeoDataFrame is reprojected before writing.
     """

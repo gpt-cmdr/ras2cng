@@ -1,6 +1,6 @@
 # Geometry Layers Reference
 
-ras2cng can extract up to 13 geometry layers from HEC-RAS project files. This page describes each layer, its source file type, and its geometry.
+ras2cng can extract up to 14 HDF geometry layers from HEC-RAS project files. This page describes each layer, its source file type, and its geometry.
 
 ---
 
@@ -11,15 +11,19 @@ These layers are extracted from HEC-RAS geometry HDF files. A layer may or may n
 | Layer | Class/Method | Geometry Type | Description |
 |---|---|---|---|
 | `mesh_cells` | `HdfMesh.get_mesh_cell_polygons()` | Polygon (fallback: Point) | 2D mesh cell faces. Falls back to centroid points if polygon faces are not stored. |
+| `mesh_faces` | `HdfMesh.get_mesh_cell_faces()` | LineString | Native 2D cell faces keyed by `face_id`. |
 | `mesh_areas` | `HdfMesh.get_mesh_areas()` | Polygon | Perimeter polygons of each 2D flow area (mesh domain boundary). |
 | `cross_sections` | `HdfXsec.get_cross_sections()` | LineString | 1D cross-section cut lines with station/elevation data. |
 | `centerlines` | `HdfXsec.get_river_centerlines()` | LineString | River and reach centerlines for 1D geometry. |
+| `bank_lines` | `HdfXsec.get_river_bank_lines()` | LineString | Left and right bank lines for 1D reaches. |
 | `bc_lines` | `HdfBndry.get_bc_lines()` | LineString | Boundary condition lines (inflow/outflow/normal depth locations). |
 | `breaklines` | `HdfBndry.get_breaklines()` | LineString | Mesh breaklines (force mesh edges to follow terrain features). |
 | `refinement_regions` | `HdfBndry.get_refinement_regions()` | Polygon | Areas with custom mesh cell size targets. |
 | `reference_lines` | `HdfBndry.get_reference_lines()` | LineString | User-defined reference lines for output extraction. |
 | `reference_points` | `HdfBndry.get_reference_points()` | Point | User-defined reference points for time-series output. |
 | `structures` | `HdfStruc.get_structures()` | LineString/Point | Inline structures (weirs, culverts, bridges) and lateral structures. |
+| `pipe_conduits` | `HdfPipe.get_pipe_conduits()` | LineString | Pipe-network conduits with connectivity, shape, dimensions, and roughness attributes. |
+| `pipe_nodes` | `HdfPipe.get_pipe_nodes()` | Point | Pipe-network nodes with node type, invert, terrain, and depth attributes. |
 
 ### Auto-selection (when `--layer` is not specified)
 
@@ -54,13 +58,17 @@ These layers are extracted from HEC-RAS plain-text geometry files (`.g01`, `.g02
 | Layer | 2D HDF | 1D HDF | 1D Text | Notes |
 |---|---|---|---|---|
 | `mesh_cells` | ✓ | — | — | Core layer for 2D models |
+| `mesh_faces` | ✓ | — | — | Native faces keyed by `face_id` |
 | `mesh_areas` | ✓ | — | — | Domain boundary polygons |
+| `bank_lines` | ✓ | ✓ | — | 1D bank geometry when present |
 | `bc_lines` | ✓ | — | — | Inflow/outflow lines |
 | `breaklines` | ✓ | — | — | Only if breaklines defined |
 | `refinement_regions` | ✓ | — | — | Only if refinement regions defined |
 | `reference_lines` | ✓ | — | — | Only if reference lines defined |
 | `reference_points` | ✓ | — | — | Only if reference points defined |
 | `structures` | ✓ | ✓ | — | Inline/lateral structures |
+| `pipe_conduits` | ✓ | ✓ | — | Pipe-network conduits when present |
+| `pipe_nodes` | ✓ | ✓ | — | Pipe-network nodes when present |
 | `cross_sections` | ✓ | ✓ | ✓ | Available in all geometry types |
 | `centerlines` | ✓ | ✓ | ✓ | Available in all geometry types |
 | `storage_areas` | — | — | ✓ | Text geometry only |

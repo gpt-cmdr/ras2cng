@@ -45,7 +45,7 @@ def test_hdf_layers_dict_includes_all_expected():
         "mesh_cells", "mesh_faces", "mesh_areas", "cross_sections",
         "centerlines", "bank_lines", "bc_lines", "breaklines",
         "refinement_regions", "reference_lines", "reference_points",
-        "structures",
+        "structures", "pipe_conduits", "pipe_nodes",
     }
     assert expected == set(HDF_LAYERS.keys()), f"Missing: {expected - set(HDF_LAYERS.keys())}"
 
@@ -87,6 +87,24 @@ def test_extract_mesh_faces_uses_native_face_ids(tmp_path):
     assert result is not None
     assert "face_id" in result.columns
     assert list(result["face_id"]) == [0, 1]
+
+
+def test_extract_pipe_conduits_preserves_hdf_crs_and_normalizes_geometry(tmp_path):
+    hdf_path = tmp_path / "pipes.g01.hdf"
+    hdf_path.touch()
+    conduits = _fake_gdf("LineString", n=2).set_crs("EPSG:2871", allow_override=True)
+    conduits = conduits.rename_geometry("Polyline")
+
+    with (
+        patch("ras2cng.geometry.HdfBase.get_projection", return_value="EPSG:2871"),
+        patch("ras2cng.geometry.HdfPipe.get_pipe_conduits", return_value=conduits) as extract,
+    ):
+        result = _extract_hdf_layer(hdf_path, "pipe_conduits")
+
+    extract.assert_called_once_with(hdf_path, crs="EPSG:2871")
+    assert result is not None
+    assert result.crs == "EPSG:2871"
+    assert result.geometry.name == "geometry"
 
 
 # ---------------------------------------------------------------------------

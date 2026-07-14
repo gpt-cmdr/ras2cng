@@ -37,7 +37,7 @@ ras2cng geometry model.g01.hdf mesh_cells.parquet --layer mesh_cells
 ras2cng geometry model.g01 cross_sections.parquet --layer cross_sections
 ```
 
-Available HDF layers: `mesh_cells`, `mesh_areas`, `cross_sections`, `centerlines`, `bc_lines`, `breaklines`, `refinement_regions`, `reference_lines`, `reference_points`, `structures`
+Available HDF layers: `mesh_cells`, `mesh_faces`, `mesh_areas`, `cross_sections`, `centerlines`, `bank_lines`, `bc_lines`, `breaklines`, `refinement_regions`, `reference_lines`, `reference_points`, `structures`, `pipe_conduits`, `pipe_nodes`
 
 Available text layers: `cross_sections`, `centerlines`, `storage_areas`
 

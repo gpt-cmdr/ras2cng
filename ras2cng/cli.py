@@ -183,7 +183,8 @@ def export_geometry(
         help=(
             "Geometry layer: mesh_cells, mesh_faces, mesh_areas, cross_sections, "
             "centerlines, bank_lines, bc_lines, breaklines, refinement_regions, "
-            "reference_lines, reference_points, structures, storage_areas"
+            "reference_lines, reference_points, structures, pipe_conduits, "
+            "pipe_nodes, storage_areas"
         ),
     ),
     out_crs: Optional[str] = typer.Option(

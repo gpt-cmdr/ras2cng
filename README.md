@@ -193,6 +193,8 @@ df = query_parquet(Path("max_depth.parquet"), "SELECT * FROM _ WHERE maximum_dep
 | `structures` | LineString | `HdfStruc` |
 | `cross_sections` | LineString | `HdfXsec` |
 | `centerlines` | LineString | `HdfXsec` |
+| `pipe_conduits` | LineString | `HdfPipe` pipe-conduit alignments |
+| `pipe_nodes` | Point | `HdfPipe` pipe-network nodes |
 | `storage_areas` | Polygon | Text geometry |
 
 ### Results Variables (from `.p##.hdf`, opt-in)

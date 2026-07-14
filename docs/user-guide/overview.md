@@ -7,7 +7,7 @@ ras2cng/
 ├── cli.py           — Typer CLI (14 commands): inspect, archive, spatial-index, geometry, results, precip, query, pmtiles, sync, terrain, map, map-hdf, terrain-mod, mannings
 ├── project.py       — Full-project orchestration: inspect, archive, metadata export
 ├── catalog.py       — Manifest schema v2.4 for archive catalogs (manifest.json)
-├── geometry.py      — HDF + text geometry export via ras-commander (10 HDF + 3 text layers)
+├── geometry.py      — HDF + text geometry export via ras-commander (14 HDF + 3 text layers)
 ├── results.py       — Plan HDF results export with polygon/point/geometryless modes and cell/face join keys
 ├── precipitation.py — Gridded precipitation GeoTIFF export from HDF meteorology results
 ├── mapping.py       — Result raster generation via RasStoreMapHelper.exe (WSE, Depth, Velocity, etc.)

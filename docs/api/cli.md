@@ -117,9 +117,11 @@ Arguments:
   OUTPUT     Output GeoParquet file path
 
 Options:
-  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_areas, cross_sections,
-                    centerlines, bc_lines, breaklines, refinement_regions,
-                    reference_lines, reference_points, structures, storage_areas
+  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_faces, mesh_areas,
+                    cross_sections, centerlines, bank_lines, bc_lines,
+                    breaklines, refinement_regions, reference_lines,
+                    reference_points, structures, pipe_conduits, pipe_nodes,
+                    storage_areas
 ```
 
 ## ras2cng results

@@ -73,7 +73,7 @@ from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 ## Modules
 
 - [CLI](cli.md) — Command-line interface reference
-- [geometry](geometry.md) — HDF and text geometry export (10 HDF + 3 text layers)
+- [geometry](geometry.md) — HDF and text geometry export (14 HDF + 3 text layers)
 - [results](results.md) — Plan results export and polygon join
 - [precipitation](precipitation.md) — Gridded precipitation GeoTIFF export from HDF meteorology results
 - [mapping](mapping.md) — Result raster generation via RasProcess.exe

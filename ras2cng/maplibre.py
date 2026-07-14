@@ -52,6 +52,8 @@ _DELIVERY_ATTRIBUTE_COLUMNS = {
     "centerlines": ("River", "Reach"),
     "cross_sections": ("River", "Reach", "RS"),
     "structures": ("Name", "Type", "Connection", "SA-2D", "River", "Reach", "RS"),
+    "pipe_conduits": ("Name", "System Name", "US Node", "DS Node", "Shape", "Rise", "Span", "Manning's n"),
+    "pipe_nodes": ("Name", "System Name", "Node Type", "Invert Elevation", "Terrain Elevation", "Depth"),
 }
 
 _GEOMETRY_LABELS = {
@@ -62,6 +64,8 @@ _GEOMETRY_LABELS = {
     "centerlines": "River Centerlines",
     "cross_sections": "Cross Sections",
     "structures": "Hydraulic Structures",
+    "pipe_conduits": "Pipe Conduits",
+    "pipe_nodes": "Pipe Nodes",
     "bc_lines": "Boundary Conditions",
     "breaklines": "Breaklines",
     "refinement_regions": "Refinement Regions",
@@ -78,6 +82,8 @@ _GEOMETRY_STYLES = {
     "centerlines": {"fill": "#0f766e", "fillOpacity": 0.0, "line": "#0f766e", "lineWidth": 1.2},
     "cross_sections": {"fill": "#0f766e", "fillOpacity": 0.0, "line": "#0f766e", "lineWidth": 1.0},
     "structures": {"fill": "#dc2626", "fillOpacity": 0.0, "line": "#dc2626", "lineWidth": 1.4},
+    "pipe_conduits": {"fill": "#0891b2", "fillOpacity": 0.0, "line": "#0891b2", "lineWidth": 1.6},
+    "pipe_nodes": {"fill": "#facc15", "fillOpacity": 0.72, "line": "#a16207", "lineWidth": 0.9},
     "bc_lines": {"fill": "#7c3aed", "fillOpacity": 0.0, "line": "#7c3aed", "lineWidth": 1.0},
     "breaklines": {"fill": "#a16207", "fillOpacity": 0.0, "line": "#a16207", "lineWidth": 1.0},
     "refinement_regions": {"fill": "#c4b5fd", "fillOpacity": 0.12, "line": "#7c3aed", "lineWidth": 1.0},
@@ -1078,6 +1084,8 @@ def _geometry_sort(kind: str) -> int:
         "breaklines": 40,
         "centerlines": 50,
         "structures": 60,
+        "pipe_conduits": 65,
+        "pipe_nodes": 66,
         "cross_sections": 70,
         "bc_lines": 80,
     }
@@ -1134,7 +1142,7 @@ def apply_maplibre_default_visibility(
     primary_layers = geometry_groups[primary_geometry_group_id]
     kinds = {str(layer.get("kind") or "") for layer in primary_layers}
     is_2d = bool({"mesh_areas", "mesh_cells", "mesh_faces", "breaklines", "refinement_regions"} & kinds)
-    default_kinds = {"model_extents"}
+    default_kinds = {"model_extents", "pipe_conduits", "pipe_nodes"}
     if is_2d:
         default_kinds.update({"mesh_areas", "mesh_cells", "breaklines", "refinement_regions"})
     else:

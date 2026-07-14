@@ -172,6 +172,26 @@ def test_default_visibility_uses_2d_refinement_context_when_present() -> None:
     assert layers["mesh_faces"]["visible"] is False
 
 
+def test_default_visibility_includes_pipe_network_geometry() -> None:
+    manifest = {
+        "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True}],
+        "tilesets": [
+            {
+                "type": "vector",
+                "layers": [
+                    {"groupId": "ras-geometry-g01", "kind": "model_extents", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "pipe_conduits", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "pipe_nodes", "visible": False},
+                ],
+            }
+        ],
+    }
+
+    maplibre.apply_maplibre_default_visibility(manifest)
+
+    assert all(layer["visible"] is True for layer in manifest["tilesets"][0]["layers"])
+
+
 def test_tippecanoe_command_allows_a_host_wrapper(monkeypatch) -> None:
     monkeypatch.setenv("RAS2CNG_TIPPECANOE", r"C:\\tools\\tippecanoe.cmd")
 
