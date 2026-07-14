@@ -662,14 +662,14 @@ def archive_project(
     # Step 2: Terrain conversion (opt-in)
     # -----------------------------------------------------------------
     if include_terrain:
-        terrain_dir = project_dir / "Terrain"
-        tif_files = sorted(set(list(terrain_dir.glob("*.tif")) + list(terrain_dir.glob("*.TIF")))) if terrain_dir.exists() else []
+        tif_files = _archive_terrain_tifs(ras, project_dir)
         if tif_files:
             console.print(f"\n[bold]Terrain:[/bold] {len(tif_files)} raster(s) -> COG")
             cog_out_dir = output_dir / "terrain"
             cog_out_dir.mkdir(parents=True, exist_ok=True)
+            cog_names: set[str] = set()
             for tif in tif_files:
-                cog_path = cog_out_dir / (tif.stem + "_cog.tif")
+                cog_path = _terrain_cog_path(tif, cog_out_dir, cog_names)
                 try:
                     subprocess.run(
                         ["gdal_translate", "-of", "COG", str(tif), str(cog_path)],
@@ -677,8 +677,8 @@ def archive_project(
                     )
                     terrain_crs = _tif_crs(tif)
                     manifest.add_terrain_entry(ManifestTerrainEntry(
-                        source_file=str(tif.relative_to(project_dir)),
-                        cog_file=str(cog_path.relative_to(output_dir)),
+                        source_file=_terrain_source_file(tif, project_dir),
+                        cog_file=cog_path.relative_to(output_dir).as_posix(),
                         size_bytes=cog_path.stat().st_size,
                         crs=terrain_crs,
                     ))
@@ -688,7 +688,7 @@ def archive_project(
                     if not skip_errors:
                         raise
         else:
-            console.print("\n[bold]Terrain:[/bold] No .tif files found in Terrain/")
+            console.print("\n[bold]Terrain:[/bold] No TIFF terrain sources found")
 
     # -----------------------------------------------------------------
     # Step 3: Plan results (opt-in)
@@ -1063,6 +1063,61 @@ def _tif_crs(tif_path: Path) -> Optional[str]:
             return f"EPSG:{epsg}" if epsg else None
     except Exception:
         return None
+
+
+def _archive_terrain_tifs(ras, project_dir: Path) -> list[Path]:
+    """Collect unique, existing TIFF terrain sources for archive conversion.
+
+    HEC-RAS projects commonly keep rasmap-referenced terrain in ``Terrain/``,
+    but example projects can also keep it in directories such as ``External
+    Dependencies``.  The detailed rasmap discovery is therefore authoritative
+    in addition to the legacy ``Terrain/`` scan.
+    """
+    terrain_dir = project_dir / "Terrain"
+    candidates: list[Path] = []
+    if terrain_dir.exists():
+        candidates.extend(
+            path
+            for path in terrain_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}
+        )
+
+    for terrain in _discover_terrain_details(ras, project_dir):
+        candidates.extend(terrain.tif_files)
+
+    unique_sources: dict[Path, Path] = {}
+    for source in candidates:
+        tif = Path(source)
+        if not tif.is_absolute():
+            tif = project_dir / tif
+        if tif.suffix.lower() not in {".tif", ".tiff"} or not tif.is_file():
+            continue
+
+        resolved = tif.resolve()
+        unique_sources.setdefault(resolved, resolved)
+
+    return sorted(unique_sources.values(), key=lambda path: path.as_posix().casefold())
+
+
+def _terrain_source_file(tif_path: Path, project_dir: Path) -> str:
+    """Return a project-relative source path when possible for the manifest."""
+    try:
+        return tif_path.resolve().relative_to(project_dir.resolve()).as_posix()
+    except ValueError:
+        return str(tif_path.resolve())
+
+
+def _terrain_cog_path(tif_path: Path, cog_out_dir: Path, used_names: set[str]) -> Path:
+    """Return a stable COG path without overwriting another terrain source."""
+    stem = f"{tif_path.stem}_cog"
+    suffix = 1
+    while True:
+        name = f"{stem}.tif" if suffix == 1 else f"{stem}_{suffix}.tif"
+        key = name.casefold()
+        if key not in used_names:
+            used_names.add(key)
+            return cog_out_dir / name
+        suffix += 1
 
 
 def _detect_ras_version(ras) -> Optional[str]:

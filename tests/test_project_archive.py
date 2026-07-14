@@ -351,6 +351,69 @@ def test_archive_writes_project_metadata_parquet(
 
 @patch("ras2cng.project.merge_all_layers")
 @patch("ras2cng.project.init_ras_project")
+def test_archive_terrain_uses_rasmap_sources_outside_terrain_dir(
+    mock_init, mock_merge, tmp_path
+):
+    """Archive rasmap terrain sources even when they are external dependencies."""
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+
+    external_tif = project_dir / "External Dependencies" / "Terrain.tif"
+    external_tif.parent.mkdir()
+    external_tif.write_bytes(b"external terrain")
+    outside_tif = tmp_path / "shared-terrain" / "Terrain.tif"
+    outside_tif.parent.mkdir()
+    outside_tif.write_bytes(b"outside terrain")
+
+    from ras2cng.project import TerrainFileInfo, archive_project
+
+    discovered_terrain = [
+        TerrainFileInfo(
+            name="External Terrain",
+            tif_files=[external_tif, external_tif],
+        ),
+        TerrainFileInfo(name="Shared Terrain", tif_files=[outside_tif]),
+    ]
+
+    def fake_gdal_translate(command, **kwargs):
+        Path(command[-1]).write_bytes(b"cog")
+        return MagicMock()
+
+    with (
+        patch(
+            "ras2cng.project._discover_terrain_details",
+            return_value=discovered_terrain,
+        ),
+        patch(
+            "ras2cng.project.subprocess.run",
+            side_effect=fake_gdal_translate,
+        ) as mock_gdal_translate,
+        patch("ras2cng.project._tif_crs", return_value="EPSG:4326"),
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "archive",
+            include_terrain=True,
+            sort=False,
+        )
+
+    # The duplicate rasmap reference is converted once; same-stem source files
+    # receive distinct COG filenames instead of overwriting one another.
+    assert mock_gdal_translate.call_count == 2
+    assert sorted(entry["cog_file"] for entry in manifest.terrain) == [
+        "terrain/Terrain_cog.tif",
+        "terrain/Terrain_cog_2.tif",
+    ]
+    assert {entry["source_file"] for entry in manifest.terrain} == {
+        "External Dependencies/Terrain.tif",
+        str(outside_tif.resolve()),
+    }
+    assert all((tmp_path / "archive" / entry["cog_file"]).is_file() for entry in manifest.terrain)
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
 def test_archive_uses_verified_crs_override_for_unprojected_geometry(
     mock_init, mock_merge, tmp_path
 ):
