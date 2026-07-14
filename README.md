@@ -55,6 +55,10 @@ ras2cng archive path/to/MyProject/ ./archive/ --results \
 ras2cng spatial-index ./archive/
 ```
 
+For a model with a separately verified CRS but no projection in its HDF or `.rasmap`, add
+`--crs EPSG:XXXX` to the `archive` command. This records the source CRS in GeoParquet; it does
+not transform coordinates.
+
 Output structure (consolidated parquet per source file):
 ```
 archive/

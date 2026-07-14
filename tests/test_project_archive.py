@@ -351,6 +351,29 @@ def test_archive_writes_project_metadata_parquet(
 
 @patch("ras2cng.project.merge_all_layers")
 @patch("ras2cng.project.init_ras_project")
+def test_archive_uses_verified_crs_override_for_unprojected_geometry(
+    mock_init, mock_merge, tmp_path
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf().set_crs(None, allow_override=True)
+
+    from ras2cng.project import archive_project
+
+    manifest = archive_project(
+        project_dir / "FakeModel.prj",
+        tmp_path / "archive",
+        crs="EPSG:2249",
+        sort=False,
+    )
+
+    geometry = gpd.read_parquet(tmp_path / "archive" / "FakeModel.g01.parquet")
+    assert manifest.project["crs"] == "EPSG:2249"
+    assert geometry.crs.to_epsg() == 2249
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
 def test_archive_no_results_when_include_results_false(
     mock_init, mock_merge, tmp_path
 ):

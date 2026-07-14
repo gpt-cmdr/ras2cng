@@ -267,6 +267,7 @@ def test_archive_defaults(monkeypatch, tmp_path: Path):
                 "render_mode": None,
                 "ras_version": None,
                 "rasprocess_path": None,
+                "crs": None,
             },
         }
     ]
@@ -297,6 +298,8 @@ def test_archive_options_and_flag_pairs(monkeypatch, tmp_path: Path):
             "6.6",
             "--rasprocess",
             "C:/RAS",
+            "--crs",
+            "EPSG:2249",
         ],
     )
 
@@ -313,6 +316,7 @@ def test_archive_options_and_flag_pairs(monkeypatch, tmp_path: Path):
     assert kwargs["render_mode"] == "slopingPretty"
     assert kwargs["ras_version"] == "6.6"
     assert kwargs["rasprocess_path"] == Path("C:/RAS")
+    assert kwargs["crs"] == "EPSG:2249"
 
 
 def test_archive_no_results_flag_overrides_results(monkeypatch, tmp_path: Path):

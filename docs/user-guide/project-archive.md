@@ -188,13 +188,17 @@ Use the same memory-safe archive command for a 1D steady model:
 
 ```bash
 ras2cng archive path/to/SteadyModel /output/archive --results \
-  --results-layout variable --results-geometry none
+  --results-layout variable --results-geometry none --crs EPSG:2249
 ```
 
 The result table is stored as `results/pNN/steady_cross_sections.parquet`. Its manifest entry
 declares the exact viewer join: `River -> river`, `Reach -> reach`, and `RS -> node_id`.
 No terrain or floodplain surface is fabricated. RASMapper Stored Map COGs are the separate,
 authoritative delivery path when an interpolated raster display is available.
+
+Use `--crs` only when that CRS has been independently verified for the project. It stamps the
+source geometry GeoParquet and archive manifest when a public release omits a `.rasmap` file or
+HDF projection record; it does not reproject or infer coordinates.
 
 ---
 

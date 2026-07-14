@@ -96,6 +96,11 @@ def archive_command(
     rasprocess: Optional[Path] = typer.Option(
         None, "--rasprocess", help="Path to HEC-RAS install directory (for helper deployment)"
     ),
+    crs: Optional[str] = typer.Option(
+        None,
+        "--crs",
+        help="Validated project CRS override when it is absent from source HDF files",
+    ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -129,6 +134,7 @@ def archive_command(
             render_mode=render_mode,
             ras_version=ras_version,
             rasprocess_path=rasprocess,
+            crs=crs,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")

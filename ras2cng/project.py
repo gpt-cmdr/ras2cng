@@ -490,6 +490,7 @@ def archive_project(
     render_mode: Optional[str] = None,
     ras_version: Optional[str] = None,
     rasprocess_path: Optional[Path] = None,
+    crs: Optional[str] = None,
 ) -> Manifest:
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -521,6 +522,7 @@ def archive_project(
         render_mode: Water surface render mode: "horizontal", "sloping", or "slopingPretty"
         ras_version: HEC-RAS version for RasProcess mapping
         rasprocess_path: Path to RasProcess.exe (required on Linux/Wine)
+        crs: Validated project CRS override when it is absent from source HDF files
 
     Returns:
         Manifest: The completed project manifest (also written to output_dir/manifest.json)
@@ -543,7 +545,7 @@ def archive_project(
 
     ras = init_ras_project(project_dir, ras_object="new", load_results_summary=include_results)
 
-    crs = _detect_project_crs(ras)
+    crs = crs or _detect_project_crs(ras)
     units = _detect_units(project_dir, prj_file)
 
     plan_count = len(ras.plan_df) if ras.plan_df is not None else 0
@@ -604,6 +606,8 @@ def archive_project(
                     sort=sort,
                 )
                 if merged_gdf is not None and len(merged_gdf) > 0:
+                    if merged_gdf.crs is None and crs:
+                        merged_gdf = merged_gdf.set_crs(crs)
                     if hdf_path:
                         file_types.append("hdf")
                     if text_path:
