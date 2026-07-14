@@ -97,6 +97,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
     geometry_tiles = [tileset for tileset in manifest["tilesets"] if tileset["id"].startswith("geometry")]
     layers = {layer["kind"]: layer for tileset in geometry_tiles for layer in tileset["layers"]}
+    assert layers["model_extents"]["visible"] is True
     assert layers["mesh_cells"]["visible"] is True
     assert layers["centerlines"]["visible"] is False
     assert layers["model_extents"]["extentSource"].startswith("HdfProject.get_project_extent")
@@ -114,6 +115,61 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     assert len(calls) == 3
     assert all(call[2].is_relative_to(tmp_path / "scratch") for call in calls)
     assert summary.result_pmtiles and summary.result_pmtiles.is_file()
+
+
+def test_default_visibility_uses_1d_centerlines_without_cross_sections() -> None:
+    manifest = {
+        "groups": [
+            {"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True},
+            {"id": "ras-geometry-g02", "name": "Geometry g02", "visible": False},
+        ],
+        "tilesets": [
+            {
+                "type": "vector",
+                "layers": [
+                    {"groupId": "ras-geometry-g01", "kind": "model_extents", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "centerlines", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "cross_sections", "visible": True},
+                    {"groupId": "ras-geometry-g02", "kind": "model_extents", "visible": True},
+                    {"groupId": "ras-geometry-g02", "kind": "centerlines", "visible": True},
+                ],
+            }
+        ],
+    }
+
+    maplibre.apply_maplibre_default_visibility(manifest)
+
+    layers = manifest["tilesets"][0]["layers"]
+    assert [layer["visible"] for layer in layers] == [True, True, False, False, False]
+    assert manifest["groups"][0]["visible"] is True
+    assert manifest["groups"][1]["visible"] is False
+
+
+def test_default_visibility_uses_2d_refinement_context_when_present() -> None:
+    manifest = {
+        "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True}],
+        "tilesets": [
+            {
+                "type": "vector",
+                "layers": [
+                    {"groupId": "ras-geometry-g01", "kind": "model_extents", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "mesh_areas", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "mesh_cells", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "breaklines", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "refinement_regions", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "mesh_faces", "visible": True},
+                ],
+            }
+        ],
+    }
+
+    maplibre.apply_maplibre_default_visibility(manifest)
+
+    layers = {layer["kind"]: layer for layer in manifest["tilesets"][0]["layers"]}
+    assert all(layers[kind]["visible"] is True for kind in (
+        "model_extents", "mesh_areas", "mesh_cells", "breaklines", "refinement_regions"
+    ))
+    assert layers["mesh_faces"]["visible"] is False
 
 
 def test_package_requires_a_geometry_hdf_for_every_archive_geometry(tmp_path: Path):

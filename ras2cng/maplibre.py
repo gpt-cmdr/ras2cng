@@ -538,8 +538,6 @@ def package_maplibre_viewer(
                 if gdf is not None and not cache_geometry:
                     del gdf
 
-            if geometry_index == 0:
-                _set_primary_geometry_default(group_layers)
             geometry_layers.extend(group_layers)
             for layer in group_layers:
                 target_layers = (
@@ -708,6 +706,7 @@ def package_maplibre_viewer(
             "they are not RASMapper-interpolated raster results."
         ),
     }
+    apply_maplibre_default_visibility(manifest)
     if result_pmtiles:
         manifest["tilesets"].append(
             {
@@ -765,12 +764,56 @@ def _is_detail_geometry(kind: str) -> bool:
     return kind in {"mesh_cells", "mesh_faces"}
 
 
-def _set_primary_geometry_default(layers: list[dict[str, Any]]) -> None:
-    """Enable exactly one useful sublayer in the first geometry group."""
+def apply_maplibre_default_visibility(
+    manifest: dict[str, Any],
+    *,
+    primary_geometry_group_id: str | None = None,
+) -> None:
+    """Apply the standard initial geometry view to a MapLibre manifest.
 
-    preferred = ("mesh_cells", "mesh_areas", "centerlines", "cross_sections", "structures")
-    for kind in preferred:
-        target = next((layer for layer in layers if layer["kind"] == kind), None)
-        if target:
-            target["visible"] = True
-            return
+    The viewer should begin with one geometry configuration, its authoritative
+    model-limit footprint, and enough model context to orient a reviewer. A
+    1D geometry uses centerlines; a 2D geometry uses mesh context plus mesh
+    refinement controls when they are present. Dense faces, cross sections,
+    boundary conditions, and structures remain opt-in.
+    """
+
+    geometry_groups: dict[str, list[dict[str, Any]]] = {}
+    for tileset in manifest.get("tilesets", []):
+        if tileset.get("type") != "vector":
+            continue
+        for layer in tileset.get("layers", []):
+            group_id = str(layer.get("groupId") or "")
+            if group_id.startswith("ras-geometry-"):
+                geometry_groups.setdefault(group_id, []).append(layer)
+
+    if not geometry_groups:
+        return
+
+    if primary_geometry_group_id not in geometry_groups:
+        configured_groups = [
+            str(group.get("id"))
+            for group in manifest.get("groups", [])
+            if group.get("visible") and str(group.get("id")) in geometry_groups
+        ]
+        primary_geometry_group_id = configured_groups[0] if configured_groups else next(iter(geometry_groups))
+
+    for group_id, layers in geometry_groups.items():
+        for layer in layers:
+            layer["visible"] = False
+        for group in manifest.get("groups", []):
+            if group.get("id") == group_id:
+                group["visible"] = group_id == primary_geometry_group_id
+
+    primary_layers = geometry_groups[primary_geometry_group_id]
+    kinds = {str(layer.get("kind") or "") for layer in primary_layers}
+    is_2d = bool({"mesh_areas", "mesh_cells", "mesh_faces", "breaklines", "refinement_regions"} & kinds)
+    default_kinds = {"model_extents"}
+    if is_2d:
+        default_kinds.update({"mesh_areas", "mesh_cells", "breaklines", "refinement_regions"})
+    else:
+        default_kinds.update({"centerlines", "river_centerlines"})
+
+    for layer in primary_layers:
+        if layer.get("kind") in default_kinds:
+            layer["visible"] = True
