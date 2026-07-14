@@ -198,6 +198,70 @@ def test_run_tippecanoe_converts_mbtiles_to_pmtiles(monkeypatch, tmp_path: Path)
     assert not output.with_suffix(".mbtiles").exists()
 
 
+def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Path) -> None:
+    viewer_dir = tmp_path / "project" / "viewer"
+    archive_dir = viewer_dir.parent / "archive" / "terrain"
+    viewer_dir.mkdir(parents=True)
+    archive_dir.mkdir(parents=True)
+    cog = archive_dir / "terrain.cog.tif"
+    cog.write_bytes(b"cog")
+    viewer_dir.joinpath("manifest.json").write_text(
+        json.dumps({"tilesets": [], "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01"}]}),
+        encoding="utf-8",
+    )
+    source_info = {
+        "bands": [{"minimum": 466.0, "maximum": 2542.0, "mean": 1436.0, "stdDev": 200.0}],
+    }
+    projected_info = {"geoTransform": [0.0, 1.5, 0.0, 0.0, 0.0, -1.5]}
+    gdalinfo_calls = 0
+    commands: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        nonlocal gdalinfo_calls
+        commands.append(command)
+        if command[0] == "gdalinfo":
+            gdalinfo_calls += 1
+            info = source_info if gdalinfo_calls == 1 else projected_info
+            return type("Completed", (), {"stdout": json.dumps(info)})()
+        if command[0] == "gdaldem":
+            Path(command[-2]).write_bytes(b"raster")
+        elif command[0] in {"gdalwarp", "gdal_translate"}:
+            Path(command[-1]).write_bytes(b"raster")
+        elif command[0] == "pmtiles":
+            Path(command[-1]).write_bytes(b"pmtiles")
+        return type("Completed", (), {"stdout": ""})()
+
+    monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
+    monkeypatch.setattr(maplibre.subprocess, "run", fake_run)
+
+    summary = maplibre.package_maplibre_terrain(cog, viewer_dir, scratch_dir=tmp_path / "scratch")
+
+    manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
+    terrain = manifest["tilesets"][0]
+    assert summary.max_zoom == 16
+    assert terrain["id"] == "terrain"
+    assert terrain["visible"] is True
+    assert terrain["groupId"] == "ras-terrains"
+    assert terrain["sourceCog"] == "../archive/terrain/terrain.cog.tif"
+    assert terrain["queryable"] is True
+    assert terrain["rasterStats"] == {
+        "minimum": 466.0,
+        "maximum": 2542.0,
+        "mean": 1436.0,
+        "stddev": 200.0,
+    }
+    assert manifest["groups"][-1] == {"id": "ras-terrains", "name": "Terrain", "visible": True}
+    assert any(command[:2] == ["gdaldem", "color-relief"] for command in commands)
+    translate = next(command for command in commands if command[0] == "gdal_translate")
+    assert "ZOOM_LEVEL_STRATEGY=LOWER" in translate
+
+
+def test_terrain_commands_allow_worker_wrappers(monkeypatch) -> None:
+    monkeypatch.setenv("RAS2CNG_GDALWARP", "/opt/ras2cng/bin/gdalwarp")
+
+    assert maplibre._gdalwarp_command() == "/opt/ras2cng/bin/gdalwarp"
+
+
 def test_package_requires_a_geometry_hdf_for_every_archive_geometry(tmp_path: Path):
     archive_dir, _ = _write_archive(tmp_path)
 

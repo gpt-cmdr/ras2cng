@@ -20,6 +20,7 @@ Commands:
   query        Query GeoParquet files using DuckDB SQL.
   pmtiles      Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
   maplibre     Build a MapLibre PMTiles bundle from a completed ras2cng archive.
+  maplibre-terrain  Publish a RAS-styled terrain PMTiles layer into a MapLibre viewer.
   sync         Sync GeoParquet data to PostGIS.
   terrain      Consolidate project terrains into a single merged TIFF.
   map          Generate result rasters (WSE, Depth, Velocity, etc.).

@@ -105,6 +105,33 @@ class PackageSummary:
     bounds: tuple[float, float, float, float]
 
 
+@dataclass(frozen=True)
+class TerrainPackageSummary:
+    """Browser terrain artifact produced from an archived terrain COG."""
+
+    manifest_path: Path
+    pmtiles_path: Path
+    source_cog: Path
+    raster_stats: dict[str, float]
+    max_zoom: int
+
+
+# RASMapper's standard terrain palette. The input elevation range is stretched
+# across this palette so each model retains usable local relief without
+# resampling its source elevation values.
+_RAS_TERRAIN_COLORS: tuple[tuple[int, int, int, int, int], ...] = (
+    (466, 105, 210, 179, 255),
+    (795, 68, 214, 74, 255),
+    (1044, 200, 238, 47, 255),
+    (1243, 242, 212, 58, 255),
+    (1436, 240, 138, 36, 255),
+    (1621, 200, 30, 30, 255),
+    (1836, 127, 0, 0, 255),
+    (2300, 217, 217, 217, 255),
+    (2542, 255, 255, 255, 255),
+)
+
+
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
@@ -124,6 +151,33 @@ def _pmtiles_command() -> str:
     """Return the PMTiles conversion executable for vector tile delivery."""
 
     return os.environ.get("RAS2CNG_PMTILES", "pmtiles")
+
+
+def _gdal_command(name: str) -> str:
+    """Return a GDAL executable, allowing workers to use explicit wrappers."""
+
+    key = f"RAS2CNG_{name.upper().replace('-', '_')}"
+    return os.environ.get(key, name)
+
+
+def _gdalinfo_command() -> str:
+    return _gdal_command("gdalinfo")
+
+
+def _gdaldem_command() -> str:
+    return _gdal_command("gdaldem")
+
+
+def _gdalwarp_command() -> str:
+    return _gdal_command("gdalwarp")
+
+
+def _gdal_translate_command() -> str:
+    return _gdal_command("gdal_translate")
+
+
+def _gdaladdo_command() -> str:
+    return _gdal_command("gdaladdo")
 
 
 def _display_name(value: str) -> str:
@@ -299,6 +353,243 @@ def _run_tippecanoe(
         )
     finally:
         mbtiles_path.unlink(missing_ok=True)
+
+
+def _gdalinfo(path: Path) -> dict[str, Any]:
+    """Read GDAL JSON metadata, calculating band statistics when needed."""
+
+    completed = subprocess.run(
+        [_gdalinfo_command(), "-json", "-stats", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"GDAL did not return JSON metadata for {path}") from error
+
+
+def _raster_stats(info: Mapping[str, Any]) -> dict[str, float]:
+    """Return finite first-band statistics from ``gdalinfo -json -stats``."""
+
+    bands = info.get("bands") or []
+    if not bands:
+        raise ValueError("Terrain COG has no raster bands.")
+    band = bands[0]
+    values: dict[str, float] = {}
+    for output_key, keys in {
+        "minimum": ("minimum", "computedMin"),
+        "maximum": ("maximum", "computedMax"),
+        "mean": ("mean", "computedMean"),
+        "stddev": ("stdDev", "computedStdDev"),
+    }.items():
+        value = next((band.get(key) for key in keys if band.get(key) is not None), None)
+        if value is not None:
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            if numeric == numeric and numeric not in (float("inf"), float("-inf")):
+                values[output_key] = numeric
+    if "minimum" not in values or "maximum" not in values:
+        raise ValueError("Terrain COG does not have finite minimum and maximum elevation statistics.")
+    if values["maximum"] <= values["minimum"]:
+        raise ValueError("Terrain COG has a non-varying elevation range and cannot be colorized.")
+    return values
+
+
+def _native_raster_zoom_from_resolution(resolution: float) -> int:
+    """Calculate a no-upsample Web Mercator zoom from a native cell size."""
+
+    import math
+
+    if resolution <= 0:
+        raise ValueError("Terrain cell resolution must be positive.")
+    return max(0, int(math.floor(math.log2(156543.03392804097 / resolution))))
+
+
+def _terrain_color_ramp(stats: Mapping[str, float], path: Path) -> None:
+    """Write a stretched RAS terrain palette for ``gdaldem color-relief``."""
+
+    minimum = float(stats["minimum"])
+    maximum = float(stats["maximum"])
+    source_minimum = _RAS_TERRAIN_COLORS[0][0]
+    source_maximum = _RAS_TERRAIN_COLORS[-1][0]
+    span = source_maximum - source_minimum
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for elevation, red, green, blue, alpha in _RAS_TERRAIN_COLORS:
+        fraction = (elevation - source_minimum) / span
+        value = minimum + (maximum - minimum) * fraction
+        lines.append(f"{value:.9f} {red} {green} {blue} {alpha}")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def _relative_href(path: Path, base_dir: Path) -> str:
+    """Return a browser-safe relative href from a viewer directory."""
+
+    return Path(os.path.relpath(path.resolve(), base_dir.resolve())).as_posix()
+
+
+def package_maplibre_terrain(
+    cog_path: Path,
+    viewer_dir: Path,
+    *,
+    name: str = "Terrain",
+    source_cog: str | None = None,
+    units: str = "ft",
+    max_zoom: int | None = None,
+    scratch_dir: Path | None = None,
+    overwrite: bool = False,
+) -> TerrainPackageSummary:
+    """Add a RAS-styled, queryable terrain PMTiles layer to a viewer bundle.
+
+    The source COG remains the numerical source for identify queries. The
+    PMTiles overlay is a colorized Web Mercator representation used only for
+    display. Its highest zoom is capped at source cell resolution so no
+    terrain detail is invented in the browser.
+    """
+
+    cog_path = Path(cog_path)
+    viewer_dir = Path(viewer_dir)
+    manifest_path = viewer_dir / "manifest.json"
+    if not cog_path.is_file():
+        raise FileNotFoundError(f"Terrain COG does not exist: {cog_path}")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"MapLibre viewer manifest does not exist: {manifest_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    tilesets = manifest.setdefault("tilesets", [])
+    existing = next((item for item in tilesets if item.get("id") == "terrain"), None)
+    if existing and not overwrite:
+        raise FileExistsError("Viewer already has a terrain tileset; pass overwrite=True to replace it.")
+
+    for executable in (
+        _gdalinfo_command(),
+        _gdaldem_command(),
+        _gdalwarp_command(),
+        _gdal_translate_command(),
+        _gdaladdo_command(),
+        _pmtiles_command(),
+    ):
+        _require_cli(executable)
+
+    if scratch_dir is not None:
+        scratch_dir = Path(scratch_dir).resolve()
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        if not scratch_dir.is_dir():
+            raise ValueError(f"Terrain scratch directory is not a directory: {scratch_dir}")
+
+    stats = _raster_stats(_gdalinfo(cog_path))
+    tiles_dir = viewer_dir / "tiles"
+    tiles_dir.mkdir(parents=True, exist_ok=True)
+    output = tiles_dir / "terrain.pmtiles"
+    if output.exists() and not overwrite:
+        raise FileExistsError(f"Terrain PMTiles already exists: {output}")
+    source_href = source_cog or _relative_href(cog_path, viewer_dir)
+
+    with tempfile.TemporaryDirectory(
+        prefix="ras2cng-terrain-",
+        dir=str(scratch_dir) if scratch_dir is not None else None,
+    ) as temporary:
+        work_dir = Path(temporary)
+        ramp = work_dir / "terrain-ramp.txt"
+        colorized = work_dir / "terrain-colorized.tif"
+        web_mercator = work_dir / "terrain-3857.tif"
+        mbtiles = work_dir / "terrain.mbtiles"
+        _terrain_color_ramp(stats, ramp)
+        subprocess.run(
+            [_gdaldem_command(), "color-relief", str(cog_path), str(ramp), str(colorized), "-alpha"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                _gdalwarp_command(),
+                "-t_srs", "EPSG:3857",
+                "-r", "bilinear",
+                "-multi",
+                "-wo", "NUM_THREADS=ALL_CPUS",
+                str(colorized),
+                str(web_mercator),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        transformed_info = _gdalinfo(web_mercator)
+        transform = transformed_info.get("geoTransform") or []
+        if len(transform) < 6:
+            raise ValueError("Reprojected terrain is missing a GDAL geotransform.")
+        native_resolution = max(abs(float(transform[1])), abs(float(transform[5])))
+        native_max_zoom = _native_raster_zoom_from_resolution(native_resolution)
+        selected_max_zoom = native_max_zoom if max_zoom is None else min(max_zoom, native_max_zoom)
+        subprocess.run(
+            [
+                _gdal_translate_command(),
+                "-of", "MBTiles",
+                "-co", "TILE_FORMAT=PNG",
+                "-co", "ZOOM_LEVEL_STRATEGY=LOWER",
+                str(web_mercator),
+                str(mbtiles),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [_gdaladdo_command(), "-r", "average", str(mbtiles), "2", "4", "8", "16", "32", "64", "128"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output.unlink(missing_ok=True)
+        subprocess.run(
+            [_pmtiles_command(), "convert", str(mbtiles), str(output)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    terrain_tileset = {
+        "id": "terrain",
+        "name": name,
+        "type": "raster",
+        "href": "tiles/terrain.pmtiles",
+        "sourceCog": source_href,
+        "bytes": output.stat().st_size,
+        "tileSize": 256,
+        "groupId": "ras-terrains",
+        "visible": True,
+        "opacity": 1.0,
+        "maxzoom": selected_max_zoom,
+        "rasterStats": stats,
+        "ramp": "stretched",
+        "queryable": True,
+        "units": units,
+        "storedMap": {
+            "mapType": "terrain",
+            "source": "HEC-RAS terrain GeoTIFF",
+            "cogBytes": cog_path.stat().st_size,
+        },
+    }
+    if existing:
+        tilesets[tilesets.index(existing)] = terrain_tileset
+    else:
+        tilesets.append(terrain_tileset)
+    groups = manifest.setdefault("groups", [])
+    if not any(group.get("id") == "ras-terrains" for group in groups):
+        groups.append({"id": "ras-terrains", "name": "Terrain", "visible": True})
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return TerrainPackageSummary(
+        manifest_path=manifest_path,
+        pmtiles_path=output,
+        source_cog=cog_path,
+        raster_stats=stats,
+        max_zoom=selected_max_zoom,
+    )
 
 
 def _extent_from_hdf(hdf_path: Path, fallback_crs: str | None = None) -> gpd.GeoDataFrame:

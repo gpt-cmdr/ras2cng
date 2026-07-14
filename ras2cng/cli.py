@@ -458,6 +458,53 @@ def maplibre_command(
         raise typer.Exit(1)
 
 
+@app.command("maplibre-terrain")
+def maplibre_terrain_command(
+    cog_path: Path = typer.Argument(..., help="Archived HEC-RAS terrain Cloud Optimized GeoTIFF"),
+    viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory containing manifest.json"),
+    name: str = typer.Option("Terrain", "--name", help="Terrain layer display name"),
+    source_cog: Optional[str] = typer.Option(
+        None,
+        "--source-cog",
+        help="Source COG href relative to the viewer manifest (for exact identify values)",
+    ),
+    units: str = typer.Option("ft", "--units", help="Elevation units shown in identify results"),
+    max_zoom: Optional[int] = typer.Option(
+        None,
+        "--max-zoom",
+        help="Maximum display zoom; never exceeds the terrain's native resolution",
+    ),
+    scratch_dir: Optional[Path] = typer.Option(
+        None,
+        "--scratch-dir",
+        help="Large local scratch directory for colorization and raster tile generation",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace an existing terrain layer"),
+):
+    """Publish a RAS-styled, queryable terrain layer into an existing viewer."""
+
+    from ras2cng.maplibre import package_maplibre_terrain
+
+    try:
+        summary = package_maplibre_terrain(
+            cog_path,
+            viewer_dir,
+            name=name,
+            source_cog=source_cog,
+            units=units,
+            max_zoom=max_zoom,
+            scratch_dir=scratch_dir,
+            overwrite=overwrite,
+        )
+        console.print(
+            "[green]OK[/green] Terrain PMTiles created: "
+            f"{summary.pmtiles_path} (maximum native zoom {summary.max_zoom})"
+        )
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
 @app.command("sync")
 def sync_to_postgis(
     input_file: Path = typer.Argument(..., help="Input GeoParquet file"),

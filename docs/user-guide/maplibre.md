@@ -79,3 +79,25 @@ viewer/
 
 The output directory must be empty. This prevents a failed or partial run from silently
 mixing artifacts from different input archives.
+
+## Terrain Publication
+
+Publish terrain after the vector viewer is built. `ras2cng maplibre-terrain` consumes the
+archived terrain COG, adds a terrain PMTiles layer to the existing viewer manifest, and
+keeps the COG as the numerical source for map identify queries:
+
+```bash
+ras2cng maplibre-terrain ARCHIVE_DIR/terrain/Terrain_cog.tif VIEWER_DIR \
+  --scratch-dir /large-local-scratch
+```
+
+The command creates `viewer/tiles/terrain.pmtiles`, enables the terrain layer by default,
+and adds it to the `Terrain` control group. Its display palette is the RASMapper terrain
+palette stretched over the source elevation range. The original COG remains unmodified and
+is referenced as `sourceCog`, allowing a click to report the original elevation rather than
+the colorized tile value.
+
+The display raster is reprojected to Web Mercator only for tiled delivery. Its maximum zoom
+is capped at the native terrain cell resolution; `--max-zoom` may lower that cap but cannot
+force an upsample. Use an external `--source-cog` href only when the archive layout differs
+from the normal sibling `archive/` and `viewer/` directories.
