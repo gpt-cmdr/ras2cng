@@ -101,3 +101,7 @@ The display raster is reprojected to Web Mercator only for tiled delivery. Its m
 is capped at the native terrain cell resolution; `--max-zoom` may lower that cap but cannot
 force an upsample. Use an external `--source-cog` href only when the archive layout differs
 from the normal sibling `archive/` and `viewer/` directories.
+
+Raster warps use four GDAL worker threads by default to remain predictable on shared compute
+containers. Set `RAS2CNG_GDAL_THREADS` for an isolated worker when a different bounded limit
+is appropriate.

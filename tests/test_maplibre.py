@@ -258,8 +258,10 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
 
 def test_terrain_commands_allow_worker_wrappers(monkeypatch) -> None:
     monkeypatch.setenv("RAS2CNG_GDALWARP", "/opt/ras2cng/bin/gdalwarp")
+    monkeypatch.setenv("RAS2CNG_GDAL_THREADS", "2")
 
     assert maplibre._gdalwarp_command() == "/opt/ras2cng/bin/gdalwarp"
+    assert maplibre._gdal_thread_count() == "2"
 
 
 def test_package_requires_a_geometry_hdf_for_every_archive_geometry(tmp_path: Path):

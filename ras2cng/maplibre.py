@@ -180,6 +180,12 @@ def _gdaladdo_command() -> str:
     return _gdal_command("gdaladdo")
 
 
+def _gdal_thread_count() -> str:
+    """Return the bounded raster-processing thread count for shared workers."""
+
+    return os.environ.get("RAS2CNG_GDAL_THREADS", "4")
+
+
 def _display_name(value: str) -> str:
     return _GEOMETRY_LABELS.get(value, value.replace("_", " ").title())
 
@@ -511,7 +517,7 @@ def package_maplibre_terrain(
                 "-t_srs", "EPSG:3857",
                 "-r", "bilinear",
                 "-multi",
-                "-wo", "NUM_THREADS=ALL_CPUS",
+                "-wo", f"NUM_THREADS={_gdal_thread_count()}",
                 str(colorized),
                 str(web_mercator),
             ],
