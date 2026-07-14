@@ -412,6 +412,34 @@ def test_archive_terrain_uses_rasmap_sources_outside_terrain_dir(
     assert all((tmp_path / "archive" / entry["cog_file"]).is_file() for entry in manifest.terrain)
 
 
+def test_discover_terrain_details_resolves_external_rasmap_tiff(tmp_path):
+    """Terrain HDFs under External Dependencies retain their named TIFF source."""
+    project_dir = tmp_path / "Chippewa"
+    project_dir.mkdir()
+    external_dir = project_dir / "External Dependencies"
+    external_dir.mkdir()
+    terrain_hdf = external_dir / "100ft.hdf"
+    terrain_hdf.write_bytes(b"terrain hdf")
+    terrain_tif = external_dir / "100ft.test1d.tif"
+    terrain_tif.write_bytes(b"terrain tif")
+    (project_dir / "Chippewa.rasmap").write_text(
+        r'<RASMapper><Terrains><Layer Name="100ft" Type="TerrainLayer" '
+        r'Filename=".\External Dependencies\100ft.hdf" /></Terrains></RASMapper>',
+        encoding="utf-8",
+    )
+
+    from ras2cng.project import _discover_terrain_details
+
+    ras = MagicMock()
+    ras.rasmap_df = pd.DataFrame()
+    details = _discover_terrain_details(ras, project_dir)
+
+    assert len(details) == 1
+    assert details[0].name == "100ft"
+    assert details[0].hdf_path == terrain_hdf
+    assert details[0].tif_files == [terrain_tif]
+
+
 @patch("ras2cng.project.merge_all_layers")
 @patch("ras2cng.project.init_ras_project")
 def test_archive_uses_verified_crs_override_for_unprojected_geometry(

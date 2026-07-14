@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import gc
 import subprocess
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
@@ -1159,6 +1160,37 @@ def _detect_ras_version(ras) -> Optional[str]:
     return None
 
 
+def _resolve_rasmap_path(project_dir: Path, filename: str) -> Path:
+    """Resolve a RASMapper file reference without relying on host path rules."""
+    normalized = filename.strip().replace("\\", "/")
+    path = Path(normalized)
+    return path if path.is_absolute() else project_dir / path
+
+
+def _terrain_hdf_paths_from_rasmap(rasmap_path: Path, project_dir: Path) -> dict[str, Path]:
+    """Return terrain-layer names mapped to their HDF source paths.
+
+    ``RasPrj.rasmap_df`` stores terrain HDF paths as a list and does not retain
+    the corresponding terrain names.  The XML records are the authoritative
+    source for that association and work for paths such as ``External
+    Dependencies\\Terrain.hdf``.
+    """
+    try:
+        root = ET.parse(rasmap_path).getroot()
+    except (ET.ParseError, OSError):
+        return {}
+
+    paths: dict[str, Path] = {}
+    for layer in root.findall("./Terrains/Layer"):
+        if layer.attrib.get("Type") != "TerrainLayer":
+            continue
+        name = layer.attrib.get("Name", "").strip()
+        filename = layer.attrib.get("Filename", "").strip()
+        if name and filename:
+            paths[name] = _resolve_rasmap_path(project_dir, filename)
+    return paths
+
+
 def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
     """Discover detailed terrain information from rasmap and filesystem.
 
@@ -1174,18 +1206,9 @@ def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
         if rasmap_files:
             terrain_names = RasMap.get_terrain_names(str(rasmap_files[0]))
             if terrain_names:
-                # Get HDF paths from rasmap_df if available
-                hdf_paths: dict[str, Path] = {}
-                if ras.rasmap_df is not None and not ras.rasmap_df.empty:
-                    if "terrain_hdf_path" in ras.rasmap_df.columns:
-                        for _, row in ras.rasmap_df.iterrows():
-                            name = str(row.get("terrain_name", ""))
-                            hdf_p = row.get("terrain_hdf_path")
-                            if hdf_p and str(hdf_p).strip():
-                                p = Path(str(hdf_p))
-                                if not p.is_absolute():
-                                    p = project_dir / p
-                                hdf_paths[name] = p
+                hdf_paths = _terrain_hdf_paths_from_rasmap(
+                    rasmap_files[0], project_dir
+                )
 
                 for name in terrain_names:
                     hdf_path = hdf_paths.get(name)
