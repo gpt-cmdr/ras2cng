@@ -272,8 +272,19 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
     }
     assert manifest["groups"][-1] == {"id": "ras-terrains", "name": "Terrain", "visible": True}
     assert any(command[:2] == ["gdaldem", "color-relief"] for command in commands)
+    warp = next(command for command in commands if command[0] == "gdalwarp")
+    assert "-srcalpha" in warp
+    assert "-dstalpha" in warp
     translate = next(command for command in commands if command[0] == "gdal_translate")
     assert "ZOOM_LEVEL_STRATEGY=LOWER" in translate
+
+
+def test_terrain_color_ramp_makes_nodata_transparent(tmp_path: Path) -> None:
+    ramp = tmp_path / "terrain-ramp.txt"
+
+    maplibre._terrain_color_ramp({"minimum": 466.0, "maximum": 2542.0}, ramp)
+
+    assert ramp.read_text(encoding="ascii").splitlines()[-1] == "nv 0 0 0 0"
 
 
 def test_terrain_commands_allow_worker_wrappers(monkeypatch) -> None:

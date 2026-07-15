@@ -422,7 +422,7 @@ def _native_raster_zoom_from_resolution(resolution: float) -> int:
 
 
 def _terrain_color_ramp(stats: Mapping[str, float], path: Path) -> None:
-    """Write a stretched RAS terrain palette for ``gdaldem color-relief``."""
+    """Write a stretched RAS terrain palette with transparent no-data cells."""
 
     minimum = float(stats["minimum"])
     maximum = float(stats["maximum"])
@@ -435,6 +435,10 @@ def _terrain_color_ramp(stats: Mapping[str, float], path: Path) -> None:
         fraction = (elevation - source_minimum) / span
         value = minimum + (maximum - minimum) * fraction
         lines.append(f"{value:.9f} {red} {green} {blue} {alpha}")
+    # HEC-RAS terrains conventionally use -9999 outside the valid terrain
+    # footprint. Without this palette entry, gdaldem assigns those cells the
+    # first terrain color instead of preserving the raster's no-data mask.
+    lines.append("nv 0 0 0 0")
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
@@ -522,6 +526,8 @@ def package_maplibre_terrain(
                 _gdalwarp_command(),
                 "-t_srs", "EPSG:3857",
                 "-r", "bilinear",
+                "-srcalpha",
+                "-dstalpha",
                 "-multi",
                 "-wo", f"NUM_THREADS={_gdal_thread_count()}",
                 str(colorized),
