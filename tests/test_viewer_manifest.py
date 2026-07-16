@@ -270,6 +270,7 @@ def test_current_view_requires_cataloged_numeric_service() -> None:
         "numericRaster": {
             "baseUrl": "/ras-raster",
             "statisticsPath": "/stats",
+            "samplePath": "/sample",
             "tilePath": "/tiles/{z}/{x}/{y}.png",
         }
     }

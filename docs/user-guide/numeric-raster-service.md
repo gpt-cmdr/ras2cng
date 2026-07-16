@@ -1,8 +1,10 @@
 # Numeric Raster Service
 
-The optional WebGIS service supplies bounded current-view statistics and styled 256-pixel
-tiles from authoritative numeric COGs. Precolored raster PMTiles remain the low-latency
-dataset view and automatic fallback.
+The optional WebGIS service supplies bounded current-view statistics, point Identify
+samples, and styled 256-pixel tiles from authoritative numeric COGs. Precolored raster
+PMTiles remain the low-latency dataset view and automatic fallback. Server-side point
+sampling also supports GDAL compression schemes such as ZSTD that browser GeoTIFF
+decoders may not implement.
 
 ## Catalog And Manifest Attachment
 

@@ -645,8 +645,17 @@ def _raster_source_metadata(path: Path) -> dict[str, Any]:
     with rasterio.open(path) as source:
         if source.crs is None:
             raise ValueError(f"Numeric raster has no CRS and cannot be published: {path}")
-        epsg = source.crs.to_epsg()
+        # RASMapper GeoTIFF WKT frequently omits the projected CRS authority even
+        # when PROJ can identify it at lower confidence. The browser still needs
+        # an explicit Proj4 definition because proj4js does not bundle EPSG data.
+        epsg = source.crs.to_epsg(confidence_threshold=25)
         crs = f"EPSG:{epsg}" if epsg else source.crs.to_string()
+        proj4 = source.crs.to_proj4() or None
+        if proj4:
+            proj4 = " ".join(
+                token[:-5] if token.endswith("=True") else token
+                for token in proj4.split()
+            )
         wgs84_bounds = transform_bounds(
             source.crs,
             "EPSG:4326",
@@ -658,6 +667,7 @@ def _raster_source_metadata(path: Path) -> dict[str, Any]:
             nodata = None
         return {
             "sourceCrs": crs,
+            "sourceProj4": proj4,
             "sourceBounds": [float(value) for value in source.bounds],
             "bounds": [float(value) for value in wgs84_bounds],
             "dtype": str(source.dtypes[0]),

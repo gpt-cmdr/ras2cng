@@ -225,6 +225,7 @@ def build_raster_asset_catalog(
             manifest.setdefault("services", {})["numericRaster"] = {
                 "baseUrl": service_base_url.rstrip("/"),
                 "statisticsPath": "/stats",
+                "samplePath": "/sample",
                 "tilePath": "/tiles/{z}/{x}/{y}.png",
                 "maxViewPixels": 2_097_152,
             }
@@ -303,6 +304,63 @@ def compute_view_statistics(
         },
         "domain": {"minimum": domain_minimum, "maximum": domain_maximum},
     }
+
+
+def sample_raster_at_point(
+    asset: RasterAsset,
+    longitude: float,
+    latitude: float,
+) -> dict[str, Any]:
+    """Read one allowlisted raster cell at a WGS84 point."""
+
+    import numpy as np
+    import rasterio
+    from rasterio.warp import transform
+
+    longitude = float(longitude)
+    latitude = float(latitude)
+    if not math.isfinite(longitude) or not math.isfinite(latitude):
+        raise ValueError("Sample coordinates must be finite")
+    if longitude < -180 or longitude > 180 or latitude < -90 or latitude > 90:
+        raise ValueError("Sample coordinates must be valid WGS84 longitude and latitude")
+
+    with rasterio.open(asset.path) as source:
+        if source.crs is None:
+            raise ValueError("Raster has no coordinate reference system")
+        xs, ys = transform("EPSG:4326", source.crs, [longitude], [latitude])
+        source_x, source_y = float(xs[0]), float(ys[0])
+        bounds = source.bounds
+        if (
+            source_x < bounds.left
+            or source_x >= bounds.right
+            or source_y <= bounds.bottom
+            or source_y > bounds.top
+        ):
+            return {
+                "asset": asset.asset_id,
+                "revision": asset.revision,
+                "longitude": longitude,
+                "latitude": latitude,
+                "state": "outside",
+                "units": asset.units,
+            }
+        row, column = source.index(source_x, source_y)
+        sample = next(source.sample([(source_x, source_y)], indexes=1, masked=True))[0]
+
+    base = {
+        "asset": asset.asset_id,
+        "revision": asset.revision,
+        "longitude": longitude,
+        "latitude": latitude,
+        "sourceX": source_x,
+        "sourceY": source_y,
+        "row": int(row),
+        "column": int(column),
+        "units": asset.units,
+    }
+    if np.ma.is_masked(sample) or not math.isfinite(float(sample)):
+        return {**base, "state": "nodata"}
+    return {**base, "state": "value", "value": float(sample)}
 
 
 def render_styled_tile(
@@ -415,6 +473,30 @@ def create_raster_app(
                     max_pixels=settings.max_view_pixels,
                     max_dimension=settings.max_view_dimension,
                 )
+                cache.put(key, result)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return JSONResponse(
+            content=result,
+            headers=_cache_headers(record, revision, result),
+        )
+
+    @app.get(f"{prefix}/sample")
+    def sample(
+        asset: str = Query(..., min_length=1, max_length=300),
+        lng: float = Query(..., ge=-180, le=180),
+        lat: float = Query(..., ge=-90, le=90),
+        revision: str | None = Query(None, max_length=80),
+    ):
+        try:
+            record = catalog.get(asset)
+            _require_revision(record, revision)
+            key = ("sample", record.asset_id, record.revision, round(lng, 10), round(lat, 10))
+            result = cache.get(key)
+            if result is None:
+                result = sample_raster_at_point(record, lng, lat)
                 cache.put(key, result)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

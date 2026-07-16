@@ -20,6 +20,7 @@ from ras2cng.webgis_service import (
     compute_view_statistics,
     create_raster_app,
     render_styled_tile,
+    sample_raster_at_point,
 )
 from ras2cng.viewer_manifest import apply_manifest_v2
 
@@ -172,6 +173,7 @@ def test_catalog_builder_attaches_service_asset_to_manifest(tmp_path: Path):
     assert resource["serviceAsset"] == "projects/muncie/p03-depth-max"
     assert resource["serviceRevision"]
     assert manifest["services"]["numericRaster"]["baseUrl"].endswith("/ras-raster")
+    assert manifest["services"]["numericRaster"]["samplePath"] == "/sample"
     tileset = manifest["tilesets"][0]
     assert tileset["serviceAsset"] == resource["serviceAsset"]
 
@@ -196,6 +198,20 @@ def test_view_statistics_are_pixel_bounded_and_robust(tmp_path: Path):
     assert result["domain"]["maximum"] <= result["statistics"]["maximum"]
     assert result["statistics"]["validPixels"] > 0
     assert bounded_view_dimensions(4000, 3000, max_pixels=1_000_000, max_dimension=4096) == (1154, 866)
+
+
+def test_point_sample_reads_zstd_cog_and_reports_nodata(tmp_path: Path):
+    asset = _asset(_write_cog(tmp_path / "depth.tif"))
+
+    value = sample_raster_at_point(asset, -84.98, 40.05)
+    nodata = sample_raster_at_point(asset, -85.099, 40.199)
+    outside = sample_raster_at_point(asset, -86.0, 41.0)
+
+    assert value["state"] == "value"
+    assert 0 <= value["value"] <= 20
+    assert value["units"] == "ft"
+    assert nodata["state"] == "nodata"
+    assert outside["state"] == "outside"
 
 
 def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
@@ -258,6 +274,20 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
     assert stats.status_code == 200, stats.text
     assert stats.headers["cache-control"].endswith("immutable")
     domain = stats.json()["domain"]
+
+    sample = client.get(
+        "/ras-raster/sample",
+        params={
+            "asset": asset.asset_id,
+            "lng": -84.98,
+            "lat": 40.05,
+            "revision": asset.revision,
+        },
+    )
+    assert sample.status_code == 200, sample.text
+    assert sample.json()["state"] == "value"
+    assert sample.json()["units"] == "ft"
+    assert sample.headers["cache-control"].endswith("immutable")
 
     image = client.get(
         f"/ras-raster/tiles/{tile.z}/{tile.x}/{tile.y}.png",

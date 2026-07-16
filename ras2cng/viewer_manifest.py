@@ -243,7 +243,10 @@ def validate_manifest_v2(manifest: Mapping[str, Any]) -> None:
                     f"Current-view layer {layer_id!r} requires serviceAsset and serviceRevision metadata."
                 )
             service = (manifest.get("services") or {}).get("numericRaster") or {}
-            if not all(service.get(key) for key in ("baseUrl", "statisticsPath", "tilePath")):
+            if not all(
+                service.get(key)
+                for key in ("baseUrl", "statisticsPath", "samplePath", "tilePath")
+            ):
                 raise ValueError(
                     f"Current-view layer {layer_id!r} requires the numericRaster service contract."
                 )

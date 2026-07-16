@@ -315,7 +315,10 @@ def _validate_current_view_service(
                 "Current-view styling requires a cataloged service asset and revision.",
                 layer_id,
             )
-        if not all(service.get(key) for key in ("baseUrl", "statisticsPath", "tilePath")):
+        if not all(
+            service.get(key)
+            for key in ("baseUrl", "statisticsPath", "samplePath", "tilePath")
+        ):
             report.add(
                 "error",
                 "raster.current-view-service",

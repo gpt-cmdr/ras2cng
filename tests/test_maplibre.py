@@ -4,12 +4,39 @@ import json
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
+import rasterio
+from rasterio.transform import from_origin
 from shapely.geometry import LineString, Point, box
 from typer.testing import CliRunner
 
 from ras2cng import maplibre
 from ras2cng.cli import app
+
+
+def test_raster_source_metadata_includes_browser_projection_definition(tmp_path: Path) -> None:
+    raster = tmp_path / "depth.tif"
+    with rasterio.open(
+        raster,
+        "w",
+        driver="GTiff",
+        width=2,
+        height=2,
+        count=1,
+        dtype="float32",
+        crs="EPSG:2965",
+        transform=from_origin(400000, 1805000, 5, 5),
+        nodata=-9999.0,
+    ) as target:
+        target.write(np.ones((1, 2, 2), dtype="float32"))
+
+    metadata = maplibre._raster_source_metadata(raster)
+
+    assert metadata["sourceCrs"] == "EPSG:2965"
+    assert metadata["sourceProj4"].startswith("+proj=tmerc")
+    assert "+units=us-ft" in metadata["sourceProj4"]
+    assert "=True" not in metadata["sourceProj4"]
 
 
 def _write_archive(tmp_path: Path) -> tuple[Path, Path]:
@@ -537,6 +564,7 @@ def test_numeric_raster_overwrite_preserves_service_identity(monkeypatch, tmp_pa
                     "numericRaster": {
                         "baseUrl": "/ras-raster",
                         "statisticsPath": "/stats",
+                        "samplePath": "/sample",
                         "tilePath": "/tiles/{z}/{x}/{y}.png",
                     }
                 },
