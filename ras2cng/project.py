@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import gc
+import re
 import subprocess
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
@@ -31,6 +33,8 @@ from ras2cng.catalog import (
     ManifestPlanEntry,
     ManifestResultVariable,
     ManifestTerrainEntry,
+    ManifestTerrainModificationEntry,
+    ManifestTerrainSourceEntry,
 )
 from ras2cng.geometry import (
     export_all_hdf_layers,
@@ -42,6 +46,15 @@ console = Console()
 
 VALID_RESULTS_LAYOUTS = {"plan", "variable"}
 VALID_RESULTS_GEOMETRY_MODES = {"polygon", "point", "none"}
+_STEADY_RESULT_JOIN_COLUMNS = {"River": "river", "Reach": "reach", "RS": "node_id"}
+
+
+def _steady_results_requested(result_variables: Optional[Sequence[str]]) -> bool:
+    """Return whether a steady cross-section result table was requested."""
+    if not result_variables:
+        return True
+    requested = {str(value).strip().lower().replace(" ", "_") for value in result_variables}
+    return bool(requested & {"steady_cross_sections", "cross_sections"})
 
 
 # ---------------------------------------------------------------------------
@@ -476,11 +489,14 @@ def archive_project(
     result_variables: Optional[Sequence[str]] = None,
     results_layout: str = "plan",
     results_geometry: str = "polygon",
+    include_auxiliary_results: bool = True,
     map_results: bool = False,
     consolidate_terrain: bool = False,
+    terrain_target_resolutions: Optional[dict[str, float]] = None,
     render_mode: Optional[str] = None,
     ras_version: Optional[str] = None,
     rasprocess_path: Optional[Path] = None,
+    crs: Optional[str] = None,
 ) -> Manifest:
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -507,11 +523,16 @@ def archive_project(
         results_geometry: "polygon" joins results to mesh-cell polygons,
             "point" keeps ras-commander result points, and "none" writes
             attribute-only tables keyed by mesh_name/cell_id or face_id.
+        include_auxiliary_results: Export reference, structure, pump, pipe,
+            and other non-mesh raw result summaries with geometry join metadata.
         map_results: If True, generate result rasters via RasProcess after export
         consolidate_terrain: If True, merge terrains into single COG
+        terrain_target_resolutions: Explicit output cell size by named terrain,
+            required for any terrain whose TIFF members have mixed resolutions.
         render_mode: Water surface render mode: "horizontal", "sloping", or "slopingPretty"
         ras_version: HEC-RAS version for RasProcess mapping
         rasprocess_path: Path to RasProcess.exe (required on Linux/Wine)
+        crs: Validated project CRS override when it is absent from source HDF files
 
     Returns:
         Manifest: The completed project manifest (also written to output_dir/manifest.json)
@@ -534,7 +555,7 @@ def archive_project(
 
     ras = init_ras_project(project_dir, ras_object="new", load_results_summary=include_results)
 
-    crs = _detect_project_crs(ras)
+    crs = crs or _detect_project_crs(ras)
     units = _detect_units(project_dir, prj_file)
 
     plan_count = len(ras.plan_df) if ras.plan_df is not None else 0
@@ -595,6 +616,8 @@ def archive_project(
                     sort=sort,
                 )
                 if merged_gdf is not None and len(merged_gdf) > 0:
+                    if merged_gdf.crs is None and crs:
+                        merged_gdf = merged_gdf.set_crs(crs)
                     if hdf_path:
                         file_types.append("hdf")
                     if text_path:
@@ -649,14 +672,14 @@ def archive_project(
     # Step 2: Terrain conversion (opt-in)
     # -----------------------------------------------------------------
     if include_terrain:
-        terrain_dir = project_dir / "Terrain"
-        tif_files = sorted(set(list(terrain_dir.glob("*.tif")) + list(terrain_dir.glob("*.TIF")))) if terrain_dir.exists() else []
+        tif_files = _archive_terrain_tifs(ras, project_dir)
         if tif_files:
             console.print(f"\n[bold]Terrain:[/bold] {len(tif_files)} raster(s) -> COG")
             cog_out_dir = output_dir / "terrain"
             cog_out_dir.mkdir(parents=True, exist_ok=True)
+            cog_names: set[str] = set()
             for tif in tif_files:
-                cog_path = cog_out_dir / (tif.stem + "_cog.tif")
+                cog_path = _terrain_cog_path(tif, cog_out_dir, cog_names)
                 try:
                     subprocess.run(
                         ["gdal_translate", "-of", "COG", str(tif), str(cog_path)],
@@ -664,8 +687,8 @@ def archive_project(
                     )
                     terrain_crs = _tif_crs(tif)
                     manifest.add_terrain_entry(ManifestTerrainEntry(
-                        source_file=str(tif.relative_to(project_dir)),
-                        cog_file=str(cog_path.relative_to(output_dir)),
+                        source_file=_terrain_source_file(tif, project_dir),
+                        cog_file=cog_path.relative_to(output_dir).as_posix(),
                         size_bytes=cog_path.stat().st_size,
                         crs=terrain_crs,
                     ))
@@ -675,13 +698,97 @@ def archive_project(
                     if not skip_errors:
                         raise
         else:
-            console.print("\n[bold]Terrain:[/bold] No .tif files found in Terrain/")
+            console.print("\n[bold]Terrain:[/bold] No TIFF terrain sources found")
+
+    if include_terrain or consolidate_terrain:
+        from ras2cng.terrain import (
+            discover_terrains,
+            export_terrain_modifications,
+            export_terrain_source_footprints,
+        )
+
+        for terrain in discover_terrains(project_path):
+            terrain_slug = re.sub(r"[^a-z0-9]+", "-", terrain.name.lower()).strip("-") or "terrain"
+            if terrain.tif_files:
+                source_path = (
+                    output_dir / "terrain" / "sources" / terrain_slug /
+                    "terrain_source_footprints.parquet"
+                )
+                try:
+                    export_terrain_source_footprints(
+                        terrain.tif_files,
+                        source_path,
+                        out_crs=manifest.project.get("crs"),
+                    )
+                    metadata = _parquet_meta(source_path)
+                    manifest.add_terrain_source_entry(
+                        ManifestTerrainSourceEntry(
+                            terrain_name=terrain.name,
+                            layers=[
+                                {
+                                    "layer": "terrain_source_footprints",
+                                    "parquet": source_path.relative_to(output_dir).as_posix(),
+                                    "rows": metadata["rows"],
+                                    "geometry_type": metadata["geometry_type"],
+                                    "crs": metadata["crs"],
+                                }
+                            ],
+                        )
+                    )
+                except Exception as e:
+                    console.print(
+                        f"  [yellow]Warning:[/yellow] Terrain source footprints failed for "
+                        f"{terrain.name}: {e}"
+                    )
+                    if not skip_errors:
+                        raise
+
+            if not terrain.hdf_path or not terrain.hdf_path.is_file():
+                continue
+            modification_dir = output_dir / "terrain" / "modifications" / terrain_slug
+            try:
+                written = export_terrain_modifications(
+                    terrain.hdf_path,
+                    modification_dir,
+                    crs=manifest.project.get("crs"),
+                )
+                if not written:
+                    continue
+                layers = []
+                for layer_name, path in written.items():
+                    metadata = _parquet_meta(path)
+                    layers.append(
+                        {
+                            "layer": layer_name,
+                            "parquet": path.relative_to(output_dir).as_posix(),
+                            "rows": metadata["rows"],
+                            "geometry_type": metadata["geometry_type"],
+                            "crs": metadata["crs"],
+                        }
+                    )
+                manifest.add_terrain_modification_entry(
+                    ManifestTerrainModificationEntry(
+                        terrain_name=terrain.name,
+                        source_hdf=str(terrain.hdf_path),
+                        layers=layers,
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    f"  [yellow]Warning:[/yellow] Terrain modifications failed for "
+                    f"{terrain.name}: {e}"
+                )
+                if not skip_errors:
+                    raise
 
     # -----------------------------------------------------------------
     # Step 3: Plan results (opt-in)
     # -----------------------------------------------------------------
     if include_results:
         from ras2cng.results import (
+            STEADY_CROSS_SECTION_RESULT_VARIABLE,
+            extract_auxiliary_result_tables,
+            extract_steady_cross_section_results,
             extract_results_variable,
             merge_all_variables,
             result_variable_slug,
@@ -738,7 +845,37 @@ def archive_project(
 
             console.print(f"  [{plan_id}] -> {parquet_name if results_layout == 'plan' else f'results/{plan_id}/'}")
             try:
-                if results_layout == "variable":
+                steady_results = extract_steady_cross_section_results(plan_hdf)
+                if not steady_results.empty:
+                    if _steady_results_requested(result_variables):
+                        steady_results["layer"] = STEADY_CROSS_SECTION_RESULT_VARIABLE
+                        if results_layout == "variable":
+                            variable_rel = Path("results") / plan_id / f"{STEADY_CROSS_SECTION_RESULT_VARIABLE}.parquet"
+                            variable_path = output_dir / variable_rel
+                            _write_result_frame(steady_results, variable_path)
+                            result_parquet = variable_rel.as_posix()
+                        else:
+                            _write_result_frame(steady_results, parquet_path)
+                            result_parquet = parquet_name
+
+                        size_bytes = (output_dir / result_parquet).stat().st_size
+                        plan_entry.geometry_mode = "none"
+                        plan_entry.add_variable(ManifestResultVariable(
+                            variable=STEADY_CROSS_SECTION_RESULT_VARIABLE,
+                            filter_value=STEADY_CROSS_SECTION_RESULT_VARIABLE,
+                            rows=len(steady_results),
+                            parquet=result_parquet,
+                            geometry_mode="none",
+                            geometry_filter="cross_sections",
+                            join_columns=_STEADY_RESULT_JOIN_COLUMNS,
+                            profile_column="profile",
+                            source="Raw HEC-RAS HDF steady cross-section result values",
+                            size_bytes=size_bytes,
+                        ))
+                        plan_entry.size_bytes = size_bytes
+                    del steady_results
+                    gc.collect()
+                elif results_layout == "variable":
                     selected_variables = selected_summary_variables(plan_hdf, result_variables)
                     for variable in selected_variables:
                         variable_slug = result_variable_slug(variable)
@@ -808,6 +945,40 @@ def archive_project(
                 if not skip_errors:
                     raise
 
+            if include_auxiliary_results:
+                try:
+                    for auxiliary in extract_auxiliary_result_tables(plan_hdf):
+                        variable_slug = result_variable_slug(auxiliary.variable)
+                        variable_rel = Path("results") / plan_id / f"{variable_slug}.parquet"
+                        variable_path = output_dir / variable_rel
+                        frame = auxiliary.frame.copy()
+                        frame["layer"] = variable_slug
+                        _write_result_frame(frame, variable_path)
+                        size_bytes = variable_path.stat().st_size
+                        plan_entry.add_variable(
+                            ManifestResultVariable(
+                                variable=variable_slug,
+                                filter_value=variable_slug,
+                                rows=len(frame),
+                                parquet=variable_rel.as_posix(),
+                                geometry_mode="none",
+                                index_column=auxiliary.index_column,
+                                geometry_filter=auxiliary.geometry_filter,
+                                join_columns=auxiliary.join_columns,
+                                source=auxiliary.source,
+                                size_bytes=size_bytes,
+                            )
+                        )
+                        plan_entry.size_bytes += size_bytes
+                        del frame
+                        gc.collect()
+                except Exception as e:
+                    console.print(
+                        f"    [yellow]Warning:[/yellow] Auxiliary results failed for {plan_id}: {e}"
+                    )
+                    if not skip_errors:
+                        raise
+
             manifest.add_plan_entry(plan_entry)
 
             # Optional: geometry copy from plan HDF
@@ -825,37 +996,68 @@ def archive_project(
     # -----------------------------------------------------------------
     if consolidate_terrain:
         try:
-            from ras2cng.terrain import consolidate_terrain as _consolidate_terrain
+            from ras2cng.terrain import consolidate_project_terrains
 
             console.print("\n[bold]Terrain Consolidation:[/bold]")
             terrain_out = output_dir / "terrain"
-            consolidated_path = _consolidate_terrain(
+            horizontal_units = "Meters" if manifest.project.get("units") == "Meters" else "Feet"
+            consolidated_paths = consolidate_project_terrains(
                 project_path,
                 terrain_out,
-                terrain_name="Consolidated",
-                create_hdf=False,  # For archive, just produce the COG
-                register_rasmap=False,
+                target_resolutions=terrain_target_resolutions,
+                horizontal_units=horizontal_units,
             )
 
-            # Convert consolidated TIFF to COG for the archive
-            if consolidated_path.exists() and consolidated_path.suffix.lower() == ".tif":
+            for terrain_source_name, consolidated_path in consolidated_paths.items():
+                if not consolidated_path.exists() or consolidated_path.suffix.lower() != ".tif":
+                    continue
                 import subprocess as _sp
                 cog_path = terrain_out / f"{consolidated_path.stem}_cog.tif"
+                provenance_path = terrain_out / f"{consolidated_path.stem.removesuffix('_merged')}_terrain-provenance.json"
                 try:
                     _sp.run(
-                        ["gdal_translate", "-of", "COG", str(consolidated_path), str(cog_path)],
+                        [
+                            "gdal_translate",
+                            "-of", "COG",
+                            "-co", "COMPRESS=ZSTD",
+                            "-co", "BLOCKSIZE=512",
+                            "-co", "BIGTIFF=IF_SAFER",
+                            str(consolidated_path),
+                            str(cog_path),
+                        ],
                         check=True, capture_output=True,
                     )
                     terrain_crs = _tif_crs(consolidated_path)
+                    provenance = (
+                        json.loads(provenance_path.read_text(encoding="utf-8"))
+                        if provenance_path.is_file()
+                        else {}
+                    )
                     manifest.add_terrain_entry(ManifestTerrainEntry(
-                        source_file="Consolidated",
-                        cog_file=str(cog_path.relative_to(output_dir)),
+                        source_file=terrain_source_name,
+                        cog_file=cog_path.relative_to(output_dir).as_posix(),
                         size_bytes=cog_path.stat().st_size,
                         crs=terrain_crs,
+                        terrain_name=terrain_source_name,
+                        source_files=[
+                            str(item.get("path", ""))
+                            for item in provenance.get("sources", [])
+                        ],
+                        target_resolution=(provenance.get("resolution") or {}).get("target_resolution"),
+                        horizontal_units=(provenance.get("resolution") or {}).get("horizontal_units", ""),
+                        provenance_file=(
+                            provenance_path.relative_to(output_dir).as_posix()
+                            if provenance_path.is_file()
+                            else ""
+                        ),
+                        authoritative=True,
                     ))
-                    console.print(f"  Consolidated COG -> {cog_path.name}")
+                    console.print(f"  {terrain_source_name} -> {cog_path.name}")
                 except Exception as e:
-                    console.print(f"  [yellow]Warning:[/yellow] COG conversion of consolidated terrain failed: {e}")
+                    console.print(
+                        f"  [yellow]Warning:[/yellow] COG conversion of "
+                        f"{terrain_source_name} failed: {e}"
+                    )
                     if not skip_errors:
                         raise
         except Exception as e:
@@ -1014,10 +1216,80 @@ def _tif_crs(tif_path: Path) -> Optional[str]:
     try:
         import rasterio
         with rasterio.open(tif_path) as src:
-            epsg = src.crs.to_epsg() if src.crs else None
-            return f"EPSG:{epsg}" if epsg else None
+            if not src.crs:
+                return None
+            epsg = src.crs.to_epsg()
+            if epsg:
+                return f"EPSG:{epsg}"
+
+            # Older HEC-RAS terrain TIFFs often contain valid ESRI-flavored
+            # WKT that GDAL will use correctly but will not identify directly.
+            # Pyproj's authority matcher handles those legacy definitions.
+            from pyproj import CRS
+
+            authority = CRS.from_wkt(src.crs.to_wkt()).to_authority(
+                min_confidence=25
+            )
+            if authority:
+                return f"{authority[0]}:{authority[1]}"
+            return src.crs.to_string() or None
     except Exception:
         return None
+
+
+def _archive_terrain_tifs(ras, project_dir: Path) -> list[Path]:
+    """Collect unique, existing TIFF terrain sources for archive conversion.
+
+    HEC-RAS projects commonly keep rasmap-referenced terrain in ``Terrain/``,
+    but example projects can also keep it in directories such as ``External
+    Dependencies``.  The detailed rasmap discovery is therefore authoritative
+    in addition to the legacy ``Terrain/`` scan.
+    """
+    terrain_dir = project_dir / "Terrain"
+    candidates: list[Path] = []
+    if terrain_dir.exists():
+        candidates.extend(
+            path
+            for path in terrain_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}
+        )
+
+    for terrain in _discover_terrain_details(ras, project_dir):
+        candidates.extend(terrain.tif_files)
+
+    unique_sources: dict[Path, Path] = {}
+    for source in candidates:
+        tif = Path(source)
+        if not tif.is_absolute():
+            tif = project_dir / tif
+        if tif.suffix.lower() not in {".tif", ".tiff"} or not tif.is_file():
+            continue
+
+        resolved = tif.resolve()
+        unique_sources.setdefault(resolved, resolved)
+
+    return sorted(unique_sources.values(), key=lambda path: path.as_posix().casefold())
+
+
+def _terrain_source_file(tif_path: Path, project_dir: Path) -> str:
+    """Return a project-relative source path when possible for the manifest."""
+    try:
+        return tif_path.resolve().relative_to(project_dir.resolve()).as_posix()
+    except ValueError:
+        return str(tif_path.resolve())
+
+
+def _terrain_cog_path(tif_path: Path, cog_out_dir: Path, used_names: set[str]) -> Path:
+    """Return a stable COG path without overwriting another terrain source."""
+    stem = f"{tif_path.stem}_cog"
+    suffix = 1
+    while True:
+        name = f"{stem}.tif" if suffix == 1 else f"{stem}_{suffix}.tif"
+        key = name.casefold()
+        if key not in used_names:
+            used_names.add(key)
+            return cog_out_dir / name
+        suffix += 1
 
 
 def _detect_ras_version(ras) -> Optional[str]:
@@ -1059,6 +1331,37 @@ def _detect_ras_version(ras) -> Optional[str]:
     return None
 
 
+def _resolve_rasmap_path(project_dir: Path, filename: str) -> Path:
+    """Resolve a RASMapper file reference without relying on host path rules."""
+    normalized = filename.strip().replace("\\", "/")
+    path = Path(normalized)
+    return path if path.is_absolute() else project_dir / path
+
+
+def _terrain_hdf_paths_from_rasmap(rasmap_path: Path, project_dir: Path) -> dict[str, Path]:
+    """Return terrain-layer names mapped to their HDF source paths.
+
+    ``RasPrj.rasmap_df`` stores terrain HDF paths as a list and does not retain
+    the corresponding terrain names.  The XML records are the authoritative
+    source for that association and work for paths such as ``External
+    Dependencies\\Terrain.hdf``.
+    """
+    try:
+        root = ET.parse(rasmap_path).getroot()
+    except (ET.ParseError, OSError):
+        return {}
+
+    paths: dict[str, Path] = {}
+    for layer in root.findall("./Terrains/Layer"):
+        if layer.attrib.get("Type") != "TerrainLayer":
+            continue
+        name = layer.attrib.get("Name", "").strip()
+        filename = layer.attrib.get("Filename", "").strip()
+        if name and filename:
+            paths[name] = _resolve_rasmap_path(project_dir, filename)
+    return paths
+
+
 def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
     """Discover detailed terrain information from rasmap and filesystem.
 
@@ -1074,18 +1377,9 @@ def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
         if rasmap_files:
             terrain_names = RasMap.get_terrain_names(str(rasmap_files[0]))
             if terrain_names:
-                # Get HDF paths from rasmap_df if available
-                hdf_paths: dict[str, Path] = {}
-                if ras.rasmap_df is not None and not ras.rasmap_df.empty:
-                    if "terrain_hdf_path" in ras.rasmap_df.columns:
-                        for _, row in ras.rasmap_df.iterrows():
-                            name = str(row.get("terrain_name", ""))
-                            hdf_p = row.get("terrain_hdf_path")
-                            if hdf_p and str(hdf_p).strip():
-                                p = Path(str(hdf_p))
-                                if not p.is_absolute():
-                                    p = project_dir / p
-                                hdf_paths[name] = p
+                hdf_paths = _terrain_hdf_paths_from_rasmap(
+                    rasmap_files[0], project_dir
+                )
 
                 for name in terrain_names:
                     hdf_path = hdf_paths.get(name)

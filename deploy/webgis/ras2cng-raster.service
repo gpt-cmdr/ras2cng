@@ -1,0 +1,27 @@
+[Unit]
+Description=RAS Commander numeric raster service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rasweb
+Group=rasweb
+WorkingDirectory=/opt/ras2cng
+EnvironmentFile=-/etc/ras2cng/raster-service.env
+Environment=MPLCONFIGDIR=/tmp/matplotlib
+Environment=XDG_CACHE_HOME=/tmp/cache
+ExecStart=/opt/ras2cng/.venv/bin/ras2cng raster-service /srv/rascommander/raster-assets.json /srv/rascommander/data --host 127.0.0.1 --port 8087
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/srv/rascommander
+MemoryHigh=6G
+MemoryMax=8G
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

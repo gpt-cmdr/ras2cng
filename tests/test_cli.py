@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from types import ModuleType
 
 import pytest
@@ -260,13 +261,16 @@ def test_archive_defaults(monkeypatch, tmp_path: Path):
                 "result_variables": None,
                 "results_layout": "plan",
                 "results_geometry": "polygon",
+                "include_auxiliary_results": True,
                 "skip_errors": True,
                 "sort": True,
                 "map_results": False,
                 "consolidate_terrain": False,
+                "terrain_target_resolutions": None,
                 "render_mode": None,
                 "ras_version": None,
                 "rasprocess_path": None,
+                "crs": None,
             },
         }
     ]
@@ -291,12 +295,17 @@ def test_archive_options_and_flag_pairs(monkeypatch, tmp_path: Path):
             "--no-sort",
             "--map",
             "--consolidate-terrain",
+            "--terrain-resolution",
+            "Existing Terrain=5",
+            "--mesh-results-only",
             "--render-mode",
             "slopingPretty",
             "--ras-version",
             "6.6",
             "--rasprocess",
             "C:/RAS",
+            "--crs",
+            "EPSG:2249",
         ],
     )
 
@@ -310,9 +319,12 @@ def test_archive_options_and_flag_pairs(monkeypatch, tmp_path: Path):
     assert kwargs["sort"] is False
     assert kwargs["map_results"] is True
     assert kwargs["consolidate_terrain"] is True
+    assert kwargs["terrain_target_resolutions"] == {"Existing Terrain": 5.0}
+    assert kwargs["include_auxiliary_results"] is False
     assert kwargs["render_mode"] == "slopingPretty"
     assert kwargs["ras_version"] == "6.6"
     assert kwargs["rasprocess_path"] == Path("C:/RAS")
+    assert kwargs["crs"] == "EPSG:2249"
 
 
 def test_archive_no_results_flag_overrides_results(monkeypatch, tmp_path: Path):
@@ -738,6 +750,151 @@ def test_mannings_passes_geometry(monkeypatch, tmp_path: Path):
             "kwargs": {"geometry": "g02"},
         }
     ]
+
+
+def test_raster_calculate_parses_controlled_inputs(monkeypatch, tmp_path: Path):
+    calls = []
+    output = tmp_path / "dv.tif"
+    install_fake_module(
+        monkeypatch,
+        "ras2cng.raster_recipes",
+        run_raster_recipe=call_recorder(
+            calls,
+            "run_raster_recipe",
+            SimpleNamespace(output_path=output, provenance_path=tmp_path / "dv.provenance.json"),
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "raster-calculate",
+            "depth_velocity",
+            str(output),
+            "--input", "depth=depth.tif",
+            "--input", "velocity=velocity.tif",
+            "--input-unit", "depth=ft",
+            "--input-unit", "velocity=ft/s",
+            "--parameter", "threshold=0.5",
+            "--plan", "p03",
+            "--profile", "01JAN2026 12:00:00",
+            "--block-size", "1024",
+            "--hash-assets",
+            "--overwrite",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        {
+            "name": "run_raster_recipe",
+            "args": (
+                "depth_velocity",
+                {"depth": Path("depth.tif"), "velocity": Path("velocity.tif")},
+                output,
+            ),
+            "kwargs": {
+                "input_units": {"depth": "ft", "velocity": "ft/s"},
+                "parameters": {"threshold": 0.5},
+                "plan": "p03",
+                "profile": "01JAN2026 12:00:00",
+                "scratch_dir": None,
+                "block_size": 1024,
+                "hash_assets": True,
+                "overwrite": True,
+            },
+        }
+    ]
+
+
+def test_raster_calculate_rejects_duplicate_roles(tmp_path: Path):
+    result = runner.invoke(
+        app,
+        [
+            "raster-calculate",
+            "compare_depth",
+            str(tmp_path / "out.tif"),
+            "--input", "baseline=a.tif",
+            "--input", "baseline=b.tif",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "more than once" in result.output
+
+
+def test_maplibre_calculated_map_passes_recipe_provenance(monkeypatch, tmp_path: Path):
+    calls = []
+    output = tmp_path / "viewer" / "tiles" / "p03-hazard.pmtiles"
+    monkeypatch.setattr(
+        "ras2cng.maplibre.package_maplibre_calculated_map",
+        call_recorder(
+            calls,
+            "package_maplibre_calculated_map",
+            SimpleNamespace(pmtiles_path=output, layer_id="p03-hazard"),
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "maplibre-calculated-map",
+            str(tmp_path / "hazard.tif"),
+            str(tmp_path / "viewer"),
+            "--plan", "p03",
+            "--recipe", "hazard_class",
+            "--profile", "01JAN2026 12:00:00",
+            "--geometry", "g03",
+            "--provenance", str(tmp_path / "hazard.provenance.json"),
+            "--overwrite",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0]["args"] == (tmp_path / "hazard.tif", tmp_path / "viewer")
+    assert calls[0]["kwargs"]["recipe_id"] == "hazard_class"
+    assert calls[0]["kwargs"]["provenance_path"] == tmp_path / "hazard.provenance.json"
+    assert calls[0]["kwargs"]["overwrite"] is True
+
+
+def test_raster_service_catalog_attaches_manifests(monkeypatch, tmp_path: Path):
+    calls = []
+    output = tmp_path / "raster-assets.json"
+    monkeypatch.setattr(
+        "ras2cng.webgis_service.build_raster_asset_catalog",
+        call_recorder(calls, "build_raster_asset_catalog", output),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "raster-service-catalog",
+            str(tmp_path / "data"),
+            str(output),
+            "--manifest", str(tmp_path / "viewer" / "manifest.json"),
+            "--service-base-url", "/data/ras-raster",
+            "--attach-manifests",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0]["kwargs"]["manifest_paths"] == [tmp_path / "viewer" / "manifest.json"]
+    assert calls[0]["kwargs"]["service_base_url"] == "/data/ras-raster"
+    assert calls[0]["kwargs"]["attach_manifests"] is True
+
+
+def test_raster_service_rejects_non_loopback_listener(tmp_path: Path):
+    result = runner.invoke(
+        app,
+        [
+            "raster-service",
+            str(tmp_path / "catalog.json"),
+            str(tmp_path / "data"),
+            "--host", "0.0.0.0",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "loopback" in result.output
 
 
 def test_precip_routes_to_export_precipitation(monkeypatch, tmp_path: Path):

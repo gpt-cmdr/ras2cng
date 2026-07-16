@@ -649,22 +649,59 @@ def _reproject_tifs(tif_paths: list[Path], target_crs: str) -> list[Path]:
 
 
 def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
-    """Convert TIFFs to Cloud Optimized GeoTIFF using gdal_translate.
+    """Convert result TIFFs to validated Cloud Optimized GeoTIFFs.
 
-    Outputs are written alongside originals with _cog suffix.
+    Rasterio ships with a compatible GDAL runtime, while a system
+    ``gdal_translate`` may be too old to provide the COG driver.  Conversion
+    therefore stays inside that runtime and fails loudly rather than silently
+    returning a non-COG source TIFF.
     """
-    import subprocess
+    import uuid
 
-    converted = []
+    import rasterio
+    from rasterio.enums import MaskFlags
+    from rasterio.shutil import copy as copy_raster
+
+    converted: list[Path] = []
     for tif in tif_paths:
+        tif = Path(tif)
+        if not tif.is_file():
+            raise FileNotFoundError(f"Result raster does not exist: {tif}")
+
         cog_path = tif.parent / f"{tif.stem}_cog{tif.suffix}"
+        staged_path = cog_path.with_name(f".{cog_path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            subprocess.run(
-                ["gdal_translate", "-of", "COG", str(tif), str(cog_path)],
-                check=True, capture_output=True,
+            copy_raster(
+                tif,
+                staged_path,
+                driver="COG",
+                compress="ZSTD",
+                predictor="FLOATING_POINT",
+                blocksize=512,
+                overview_resampling="average",
+                BIGTIFF="IF_SAFER",
+                NUM_THREADS="ALL_CPUS",
             )
+
+            with rasterio.open(staged_path) as source:
+                if max(source.width, source.height) > 512 and not source.is_tiled:
+                    raise ValueError("large COG is not internally tiled")
+                if max(source.width, source.height) > 1024 and not source.overviews(1):
+                    raise ValueError("large COG has no internal overviews")
+                mask_flags = set(source.mask_flag_enums[0]) if source.mask_flag_enums else set()
+                has_mask = (
+                    source.nodata is not None
+                    or MaskFlags.alpha in mask_flags
+                    or MaskFlags.per_dataset in mask_flags
+                )
+                if not has_mask:
+                    raise ValueError("COG has no nodata value or validity mask")
+
+            staged_path.replace(cog_path)
             converted.append(cog_path)
-        except Exception:
-            converted.append(tif)
+        except Exception as error:
+            raise RuntimeError(f"COG conversion failed for {tif}: {error}") from error
+        finally:
+            staged_path.unlink(missing_ok=True)
 
     return converted

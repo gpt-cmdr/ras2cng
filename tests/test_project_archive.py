@@ -83,7 +83,7 @@ def test_manifest_create(tmp_path):
     assert m.project["name"] == "TestProject"
     assert m.project["crs"] == "EPSG:4326"
     assert m.project["plan_count"] == 3
-    assert m.schema_version == "2.3"
+    assert m.schema_version == "2.5"
     assert m.geometry == []
     assert m.results == []
     assert m.terrain == []
@@ -204,7 +204,7 @@ def test_manifest_to_json_is_valid(tmp_path):
     m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
     json_str = m.to_json()
     parsed = json.loads(json_str)
-    assert parsed["schema_version"] == "2.3"
+    assert parsed["schema_version"] == "2.5"
     assert "project" in parsed
     assert "project_parquet" in parsed
 
@@ -312,11 +312,11 @@ def test_archive_geometry_only_creates_flat_parquet(
     assert (archive_out / "manifest.json").exists()
     # No results
     assert not (archive_out / "results").exists()
-    # Manifest v2.3 fields
+    # Manifest v2.5 fields
     assert len(manifest.geometry) >= 1
     assert manifest.geometry[0]["geom_id"] == "g01"
     assert manifest.geometry[0]["parquet"] == "FakeModel.g01.parquet"
-    assert manifest.schema_version == "2.3"
+    assert manifest.schema_version == "2.5"
 
 
 @patch("ras2cng.project.merge_all_layers")
@@ -347,6 +347,135 @@ def test_archive_writes_project_metadata_parquet(
     tables = set(df["_table"].unique())
     assert "plan_df" in tables
     assert "geom_df" in tables
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_terrain_uses_rasmap_sources_outside_terrain_dir(
+    mock_init, mock_merge, tmp_path
+):
+    """Archive rasmap terrain sources even when they are external dependencies."""
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+
+    external_tif = project_dir / "External Dependencies" / "Terrain.tif"
+    external_tif.parent.mkdir()
+    external_tif.write_bytes(b"external terrain")
+    outside_tif = tmp_path / "shared-terrain" / "Terrain.tif"
+    outside_tif.parent.mkdir()
+    outside_tif.write_bytes(b"outside terrain")
+
+    from ras2cng.project import TerrainFileInfo, archive_project
+
+    discovered_terrain = [
+        TerrainFileInfo(
+            name="External Terrain",
+            tif_files=[external_tif, external_tif],
+        ),
+        TerrainFileInfo(name="Shared Terrain", tif_files=[outside_tif]),
+    ]
+
+    def fake_gdal_translate(command, **kwargs):
+        Path(command[-1]).write_bytes(b"cog")
+        return MagicMock()
+
+    with (
+        patch(
+            "ras2cng.project._discover_terrain_details",
+            return_value=discovered_terrain,
+        ),
+        patch(
+            "ras2cng.project.subprocess.run",
+            side_effect=fake_gdal_translate,
+        ) as mock_gdal_translate,
+        patch("ras2cng.project._tif_crs", return_value="EPSG:4326"),
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "archive",
+            include_terrain=True,
+            sort=False,
+        )
+
+    # The duplicate rasmap reference is converted once; same-stem source files
+    # receive distinct COG filenames instead of overwriting one another.
+    assert mock_gdal_translate.call_count == 2
+    assert sorted(entry["cog_file"] for entry in manifest.terrain) == [
+        "terrain/Terrain_cog.tif",
+        "terrain/Terrain_cog_2.tif",
+    ]
+    assert {entry["source_file"] for entry in manifest.terrain} == {
+        "External Dependencies/Terrain.tif",
+        str(outside_tif.resolve()),
+    }
+    assert all((tmp_path / "archive" / entry["cog_file"]).is_file() for entry in manifest.terrain)
+
+
+def test_tif_crs_matches_legacy_wkt_authority(tmp_path):
+    """Legacy HEC-RAS WKT should retain an authority CRS in the manifest."""
+    from pyproj import CRS
+    from ras2cng.project import _tif_crs
+
+    legacy_crs = MagicMock()
+    legacy_crs.to_epsg.return_value = None
+    legacy_crs.to_wkt.return_value = CRS.from_epsg(2965).to_wkt()
+    source = MagicMock()
+    source.__enter__.return_value.crs = legacy_crs
+
+    with patch("rasterio.open", return_value=source):
+        assert _tif_crs(tmp_path / "terrain.tif") == "EPSG:2965"
+
+
+def test_discover_terrain_details_resolves_external_rasmap_tiff(tmp_path):
+    """Terrain HDFs under External Dependencies retain their named TIFF source."""
+    project_dir = tmp_path / "Chippewa"
+    project_dir.mkdir()
+    external_dir = project_dir / "External Dependencies"
+    external_dir.mkdir()
+    terrain_hdf = external_dir / "100ft.hdf"
+    terrain_hdf.write_bytes(b"terrain hdf")
+    terrain_tif = external_dir / "100ft.test1d.tif"
+    terrain_tif.write_bytes(b"terrain tif")
+    (project_dir / "Chippewa.rasmap").write_text(
+        r'<RASMapper><Terrains><Layer Name="100ft" Type="TerrainLayer" '
+        r'Filename=".\External Dependencies\100ft.hdf" /></Terrains></RASMapper>',
+        encoding="utf-8",
+    )
+
+    from ras2cng.project import _discover_terrain_details
+
+    ras = MagicMock()
+    ras.rasmap_df = pd.DataFrame()
+    details = _discover_terrain_details(ras, project_dir)
+
+    assert len(details) == 1
+    assert details[0].name == "100ft"
+    assert details[0].hdf_path == terrain_hdf
+    assert details[0].tif_files == [terrain_tif]
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_uses_verified_crs_override_for_unprojected_geometry(
+    mock_init, mock_merge, tmp_path
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf().set_crs(None, allow_override=True)
+
+    from ras2cng.project import archive_project
+
+    manifest = archive_project(
+        project_dir / "FakeModel.prj",
+        tmp_path / "archive",
+        crs="EPSG:2249",
+        sort=False,
+    )
+
+    geometry = gpd.read_parquet(tmp_path / "archive" / "FakeModel.g01.parquet")
+    assert manifest.project["crs"] == "EPSG:2249"
+    assert geometry.crs.to_epsg() == 2249
 
 
 @patch("ras2cng.project.merge_all_layers")
@@ -443,6 +572,102 @@ def test_archive_results_variable_layout_writes_attribute_tables(
     assert manifest.results[0]["variables"][0]["index_column"] == "cell_id"
     assert manifest.results[0]["variables"][0]["geometry_filter"] == "mesh_cells"
     assert "geometry" not in pd.read_parquet(variable_path).columns
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_steady_results_write_profiled_cross_section_attributes(
+    mock_init, mock_merge, tmp_path
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+    (project_dir / "FakeModel.p01.hdf").touch()
+    steady_results = pd.DataFrame(
+        {
+            "river": ["River A", "River A"],
+            "reach": ["Reach A", "Reach A"],
+            "node_id": ["1000", "1000"],
+            "profile": ["10-percent AEP", "1-percent AEP"],
+            "wsel": [101.0, 102.0],
+            "flow": [1000.0, 1500.0],
+        }
+    )
+
+    from ras2cng.project import archive_project
+
+    with patch(
+        "ras2cng.results.extract_steady_cross_section_results",
+        return_value=steady_results,
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "out",
+            include_results=True,
+            results_layout="variable",
+            results_geometry="none",
+            sort=False,
+        )
+
+    result_path = tmp_path / "out" / "results" / "p01" / "steady_cross_sections.parquet"
+    assert result_path.is_file()
+    variable = manifest.results[0]["variables"][0]
+    assert variable["geometry_filter"] == "cross_sections"
+    assert variable["join_columns"] == {"River": "river", "Reach": "reach", "RS": "node_id"}
+    assert variable["profile_column"] == "profile"
+    assert variable["source"] == "Raw HEC-RAS HDF steady cross-section result values"
+    assert pd.read_parquet(result_path)["profile"].tolist() == ["10-percent AEP", "1-percent AEP"]
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_records_auxiliary_pipe_result_join_metadata(mock_init, mock_merge, tmp_path):
+    from ras2cng.project import archive_project
+    from ras2cng.results import AuxiliaryResultTable
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+    (project_dir / "FakeModel.p01.hdf").touch()
+    pipe_results = pd.DataFrame(
+        {
+            "network_name": ["Davis"],
+            "conduit_id": [0],
+            "maximum_pipe_flow_ds": [42.0],
+        }
+    )
+    auxiliary = AuxiliaryResultTable(
+        variable="pipe_conduits_summary",
+        frame=pipe_results,
+        geometry_filter="pipe_conduits",
+        join_columns={"System Name": "network_name", "conduit_id": "conduit_id"},
+        source="Raw HEC-RAS HDF pipe-network time-series summary values",
+    )
+
+    with (
+        patch("ras2cng.results.merge_all_variables", return_value=None),
+        patch("ras2cng.results.extract_auxiliary_result_tables", return_value=[auxiliary]),
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "out",
+            include_results=True,
+            results_layout="variable",
+            results_geometry="none",
+            sort=False,
+        )
+
+    variable = next(
+        value for value in manifest.results[0]["variables"]
+        if value["variable"] == "pipe_conduits_summary"
+    )
+    assert variable["geometry_filter"] == "pipe_conduits"
+    assert variable["join_columns"] == {
+        "System Name": "network_name",
+        "conduit_id": "conduit_id",
+    }
+    assert variable["parquet"] == "results/p01/pipe_conduits_summary.parquet"
+    assert variable["source"].startswith("Raw HEC-RAS HDF pipe-network")
 
 
 # ---------------------------------------------------------------------------

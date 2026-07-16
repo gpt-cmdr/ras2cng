@@ -58,7 +58,7 @@ ras2cng spatial-index ./archive/
 Output structure (consolidated parquet per source file):
 ```
 archive/
-├── manifest.json              # Project catalog (schema v2.3, index metadata)
+├── manifest.json              # Project catalog (schema v2.5, index and terrain metadata)
 ├── MyProject.parquet          # Project metadata (RasPrj dataframes, _table column)
 ├── MyProject.g01.parquet      # All geometry from g01 (HDF + text), layer column
 ├── MyProject.g06.parquet      # All geometry from g06

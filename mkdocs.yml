@@ -104,6 +104,9 @@ nav:
     - Precipitation Export: user-guide/precipitation-export.md
     - DuckDB Queries: user-guide/duckdb-queries.md
     - PMTiles Generation: user-guide/pmtiles.md
+    - MapLibre Project Bundles: user-guide/maplibre.md
+    - Controlled Raster Recipes: user-guide/raster-recipes.md
+    - Numeric Raster Service: user-guide/numeric-raster-service.md
     - PostGIS Sync: user-guide/postgis-sync.md
     - Linux/Wine Setup: user-guide/linux-wine-setup.md
   - Examples:
@@ -129,6 +132,9 @@ nav:
     - terrain: api/terrain.md
     - duckdb_session: api/duckdb_session.md
     - pmtiles: api/pmtiles.md
+    - maplibre: api/maplibre.md
+    - raster_recipes: api/raster_recipes.md
+    - webgis_service: api/webgis_service.md
     - postgis_sync: api/postgis_sync.md
   - About:
     - CLB Engineering: about/clb-engineering.md

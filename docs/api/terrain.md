@@ -4,11 +4,12 @@ Terrain discovery and consolidation for HEC-RAS projects.
 
 ## Overview
 
-The `terrain` module discovers terrain layers from a HEC-RAS project's rasmap configuration and can consolidate multiple terrain TIFFs into a single merged raster. This is useful for:
+The `terrain` module discovers named terrain layers from a HEC-RAS project's rasmap configuration and consolidates each surface's TIFF members independently. This is useful for:
 
 - **Inspecting terrain configuration**: Enumerate all terrain layers, their CRS, resolution, and file locations
-- **Consolidating terrain**: Merge multiple terrain tiles into a single file for simplified workflows
-- **Downsampling**: Reduce terrain resolution for faster mapping or smaller file sizes
+- **Consolidating terrain**: Merge the TIFF members of each named terrain into its own authoritative file
+- **Downsampling without upsampling**: Select a whole native-cell multiple with a 5 ft publication floor
+- **Publishing source construction**: Export source TIFF footprints and terrain-modification vectors
 - **Creating HEC-RAS terrain HDFs**: Generate new terrain HDF files via RasProcess.exe (required for result mapping)
 
 ## How Terrain Discovery Works
@@ -33,9 +34,9 @@ TIF files are associated with a terrain by matching the file stem against the te
 ## How Terrain Consolidation Works
 
 1. **Discover** terrain TIFs from rasmap (priority ordered)
-2. **Harmonize CRS**: If TIFs have different but equivalent CRS representations, reprojects to match the first TIF's CRS
-3. **Merge** via `rasterio.merge.merge(method='first')` — first terrain wins in overlapping areas
-4. **Optionally downsample** — reduce resolution by a factor or to a target cell size
+2. **Keep terrain names separate**: different named RASMapper terrains are never merged implicitly
+3. **Choose a target grid**: preserve native resolution at or above 5 ft; otherwise use the smallest whole native-cell multiple at or above 5 ft
+4. **Merge by windows**: reproject each member to the target grid and let the first RASMapper source win in overlaps without allocating the full mosaic in memory
 5. **Optionally create HEC-RAS terrain HDF** via `RasTerrain.create_terrain_from_rasters()` (requires RasProcess.exe)
 6. **Optionally register** the new terrain in the project's rasmap
 
@@ -52,5 +53,17 @@ Steps 5-6 require RasProcess.exe (Windows or Wine). Steps 1-4 are pure Python (r
       show_source: true
 
 ::: ras2cng.terrain.consolidate_terrain
+    options:
+      show_source: true
+
+::: ras2cng.terrain.consolidate_project_terrains
+    options:
+      show_source: true
+
+::: ras2cng.terrain.extract_terrain_source_footprints
+    options:
+      show_source: true
+
+::: ras2cng.terrain.extract_terrain_modification_layers
     options:
       show_source: true

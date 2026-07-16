@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pyarrow as pa
@@ -198,13 +198,96 @@ def _can_spatial_join(geometry_path: Path, *, geometry_filter: str, key_column: 
 def postprocess_result_table(
     path: Path,
     *,
-    key_column: str,
+    key_column: str = "",
+    join_columns: Mapping[str, str] | None = None,
     geometry_path: Path | None = None,
     geometry_filter: str = "",
 ) -> dict[str, Any]:
     """Sort/index one geometryless result parquet table."""
     path = Path(path)
     columns = _parquet_columns(path)
+    join_columns = dict(join_columns or {})
+    if not key_column and join_columns:
+        result_keys = list(join_columns.values())
+        missing_result = [column for column in result_keys if column not in columns]
+        geometry_columns = set(_parquet_columns(geometry_path)) if geometry_path and geometry_path.exists() else set()
+        missing_geometry = [column for column in join_columns if column not in geometry_columns]
+        if missing_result:
+            return {
+                "path": path.name,
+                "status": "skipped",
+                "reason": "missing result composite key: " + ", ".join(missing_result),
+            }
+
+        def normalized(alias: str, column: str) -> str:
+            return (
+                f"trim(CAST({_quote_identifier(alias)}.{_quote_identifier(column)} AS VARCHAR))"
+            )
+
+        result_order = ", ".join(normalized("r", column) for column in result_keys)
+        result_columns = _select_columns(columns, alias="r", exclude=INDEX_COLUMNS)
+        join_index_expr = (
+            f"row_number() OVER (ORDER BY {result_order}) - 1 "
+            f"AS {_quote_identifier(JOIN_INDEX_COLUMN)}"
+        )
+        can_spatial_join = (
+            bool(geometry_filter)
+            and geometry_path is not None
+            and geometry_path.exists()
+            and not missing_geometry
+            and {"layer", HILBERT_COLUMN}.issubset(geometry_columns)
+        )
+        if can_spatial_join:
+            geometry_key_select = ", ".join(
+                f"{normalized('source', geometry_column)} AS _join_key_{index}"
+                for index, geometry_column in enumerate(join_columns)
+            )
+            geometry_key_names = ", ".join(
+                f"_join_key_{index}" for index in range(len(join_columns))
+            )
+            join_predicate = " AND ".join(
+                f"{normalized('r', result_column)} = {_quote_identifier('g')}._join_key_{index}"
+                for index, result_column in enumerate(result_keys)
+            )
+            query = (
+                f"SELECT {result_columns}, {join_index_expr}, "
+                f"{_quote_identifier('g')}.{_quote_identifier(HILBERT_COLUMN)} "
+                f"AS {_quote_identifier(HILBERT_COLUMN)} "
+                f"FROM read_parquet({_sql_literal(path)}) AS {_quote_identifier('r')} "
+                "LEFT JOIN ("
+                f"SELECT {geometry_key_select}, "
+                f"min({_quote_identifier(HILBERT_COLUMN)}) AS {_quote_identifier(HILBERT_COLUMN)} "
+                f"FROM read_parquet({_sql_literal(geometry_path)}) AS {_quote_identifier('source')} "
+                f"WHERE {_quote_identifier('layer')} = {_sql_literal(geometry_filter)} "
+                f"GROUP BY {geometry_key_names}"
+                f") AS {_quote_identifier('g')} ON {join_predicate} "
+                f"ORDER BY {_quote_identifier('g')}.{_quote_identifier(HILBERT_COLUMN)} NULLS LAST, "
+                f"{result_order}"
+            )
+            status = "spatial_join"
+            sort_order = HILBERT_COLUMN
+        else:
+            query = (
+                f"SELECT {result_columns}, {join_index_expr} "
+                f"FROM read_parquet({_sql_literal(path)}) AS {_quote_identifier('r')} "
+                f"ORDER BY {result_order}"
+            )
+            status = "join_key"
+            sort_order = ",".join(result_keys)
+
+        tmp_path = _duckdb_copy(query, path)
+        tmp_path.replace(path)
+        metadata = pq.ParquetFile(path).metadata
+        return {
+            "path": path.name,
+            "rows": int(metadata.num_rows),
+            "row_groups": int(metadata.num_row_groups),
+            "status": status,
+            "sort_order": sort_order,
+            "hilbert_index": HILBERT_COLUMN if status == "spatial_join" else "",
+            "join_index": JOIN_INDEX_COLUMN,
+        }
+
     if "mesh_name" not in columns or key_column not in columns:
         return {
             "path": path.name,
@@ -340,13 +423,15 @@ def postprocess_archive(
             if variable_path is None or not variable_path.exists():
                 continue
             key_column = variable.get("index_column") or ""
-            if not key_column:
+            join_columns = variable.get("join_columns") or {}
+            if not key_column and not join_columns:
                 variable["index_status"] = "skipped"
                 continue
             try:
                 result = postprocess_result_table(
                     variable_path,
                     key_column=key_column,
+                    join_columns=join_columns,
                     geometry_path=geom_path,
                     geometry_filter=variable.get("geometry_filter") or "",
                 )

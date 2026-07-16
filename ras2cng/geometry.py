@@ -15,7 +15,17 @@ from typing import Optional
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from ras_commander.hdf import HdfMesh, HdfXsec, HdfBndry, HdfStruc
+from ras_commander.hdf import (
+    HdfBase,
+    HdfBndry,
+    HdfInfiltration,
+    HdfLandCover,
+    HdfMesh,
+    HdfPipe,
+    HdfPump,
+    HdfStruc,
+    HdfXsec,
+)
 from ras_commander.geom import GeomParser
 from ras_commander.geom import GeomStorage
 
@@ -32,6 +42,8 @@ HDF_LAYERS: dict[str, tuple] = {
     "mesh_areas":           (HdfMesh, "get_mesh_areas"),
     "cross_sections":       (HdfXsec, "get_cross_sections"),
     "centerlines":          (HdfXsec, "get_river_centerlines"),
+    "river_reaches":        (HdfXsec, "get_river_reaches"),
+    "edge_lines":           (HdfXsec, "get_river_edge_lines"),
     "bank_lines":           (HdfXsec, "get_river_bank_lines"),
     "bc_lines":             (HdfBndry, "get_bc_lines"),
     "breaklines":           (HdfBndry, "get_breaklines"),
@@ -39,11 +51,18 @@ HDF_LAYERS: dict[str, tuple] = {
     "reference_lines":      (HdfBndry, "get_reference_lines"),
     "reference_points":     (HdfBndry, "get_reference_points"),
     "structures":           (HdfStruc, "get_structures"),
+    "storage_areas":        (HdfStruc, "get_storage_area_polygons"),
+    "pipe_conduits":        (HdfPipe, "get_pipe_conduits"),
+    "pipe_nodes":           (HdfPipe, "get_pipe_nodes"),
+    "pump_stations":        (HdfPump, "get_pump_stations"),
+    "mannings_n_regions":   (HdfLandCover, "get_mannings_region_polygons"),
+    "infiltration_regions": (HdfInfiltration, "get_infiltration_region_polygons"),
 }
 
 # All known layer names (for validation / documentation)
 ALL_HDF_LAYERS = list(HDF_LAYERS.keys())
 ALL_TEXT_LAYERS = ["cross_sections", "centerlines", "storage_areas"]
+_PIPE_HDF_LAYERS = {"pipe_conduits", "pipe_nodes"}
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +161,25 @@ def _extract_hdf_layer(hdf_path: Path, layer: str) -> Optional[object]:
 
     cls, method_name = HDF_LAYERS[layer]
     try:
-        gdf = getattr(cls, method_name)(hdf_path)
+        if layer in _PIPE_HDF_LAYERS:
+            # HdfPipe does not infer CRS from geometry HDF files. Passing the
+            # HDF projection preserves native model coordinates rather than
+            # silently assigning its legacy EPSG:4326 default.
+            gdf = getattr(cls, method_name)(
+                hdf_path,
+                crs=HdfBase.get_projection(hdf_path),
+            )
+        else:
+            gdf = getattr(cls, method_name)(hdf_path)
         if len(gdf) > 0:
+            if gdf.geometry.name != "geometry":
+                gdf = gdf.rename_geometry("geometry")
+            if layer == "pipe_conduits" and "conduit_id" not in gdf.columns:
+                gdf.insert(0, "conduit_id", range(len(gdf)))
+            elif layer == "pipe_nodes" and "node_id" not in gdf.columns:
+                gdf.insert(0, "node_id", range(len(gdf)))
+            elif layer == "pump_stations" and "station_id" not in gdf.columns:
+                gdf.insert(0, "station_id", range(len(gdf)))
             return gdf
     except Exception as e:
         print(f"Warning: Could not extract '{layer}': {e}")
@@ -165,10 +201,13 @@ def export_geometry_layers(
     Args:
         geom_input: Path to *.g?? or *.g??.hdf
         output: Output GeoParquet path
-        layer: Layer name (mesh_cells, mesh_faces, cross_sections, centerlines,
-               bank_lines, bc_lines, breaklines, refinement_regions,
-               reference_lines, reference_points, structures, mesh_areas,
-               storage_areas). None = auto-select best.
+        layer: Layer name (mesh_cells, mesh_faces, mesh_areas, cross_sections,
+               centerlines, bank_lines, bc_lines, breaklines,
+               refinement_regions, reference_lines, reference_points,
+               river_reaches, edge_lines, structures, storage_areas,
+               pipe_conduits, pipe_nodes, pump_stations, mannings_n_regions,
+               infiltration_regions).
+               None = auto-select best.
         out_crs: Output CRS (e.g. "EPSG:4326"). If set and differs from data
                  CRS, the GeoDataFrame is reprojected before writing.
     """
@@ -346,7 +385,7 @@ def export_all_text_layers(
 # ---------------------------------------------------------------------------
 
 def _hilbert_sort(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Sort GeoDataFrame rows by Hilbert curve index of geometry centroid.
+    """Sort GeoDataFrame rows by Hilbert curve index of geometry bounds center.
 
     Uses DuckDB's hilbert_encode(). Falls back to original order if DuckDB
     is not installed or sorting fails.
@@ -360,11 +399,11 @@ def _hilbert_sort(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         return gdf
 
     try:
-        centroids = gdf.geometry.centroid
+        bounds = gdf.geometry.bounds
         pts = pd.DataFrame({
             "_row_idx": range(len(gdf)),
-            "_x": centroids.x.values,
-            "_y": centroids.y.values,
+            "_x": ((bounds.minx + bounds.maxx) / 2).values,
+            "_y": ((bounds.miny + bounds.maxy) / 2).values,
         })
         con = duckdb.connect()
         order = con.execute(

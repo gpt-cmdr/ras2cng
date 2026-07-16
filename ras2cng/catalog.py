@@ -15,7 +15,7 @@ from typing import Optional
 
 
 # Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "2.5"
 
 
 @dataclass
@@ -55,6 +55,9 @@ class ManifestResultVariable:
     geometry_mode: str = ""   # polygon, point, or none
     index_column: str = ""    # cell_id or face_id when the result can join geometry
     geometry_filter: str = "" # mesh_cells or mesh_faces for viewer-side joins
+    join_columns: dict[str, str] = field(default_factory=dict)  # geometry column -> result column
+    profile_column: str = ""  # Split raw rows into one browser layer per profile
+    source: str = ""          # Clear provenance for browser result identification
     hilbert_index: str = ""   # Column name when spatially indexed
     join_index: str = ""      # Column name when join-key indexed
     sort_order: str = ""      # Persisted sort order description
@@ -88,6 +91,29 @@ class ManifestTerrainEntry:
     cog_file: str
     size_bytes: int
     crs: Optional[str]
+    terrain_name: str = ""
+    source_files: list[str] = field(default_factory=list)
+    target_resolution: Optional[float] = None
+    horizontal_units: str = ""
+    provenance_file: str = ""
+    authoritative: bool = False
+
+
+@dataclass
+class ManifestTerrainModificationEntry:
+    """Vector construction layers associated with one named terrain."""
+
+    terrain_name: str
+    source_hdf: str
+    layers: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class ManifestTerrainSourceEntry:
+    """Native TIFF source footprints for one named terrain."""
+
+    terrain_name: str
+    layers: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -96,6 +122,7 @@ class ManifestMapEntry:
     plan_id: str
     profile: str
     rasters: list[dict] = field(default_factory=list)  # [{type, file, size_bytes}]
+    vectors: list[dict] = field(default_factory=list)
     min_depth: float = 0.0
     reprojected_wgs84: bool = False
 
@@ -109,6 +136,8 @@ class Manifest:
     geometry: list[dict] = field(default_factory=list)
     results: list[dict] = field(default_factory=list)
     terrain: list[dict] = field(default_factory=list)
+    terrain_modifications: list[dict] = field(default_factory=list)
+    terrain_sources: list[dict] = field(default_factory=list)
     maps: list[dict] = field(default_factory=list)
     postprocessing: dict = field(default_factory=dict)
     schema_version: str = SCHEMA_VERSION
@@ -153,6 +182,12 @@ class Manifest:
     def add_terrain_entry(self, entry: ManifestTerrainEntry) -> None:
         self.terrain.append(asdict(entry))
 
+    def add_terrain_modification_entry(self, entry: ManifestTerrainModificationEntry) -> None:
+        self.terrain_modifications.append(asdict(entry))
+
+    def add_terrain_source_entry(self, entry: ManifestTerrainSourceEntry) -> None:
+        self.terrain_sources.append(asdict(entry))
+
     def add_map_entry(self, entry: ManifestMapEntry) -> None:
         self.maps.append(asdict(entry))
 
@@ -168,6 +203,8 @@ class Manifest:
             "geometry": self.geometry,
             "results": self.results,
             "terrain": self.terrain,
+            "terrain_modifications": self.terrain_modifications,
+            "terrain_sources": self.terrain_sources,
         }
         if self.maps:
             d["maps"] = self.maps
@@ -193,6 +230,8 @@ class Manifest:
             geometry=data.get("geometry", []),
             results=data.get("results", []),
             terrain=data.get("terrain", []),
+            terrain_modifications=data.get("terrain_modifications", []),
+            terrain_sources=data.get("terrain_sources", []),
             maps=data.get("maps", []),
             postprocessing=data.get("postprocessing", {}),
             schema_version=data.get("schema_version", SCHEMA_VERSION),

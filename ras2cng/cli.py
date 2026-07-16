@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List, Optional
 
@@ -75,6 +76,11 @@ def archive_command(
         "--results-geometry",
         help="Results geometry mode: polygon, point, or none",
     ),
+    auxiliary_results: bool = typer.Option(
+        True,
+        "--auxiliary-results/--mesh-results-only",
+        help="Include reference, structure, pump, and pipe raw result summaries",
+    ),
     skip_errors: bool = typer.Option(
         True, "--skip-errors/--fail-fast", help="Skip individual layer errors vs abort"
     ),
@@ -85,7 +91,14 @@ def archive_command(
         False, "--map/--no-map", help="Generate result rasters via RasStoreMapHelper"
     ),
     consolidate_terrain: bool = typer.Option(
-        False, "--consolidate-terrain", help="Merge terrains into single COG"
+        False,
+        "--consolidate-terrain",
+        help="Create one authoritative COG per named terrain",
+    ),
+    terrain_resolution: list[str] = typer.Option(
+        [],
+        "--terrain-resolution",
+        help="Explicit named-terrain cell size as NAME=VALUE; repeat as needed",
     ),
     render_mode: Optional[str] = typer.Option(
         None, "--render-mode", help="Water surface render mode: horizontal, sloping, slopingPretty"
@@ -95,6 +108,11 @@ def archive_command(
     ),
     rasprocess: Optional[Path] = typer.Option(
         None, "--rasprocess", help="Path to HEC-RAS install directory (for helper deployment)"
+    ),
+    crs: Optional[str] = typer.Option(
+        None,
+        "--crs",
+        help="Validated project CRS override when it is absent from source HDF files",
     ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
@@ -110,6 +128,17 @@ def archive_command(
 
     plans_list = [p.strip() for p in plans.split(",")] if plans else None
     result_variables_list = [v.strip() for v in result_variables.split(",")] if result_variables else None
+    terrain_targets: dict[str, float] = {}
+    for item in terrain_resolution:
+        name, separator, raw_value = item.partition("=")
+        if not separator or not name.strip() or not raw_value.strip():
+            Console().print("[red]ERROR:[/red] --terrain-resolution must use NAME=VALUE syntax")
+            raise typer.Exit(2)
+        try:
+            terrain_targets[name.strip()] = float(raw_value)
+        except ValueError:
+            Console().print(f"[red]ERROR:[/red] Invalid terrain resolution: {item}")
+            raise typer.Exit(2)
 
     try:
         archive_project(
@@ -122,13 +151,16 @@ def archive_command(
             result_variables=result_variables_list,
             results_layout=results_layout,
             results_geometry=results_geometry,
+            include_auxiliary_results=auxiliary_results,
             skip_errors=skip_errors,
             sort=not no_sort,
             map_results=map_results,
             consolidate_terrain=consolidate_terrain,
+            terrain_target_resolutions=terrain_targets or None,
             render_mode=render_mode,
             ras_version=ras_version,
             rasprocess_path=rasprocess,
+            crs=crs,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -177,7 +209,8 @@ def export_geometry(
         help=(
             "Geometry layer: mesh_cells, mesh_faces, mesh_areas, cross_sections, "
             "centerlines, bank_lines, bc_lines, breaklines, refinement_regions, "
-            "reference_lines, reference_points, structures, storage_areas"
+            "reference_lines, reference_points, structures, pipe_conduits, "
+            "pipe_nodes, storage_areas"
         ),
     ),
     out_crs: Optional[str] = typer.Option(
@@ -372,6 +405,578 @@ def generate_pmtiles(
     except Exception as e:
         console.print(f"[red]ERROR:[/red] {e}")
         raise typer.Exit(1)
+
+
+@app.command("maplibre")
+def maplibre_command(
+    archive_dir: Path = typer.Argument(..., help="ras2cng archive directory containing manifest.json"),
+    output: Path = typer.Argument(..., help="Empty output directory for the MapLibre viewer bundle"),
+    geometry_hdf: List[str] = typer.Option(
+        ...,
+        "--geometry-hdf",
+        help="Original geometry HDF mapping, repeat as g01=path/to/model.g01.hdf",
+    ),
+    title: Optional[str] = typer.Option(None, "--title", help="Viewer title (default: archive project title)"),
+    source_project: Optional[str] = typer.Option(
+        None,
+        "--source-project",
+        help="Public project metadata URL or relative path",
+    ),
+    crs: Optional[str] = typer.Option(
+        None,
+        "--crs",
+        help="Validated project CRS override when it is absent from the geometry HDF",
+    ),
+    vector_results: bool = typer.Option(
+        False,
+        "--vector-results/--geometry-only",
+        help="Publish raw HDF vector result values joined to source geometry",
+    ),
+    primary_geometry: Optional[str] = typer.Option(
+        None,
+        "--primary-geometry",
+        help="Geometry ID enabled initially, such as g02",
+    ),
+    scratch_dir: Optional[Path] = typer.Option(
+        None,
+        "--scratch-dir",
+        help="Large local scratch directory for temporary GeoJSON and Tippecanoe work files",
+    ),
+    min_zoom: int = typer.Option(0, "--min-zoom", help="Tippecanoe minimum zoom"),
+    max_zoom: int = typer.Option(17, "--max-zoom", help="Tippecanoe maximum zoom"),
+):
+    """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
+
+    Geometry HDF mappings are required so model footprints come from
+    ``HdfProject.get_project_extent(geometry_type='footprint')``. Raster
+    results are deliberately excluded; publish RasProcess stored-map COGs in a
+    later raster-results step.
+    """
+
+    from ras2cng.maplibre import package_maplibre_viewer
+
+    mappings: dict[str, Path] = {}
+    for item in geometry_hdf:
+        if "=" not in item:
+            console.print("[red]ERROR:[/red] --geometry-hdf must use geom_id=path syntax")
+            raise typer.Exit(2)
+        geom_id, raw_path = item.split("=", 1)
+        geom_id = geom_id.strip()
+        if not geom_id or not raw_path.strip():
+            console.print("[red]ERROR:[/red] --geometry-hdf must use geom_id=path syntax")
+            raise typer.Exit(2)
+        mappings[geom_id] = Path(raw_path.strip())
+
+    try:
+        summary = package_maplibre_viewer(
+            archive_dir,
+            output,
+            geometry_hdfs=mappings,
+            title=title,
+            source_project=source_project,
+            crs=crs,
+            include_vector_results=vector_results,
+            primary_geometry=primary_geometry,
+            scratch_dir=scratch_dir,
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+        )
+        console.print(
+            "[green]OK[/green] MapLibre bundle created: "
+            f"{summary.geometry_layer_count} geometry layer(s), "
+            f"{summary.result_layer_count} raw result layer(s)"
+        )
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("maplibre-terrain")
+def maplibre_terrain_command(
+    cog_path: Path = typer.Argument(..., help="Archived HEC-RAS terrain Cloud Optimized GeoTIFF"),
+    viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory containing manifest.json"),
+    name: str = typer.Option("Terrain", "--name", help="Terrain layer display name"),
+    source_cog: Optional[str] = typer.Option(
+        None,
+        "--source-cog",
+        help="Source COG href relative to the viewer manifest (for exact identify values)",
+    ),
+    units: str = typer.Option("ft", "--units", help="Elevation units shown in identify results"),
+    max_zoom: Optional[int] = typer.Option(
+        None,
+        "--max-zoom",
+        help="Maximum display zoom; never exceeds the terrain's native resolution",
+    ),
+    scratch_dir: Optional[Path] = typer.Option(
+        None,
+        "--scratch-dir",
+        help="Large local scratch directory for colorization and raster tile generation",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace an existing terrain layer"),
+):
+    """Publish a RAS-styled, queryable terrain layer into an existing viewer."""
+
+    from ras2cng.maplibre import package_maplibre_terrain
+
+    try:
+        summary = package_maplibre_terrain(
+            cog_path,
+            viewer_dir,
+            name=name,
+            source_cog=source_cog,
+            units=units,
+            max_zoom=max_zoom,
+            scratch_dir=scratch_dir,
+            overwrite=overwrite,
+        )
+        console.print(
+            "[green]OK[/green] Terrain PMTiles created: "
+            f"{summary.pmtiles_path} (maximum native zoom {summary.max_zoom})"
+        )
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("maplibre-stored-map")
+def maplibre_stored_map_command(
+    cog_path: Path = typer.Argument(..., help="Numeric RASMapper Stored Map COG"),
+    viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory"),
+    plan: str = typer.Option(..., "--plan", help="Source plan identifier, such as p03"),
+    map_type: str = typer.Option(..., "--map-type", help="RASMapper map type, such as Depth or Velocity"),
+    name: Optional[str] = typer.Option(None, "--name", help="Layer display name"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Profile, summary, or time label"),
+    geometry: Optional[str] = typer.Option(None, "--geometry", help="Associated geometry identifier"),
+    layer_id: Optional[str] = typer.Option(None, "--layer-id", help="Stable manifest layer identifier"),
+    source_cog: Optional[str] = typer.Option(
+        None,
+        "--source-cog",
+        help="Public or manifest-relative numeric COG href used by Identify",
+    ),
+    units: str = typer.Option("ft", "--units", help="Result units shown in legends and Identify"),
+    visible: bool = typer.Option(False, "--visible/--hidden", help="Initial layer visibility"),
+    domain_policy: str = typer.Option(
+        "fixed",
+        "--domain-policy",
+        help="Legend domain policy: fixed or current-view",
+    ),
+    max_zoom: Optional[int] = typer.Option(
+        None,
+        "--max-zoom",
+        help="Maximum display zoom; never exceeds native raster resolution",
+    ),
+    scratch_dir: Optional[Path] = typer.Option(
+        None,
+        "--scratch-dir",
+        help="Large local scratch directory for colorization and raster tiling",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace the layer and display derivative"),
+):
+    """Publish a queryable RASMapper Stored Map under its source plan."""
+
+    from ras2cng.maplibre import package_maplibre_stored_map
+
+    try:
+        summary = package_maplibre_stored_map(
+            cog_path,
+            viewer_dir,
+            plan=plan,
+            map_type=map_type,
+            name=name,
+            profile=profile,
+            geometry=geometry,
+            layer_id=layer_id,
+            source_cog=source_cog,
+            units=units,
+            visible=visible,
+            domain_policy=domain_policy,
+            max_zoom=max_zoom,
+            scratch_dir=scratch_dir,
+            overwrite=overwrite,
+        )
+        console.print(
+            "[green]OK[/green] Stored Map PMTiles created: "
+            f"{summary.pmtiles_path} ({summary.layer_id})"
+        )
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("maplibre-stored-vector")
+def maplibre_stored_vector_command(
+    vector_path: Path = typer.Argument(..., help="RASMapper Stored Map vector GeoParquet or GIS file"),
+    viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory"),
+    plan: str = typer.Option(..., "--plan", help="Source plan identifier, such as p03"),
+    map_type: str = typer.Option(..., "--map-type", help="RASMapper vector map type"),
+    name: Optional[str] = typer.Option(None, "--name", help="Layer display name"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Profile, summary, or time label"),
+    geometry: Optional[str] = typer.Option(None, "--geometry", help="Associated geometry identifier"),
+    layer_id: Optional[str] = typer.Option(None, "--layer-id", help="Stable manifest layer identifier"),
+    crs: Optional[str] = typer.Option(None, "--crs", help="Validated source CRS fallback"),
+    visible: bool = typer.Option(False, "--visible/--hidden", help="Initial layer visibility"),
+    min_zoom: int = typer.Option(0, "--min-zoom", help="Tippecanoe minimum zoom"),
+    max_zoom: int = typer.Option(17, "--max-zoom", help="Tippecanoe maximum zoom"),
+    scratch_dir: Optional[Path] = typer.Option(None, "--scratch-dir", help="Large local scratch directory"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace the layer and PMTiles derivative"),
+):
+    """Publish a queryable RASMapper vector Stored Map under its source plan."""
+
+    from ras2cng.maplibre import package_maplibre_stored_vector
+
+    try:
+        summary = package_maplibre_stored_vector(
+            vector_path,
+            viewer_dir,
+            plan=plan,
+            map_type=map_type,
+            name=name,
+            profile=profile,
+            geometry=geometry,
+            layer_id=layer_id,
+            crs=crs,
+            visible=visible,
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+            scratch_dir=scratch_dir,
+            overwrite=overwrite,
+        )
+        Console().print(
+            f"[green]OK[/green] Stored Map vector PMTiles created: "
+            f"{summary.pmtiles_path} ({summary.layer_id})"
+        )
+    except Exception as error:
+        Console().print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
+@app.command("maplibre-import-stored-maps")
+def maplibre_import_stored_maps_command(
+    maps_dir: Path = typer.Argument(..., help="RasProcess output directory containing pNN folders"),
+    archive_dir: Path = typer.Argument(..., help="Existing ras2cng archive directory"),
+    viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory"),
+    scratch_dir: Optional[Path] = typer.Option(None, "--scratch-dir", help="Large local scratch directory"),
+    domain_policy: str = typer.Option(
+        "fixed",
+        "--domain-policy",
+        help="Initial raster legend policy; attach the service before using current-view",
+    ),
+    require_all: bool = typer.Option(
+        True,
+        "--require-all/--allow-partial",
+        help="Require Depth, WSE, Velocity, and Inundation Boundary for every completed plan",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace imported artifacts and viewer layers"),
+):
+    """Import and publish a complete distributed RasProcess Stored Map tranche."""
+
+    from ras2cng.stored_maps import import_rasprocess_stored_maps
+
+    try:
+        summary = import_rasprocess_stored_maps(
+            maps_dir,
+            archive_dir,
+            viewer_dir,
+            scratch_dir=scratch_dir,
+            domain_policy=domain_policy,
+            require_all=require_all,
+            overwrite=overwrite,
+        )
+        console.print(
+            "[green]OK[/green] Imported Stored Maps: "
+            f"{summary.plan_count} plan(s), {summary.raster_count} raster(s), "
+            f"{summary.vector_count} vector(s)"
+        )
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
+@app.command("validate-publication")
+def validate_publication_command(
+    viewer_manifest: Path = typer.Argument(..., help="MapLibre viewer manifest.json"),
+    archive_manifest: Path = typer.Argument(..., help="ras2cng archive manifest.json"),
+    check_files: bool = typer.Option(
+        True,
+        "--check-files/--manifest-only",
+        help="Open local manifest-relative artifacts and validate COG structure",
+    ),
+    check_http_ranges: bool = typer.Option(
+        False,
+        "--check-http-ranges",
+        help="Require HTTP 206 byte-range responses for hosted artifacts",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the validation report as JSON"),
+):
+    """Enforce the Example Library catalog-admission contract."""
+
+    from ras2cng.publication import validate_example_publication
+
+    try:
+        report = validate_example_publication(
+            viewer_manifest,
+            archive_manifest,
+            check_files=check_files,
+            check_http_ranges=check_http_ranges,
+        )
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+    if as_json:
+        console.print_json(json.dumps(report.to_dict()))
+    else:
+        status = "PASS" if report.ok else "FAIL"
+        color = "green" if report.ok else "red"
+        console.print(f"[{color}]{status}[/{color}] Example Library publication gate")
+        for name, count in report.counts.items():
+            console.print(f"  {name}: {count}")
+        for issue in report.issues:
+            label = issue.severity.upper()
+            context = f" ({issue.context})" if issue.context else ""
+            console.print(f"  {label} {issue.code}{context}: {issue.message}")
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+@app.command("maplibre-calculated-map")
+def maplibre_calculated_map_command(
+    cog_path: Path = typer.Argument(..., help="Numeric COG created by raster-calculate"),
+    viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory"),
+    plan: str = typer.Option(..., "--plan", help="Source plan identifier, such as p03"),
+    recipe: str = typer.Option(..., "--recipe", help="Allowlisted raster recipe identifier"),
+    name: Optional[str] = typer.Option(None, "--name", help="Layer display name"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="Synchronized profile or timestep"),
+    geometry: Optional[str] = typer.Option(None, "--geometry", help="Associated geometry identifier"),
+    layer_id: Optional[str] = typer.Option(None, "--layer-id", help="Stable manifest layer identifier"),
+    source_cog: Optional[str] = typer.Option(
+        None,
+        "--source-cog",
+        help="Public or manifest-relative numeric COG href used by Identify",
+    ),
+    units: Optional[str] = typer.Option(None, "--units", help="Override provenance output units"),
+    provenance: Optional[Path] = typer.Option(
+        None,
+        "--provenance",
+        help="raster-calculate provenance JSON; defaults beside the COG",
+    ),
+    visible: bool = typer.Option(False, "--visible/--hidden", help="Initial layer visibility"),
+    domain_policy: str = typer.Option(
+        "fixed",
+        "--domain-policy",
+        help="Legend domain policy: fixed or current-view",
+    ),
+    max_zoom: Optional[int] = typer.Option(None, "--max-zoom", help="Maximum display zoom"),
+    scratch_dir: Optional[Path] = typer.Option(None, "--scratch-dir", help="Local raster scratch directory"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace the layer and display derivative"),
+):
+    """Publish a controlled calculated raster under its source plan."""
+
+    from ras2cng.maplibre import package_maplibre_calculated_map
+
+    try:
+        summary = package_maplibre_calculated_map(
+            cog_path,
+            viewer_dir,
+            plan=plan,
+            recipe_id=recipe,
+            name=name,
+            profile=profile,
+            geometry=geometry,
+            layer_id=layer_id,
+            source_cog=source_cog,
+            units=units,
+            provenance_path=provenance,
+            visible=visible,
+            domain_policy=domain_policy,
+            max_zoom=max_zoom,
+            scratch_dir=scratch_dir,
+            overwrite=overwrite,
+        )
+        console.print(
+            "[green]OK[/green] Calculated Map PMTiles created: "
+            f"{summary.pmtiles_path} ({summary.layer_id})"
+        )
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
+@app.command("raster-service-catalog")
+def raster_service_catalog_command(
+    data_root: Path = typer.Argument(..., help="WebGIS artifact data root"),
+    output: Path = typer.Argument(..., help="Output raster-assets.json allowlist"),
+    manifests: list[Path] = typer.Option(
+        [],
+        "--manifest",
+        help="Viewer manifest to catalog; repeat or omit to scan the data root",
+    ),
+    service_base_url: str = typer.Option(
+        "/ras-raster",
+        "--service-base-url",
+        help="Public reverse-proxy base URL recorded in manifests",
+    ),
+    attach_manifests: bool = typer.Option(
+        False,
+        "--attach-manifests",
+        help="Attach service asset IDs and revisions to each manifest",
+    ),
+    public_url_prefix: Optional[str] = typer.Option(
+        None,
+        "--public-url-prefix",
+        help="Public URL prefix mapped to the local data root",
+    ),
+):
+    """Build the allowlist used by the bounded numeric raster service."""
+
+    from ras2cng.webgis_service import build_raster_asset_catalog
+
+    try:
+        result = build_raster_asset_catalog(
+            data_root,
+            output,
+            manifest_paths=manifests or None,
+            service_base_url=service_base_url,
+            attach_manifests=attach_manifests,
+            public_url_prefix=public_url_prefix,
+        )
+        console.print(f"[green]OK[/green] Raster service catalog: {result}")
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
+@app.command("raster-service")
+def raster_service_command(
+    catalog: Path = typer.Argument(..., help="raster-assets.json allowlist"),
+    data_root: Path = typer.Argument(..., help="WebGIS artifact data root"),
+    host: str = typer.Option("127.0.0.1", "--host", help="Loopback listener address"),
+    port: int = typer.Option(8000, "--port", min=1, max=65535, help="Loopback listener port"),
+):
+    """Run the isolated numeric raster service behind a reverse proxy."""
+
+    import ipaddress
+
+    import uvicorn
+
+    from ras2cng.webgis_service import create_raster_app
+
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+        if not address.is_loopback:
+            raise ValueError("raster-service must bind to a loopback address")
+        service = create_raster_app(catalog, data_root)
+        uvicorn.run(service, host=host, port=port, workers=1)
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
+@app.command("raster-calculate")
+def raster_calculate_command(
+    recipe: str = typer.Argument(..., help="Allowlisted raster recipe identifier"),
+    output: Path = typer.Argument(..., help="Output numeric Cloud Optimized GeoTIFF"),
+    inputs: list[str] = typer.Option(
+        ...,
+        "--input",
+        help="Recipe input as ROLE=PATH; repeat for every required role",
+    ),
+    input_units: list[str] = typer.Option(
+        [],
+        "--input-unit",
+        help="Input units as ROLE=UNIT when not tagged in the source; repeatable",
+    ),
+    parameters: list[str] = typer.Option(
+        [],
+        "--parameter",
+        help="Allowlisted recipe parameter as NAME=VALUE; repeatable",
+    ),
+    plan: Optional[str] = typer.Option(None, "--plan", help="Associated HEC-RAS plan"),
+    profile: Optional[str] = typer.Option(
+        None,
+        "--profile",
+        help="Synchronized profile/timestep; required for depth-velocity and hazard recipes",
+    ),
+    scratch_dir: Optional[Path] = typer.Option(
+        None,
+        "--scratch-dir",
+        help="Scratch directory for the intermediate tiled GeoTIFF",
+    ),
+    block_size: int = typer.Option(
+        512,
+        "--block-size",
+        min=64,
+        max=4096,
+        help="Bounded processing window size in pixels",
+    ),
+    hash_assets: bool = typer.Option(
+        False,
+        "--hash-assets",
+        help="Record SHA-256 hashes; adds a full read of every large raster",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Atomically replace output"),
+):
+    """Run a controlled, unit-aware raster calculation over aligned COGs."""
+
+    from ras2cng.raster_recipes import run_raster_recipe
+
+    try:
+        input_map = _key_value_paths(inputs, "--input")
+        unit_map = _key_value_strings(input_units, "--input-unit")
+        parameter_map = {
+            key: _parse_parameter(value)
+            for key, value in _key_value_strings(parameters, "--parameter").items()
+        }
+        result = run_raster_recipe(
+            recipe,
+            input_map,
+            output,
+            input_units=unit_map,
+            parameters=parameter_map,
+            plan=plan,
+            profile=profile,
+            scratch_dir=scratch_dir,
+            block_size=block_size,
+            hash_assets=hash_assets,
+            overwrite=overwrite,
+        )
+        console.print(f"[green]OK[/green] Calculated COG: {result.output_path}")
+        console.print(f"  Provenance: {result.provenance_path}")
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
+def _key_value_strings(items: list[str], option: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for item in items:
+        key, separator, value = item.partition("=")
+        if not separator or not key.strip() or not value.strip():
+            raise ValueError(f"{option} must use NAME=VALUE syntax: {item!r}")
+        key = key.strip()
+        if key in values:
+            raise ValueError(f"{option} was provided more than once for {key!r}")
+        values[key] = value.strip()
+    return values
+
+
+def _key_value_paths(items: list[str], option: str) -> dict[str, Path]:
+    return {key: Path(value) for key, value in _key_value_strings(items, option).items()}
+
+
+def _parse_parameter(value: str):
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return float(value)
+        except ValueError:
+            return value
 
 
 @app.command("sync")

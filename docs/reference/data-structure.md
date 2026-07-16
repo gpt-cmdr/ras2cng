@@ -278,7 +278,7 @@ All geometry is stored as **GeoParquet** (Apache Parquet + GeoArrow encoding):
 - Archive GeoParquet includes per-row bbox columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) with GeoParquet `covering` metadata for spatial predicate pushdown
 - Spatial post-processing adds `hilbert_index` to GeoParquet geometry and sorts by `layer,hilbert_index`; `--no-sort` skips this during extraction and `ras2cng spatial-index ARCHIVE_DIR` can run it later
 - Geometryless archive result tables get `join_index` and, when matching mesh geometry exists, inherit `hilbert_index` through `mesh_name` plus `cell_id` or `face_id`
-- `manifest.json` schema 2.3 records index metadata, including `sort_order`, `index_column`, `geometry_filter`, and `index_status`
+- `manifest.json` schema 2.5 records index metadata, including `sort_order`, `index_column`, `geometry_filter`, and `index_status`, plus named terrain sources and modifications
 
 ```python
 import geopandas as gpd

@@ -39,6 +39,14 @@ from ras2cng import (
     spatial_join,
     # PMTiles
     generate_pmtiles_from_input,
+    package_maplibre_viewer,
+    package_maplibre_terrain,
+    package_maplibre_stored_map,
+    package_maplibre_calculated_map,
+    validate_example_publication,
+    run_raster_recipe,
+    build_raster_asset_catalog,
+    create_raster_app,
     # PostGIS
     sync_to_postgres,
     read_from_postgres,
@@ -52,7 +60,11 @@ from ras2cng import (
     ScaffoldInfo,
     # Terrain
     consolidate_terrain,
+    consolidate_project_terrains,
     discover_terrains,
+    export_terrain_modifications,
+    export_terrain_source_footprints,
+    select_terrain_resolution,
     TerrainInfo,
 )
 
@@ -67,13 +79,13 @@ from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
 from ras2cng.mapping import generate_result_maps, MapResult
 from ras2cng.scaffold import build_scaffold, read_plan_hdf_metadata
-from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
+from ras2cng.terrain import consolidate_terrain, consolidate_project_terrains, discover_terrains, TerrainInfo
 ```
 
 ## Modules
 
 - [CLI](cli.md) — Command-line interface reference
-- [geometry](geometry.md) — HDF and text geometry export (10 HDF + 3 text layers)
+- [geometry](geometry.md) — HDF and text geometry export (20 HDF + 3 text layers)
 - [results](results.md) — Plan results export and polygon join
 - [precipitation](precipitation.md) — Gridded precipitation GeoTIFF export from HDF meteorology results
 - [mapping](mapping.md) — Result raster generation via RasProcess.exe
@@ -81,4 +93,7 @@ from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
 - [terrain](terrain.md) — Terrain discovery and consolidation
 - [duckdb_session](duckdb_session.md) — DuckDB wrapper with spatial extension
 - [pmtiles](pmtiles.md) — Vector/raster PMTiles pipeline
+- [maplibre](maplibre.md) — Viewer manifest, raster packaging, and publication validation
+- [raster_recipes](raster_recipes.md) — Controlled, unit-aware COG calculations
+- [webgis_service](webgis_service.md) — Bounded COG statistics and styled tiles
 - [postgis_sync](postgis_sync.md) — GeoParquet → PostGIS

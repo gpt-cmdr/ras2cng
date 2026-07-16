@@ -19,8 +19,12 @@ Commands:
   precip       Export gridded precipitation and cumulative precipitation GeoTIFFs.
   query        Query GeoParquet files using DuckDB SQL.
   pmtiles      Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
+  maplibre     Build a MapLibre PMTiles bundle from a completed ras2cng archive.
+  maplibre-terrain  Publish a RAS-styled terrain PMTiles layer into a MapLibre viewer.
+  maplibre-stored-map  Publish a queryable RASMapper Stored Map into a MapLibre viewer.
+  validate-publication Enforce the Example Library publication contract.
   sync         Sync GeoParquet data to PostGIS.
-  terrain      Consolidate project terrains into a single merged TIFF.
+  terrain      Consolidate one selected named terrain into a merged TIFF.
   map          Generate result rasters (WSE, Depth, Velocity, etc.).
   terrain-mod  Export terrain with modifications as GeoTIFF.
   mannings     Export final Manning's n raster.
@@ -65,10 +69,13 @@ Options:
   --result-variables TEXT     Comma-separated result summary variables or slugs to include
   --results-layout TEXT       Results output layout: plan or variable
   --results-geometry TEXT     Results geometry mode: polygon, point, or none
+  --auxiliary-results / --mesh-results-only
+                               Include raw reference, structure, pump, and pipe summaries
   --skip-errors / --fail-fast Skip individual layer errors vs abort
   --no-sort                   Disable Hilbert spatial post-processing (on by default)
   --map / --no-map            Generate result rasters via RasStoreMapHelper
-  --consolidate-terrain       Merge terrains into single COG
+  --consolidate-terrain       Create one authoritative COG per named terrain
+  --terrain-resolution TEXT   Explicit named-terrain cell size as NAME=VALUE; repeatable
   --render-mode TEXT          Water surface render mode: horizontal, sloping, slopingPretty
   --ras-version TEXT          HEC-RAS version for RasProcess mapping
   --rasprocess PATH           Path to HEC-RAS install directory (for helper deployment)
@@ -98,7 +105,7 @@ Options:
 ```
 
 `spatial-index` updates the archive in place and rewrites `manifest.json`
-schema 2.3 index metadata. Geometry layers record `hilbert_index`, `sort_order`,
+schema 2.5 index metadata. Geometry layers record `hilbert_index`, `sort_order`,
 and bbox columns. Result variables record join metadata such as `index_column`,
 `geometry_filter`, `join_index`, `hilbert_index`, `sort_order`, and
 `index_status` (`spatial_join`, `join_key`, `skipped`, or `error`).
@@ -115,9 +122,13 @@ Arguments:
   OUTPUT     Output GeoParquet file path
 
 Options:
-  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_areas, cross_sections,
-                    centerlines, bc_lines, breaklines, refinement_regions,
-                    reference_lines, reference_points, structures, storage_areas
+  -l, --layer TEXT  Geometry layer: mesh_cells, mesh_faces, mesh_areas,
+                    cross_sections, centerlines, river_reaches, edge_lines,
+                    bank_lines, bc_lines,
+                    breaklines, refinement_regions, reference_lines,
+                    reference_points, structures, pipe_conduits, pipe_nodes,
+                    storage_areas, pump_stations, mannings_n_regions,
+                    infiltration_regions
 ```
 
 ## ras2cng results
@@ -192,6 +203,43 @@ Options:
   --max-zoom INTEGER  Maximum zoom
 ```
 
+## ras2cng maplibre-stored-map
+
+```
+Usage: ras2cng maplibre-stored-map [OPTIONS] COG_PATH VIEWER_DIR
+
+  Publish a queryable RASMapper Stored Map under its source plan.
+
+Required options:
+  --plan TEXT       Source plan identifier, such as p03
+  --map-type TEXT   RASMapper map type, such as Depth or Velocity
+
+Other options:
+  --name TEXT                 Layer display name
+  --profile TEXT              Profile, summary, or time label
+  --geometry TEXT             Associated geometry identifier
+  --source-cog TEXT           Public or manifest-relative numeric COG href
+  --units TEXT                Result units shown in legends and Identify
+  --visible / --hidden        Initial visibility [default: hidden]
+  --domain-policy TEXT        fixed or current-view [default: fixed]
+  --max-zoom INTEGER          Maximum display zoom, capped by native resolution
+  --scratch-dir PATH          Local scratch for bounded raster processing
+  --overwrite                 Replace an existing layer/display derivative
+```
+
+## ras2cng validate-publication
+
+```
+Usage: ras2cng validate-publication [OPTIONS] VIEWER_MANIFEST ARCHIVE_MANIFEST
+
+  Enforce the Example Library catalog-admission contract.
+
+Options:
+  --check-files / --manifest-only  Validate local referenced artifacts [default: check]
+  --check-http-ranges              Require HTTP 206 for hosted PMTiles/COGs
+  --json                           Emit a machine-readable report
+```
+
 ## ras2cng sync
 
 ```
@@ -214,7 +262,7 @@ Options:
 ```
 Usage: ras2cng terrain [OPTIONS] PROJECT OUTPUT
 
-  Consolidate project terrains into a single merged TIFF and HEC-RAS terrain HDF.
+  Consolidate one selected named terrain into a merged TIFF and HEC-RAS terrain HDF.
 
 Arguments:
   PROJECT  HEC-RAS project directory or .prj file
@@ -230,6 +278,10 @@ Options:
   --tiff-only           Only produce merged TIFF, skip HDF creation
   --no-register         Don't register new terrain in rasmap
 ```
+
+`terrain` requires the selected TIFFs to belong to one named RASMapper surface. For
+Example Library archives, prefer `archive --consolidate-terrain`, which processes each
+named terrain independently and records the resolution decision and source inventory.
 
 ## ras2cng map
 
@@ -383,3 +435,25 @@ Arguments:
 Options:
   -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
 ```
+
+## ras2cng raster-calculate
+
+Runs one allowlisted, unit-aware recipe over aligned numeric COGs. Supply each required
+role with repeatable `--input ROLE=PATH`; synchronized recipes also require `--profile`.
+See [Controlled Raster Recipes](../user-guide/raster-recipes.md).
+
+## ras2cng maplibre-calculated-map
+
+Packages a `raster-calculate` output as display PMTiles plus an authoritative numeric COG
+manifest resource under its plan's `Calculated Layers` branch.
+
+## ras2cng raster-service-catalog
+
+Builds the WebGIS numeric-raster allowlist. `--attach-manifests` writes stable asset IDs,
+revisions, and the public service endpoint into manifest v2 bundles.
+
+## ras2cng raster-service
+
+Runs the bounded statistics and styled-tile API. The listener is restricted to loopback and
+must be published through a reverse proxy. See
+[Numeric Raster Service](../user-guide/numeric-raster-service.md).

@@ -14,8 +14,15 @@ import pytest
 
 from ras2cng.terrain import (
     TerrainInfo,
+    TerrainResolutionDecision,
     discover_terrains,
     consolidate_terrain,
+    consolidate_project_terrains,
+    extract_terrain_modification_layers,
+    export_terrain_modifications,
+    extract_terrain_source_footprints,
+    export_terrain_source_footprints,
+    select_terrain_resolution,
     _discover_tifs_for_hdf,
     _get_raster_info,
     _merge_tifs,
@@ -202,17 +209,21 @@ def test_consolidate_terrain_tiff_only(mock_discover, mock_merge, tmp_path):
     output_dir.mkdir(parents=True, exist_ok=True)
     merged_path.write_bytes(b"merged")
 
-    result = consolidate_terrain(
-        project_dir, output_dir,
-        terrain_name="Consolidated",
-        create_hdf=False,
-    )
+    inventory = [{"resolution_x": 5.0, "resolution_y": 5.0}]
+    with patch("ras2cng.terrain.inspect_terrain_sources", return_value=inventory):
+        result = consolidate_terrain(
+            project_dir, output_dir,
+            terrain_name="Consolidated",
+            create_hdf=False,
+        )
 
     assert result == merged_path
     mock_merge.assert_called_once()
     # Verify the TIF files were passed in correct order
     call_args = mock_merge.call_args[0]
     assert tif_path in call_args[0]
+    assert mock_merge.call_args.kwargs["target_resolution"] == 5.0
+    assert (output_dir / "Consolidated_terrain-provenance.json").is_file()
 
 
 @patch("ras2cng.terrain.discover_terrains")
@@ -251,10 +262,9 @@ def test_consolidate_terrain_filters_by_name(mock_discover, tmp_path):
 
 
 @patch("ras2cng.terrain._merge_tifs")
-@patch("ras2cng.terrain._downsample_tif")
 @patch("ras2cng.terrain.discover_terrains")
-def test_consolidate_terrain_with_downsample(mock_discover, mock_downsample, mock_merge, tmp_path):
-    """consolidate_terrain should call _downsample_tif when factor provided."""
+def test_consolidate_terrain_with_downsample(mock_discover, mock_merge, tmp_path):
+    """Consolidation creates the reduced grid directly to bound memory."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     prj = project_dir / "Test.prj"
@@ -269,25 +279,230 @@ def test_consolidate_terrain_with_downsample(mock_discover, mock_downsample, moc
 
     output_dir = tmp_path / "output"
     merged_path = output_dir / "Consolidated_merged.tif"
-    downsampled_path = output_dir / "Consolidated_downsampled.tif"
-
     output_dir.mkdir(parents=True, exist_ok=True)
     merged_path.write_bytes(b"merged")
-    downsampled_path.write_bytes(b"downsampled")
 
     mock_merge.return_value = merged_path
-    mock_downsample.return_value = downsampled_path
+    inventory = [{"resolution_x": 5.0, "resolution_y": 5.0}]
+    with patch("ras2cng.terrain.inspect_terrain_sources", return_value=inventory):
+        result = consolidate_terrain(
+            project_dir, output_dir,
+            downsample_factor=2.0,
+            create_hdf=False,
+        )
 
-    result = consolidate_terrain(
-        project_dir, output_dir,
-        downsample_factor=2.0,
-        create_hdf=False,
+    assert result == merged_path
+    assert mock_merge.call_args.kwargs["target_resolution"] == 10.0
+
+
+@patch("ras2cng.terrain.discover_terrains")
+def test_consolidate_terrain_requires_one_named_surface(mock_discover, tmp_path):
+    mock_discover.return_value = [
+        TerrainInfo(name="Existing", tif_files=[tmp_path / "existing.tif"]),
+        TerrainInfo(name="Modified", tif_files=[tmp_path / "modified.tif"]),
+    ]
+
+    with pytest.raises(ValueError, match="Multiple named terrains"):
+        consolidate_terrain(tmp_path, tmp_path / "out", create_hdf=False)
+
+
+@patch("ras2cng.terrain.consolidate_terrain")
+@patch("ras2cng.terrain.discover_terrains")
+def test_consolidate_project_terrains_keeps_named_surfaces_separate(
+    mock_discover, mock_consolidate, tmp_path
+):
+    mock_discover.return_value = [
+        TerrainInfo(name="Existing Terrain"),
+        TerrainInfo(name="Proposed Terrain"),
+    ]
+    mock_consolidate.side_effect = [
+        tmp_path / "Existing_Terrain_merged.tif",
+        tmp_path / "Proposed_Terrain_merged.tif",
+    ]
+
+    outputs = consolidate_project_terrains(
+        tmp_path,
+        tmp_path / "out",
+        target_resolutions={"Proposed Terrain": 6.0},
     )
 
-    assert result == downsampled_path
-    mock_downsample.assert_called_once()
-    call_kwargs = mock_downsample.call_args
-    assert call_kwargs[1]["factor"] == 2.0
+    assert list(outputs) == ["Existing Terrain", "Proposed Terrain"]
+    first_call, second_call = mock_consolidate.call_args_list
+    assert first_call.kwargs["terrain_names"] == ["Existing Terrain"]
+    assert second_call.kwargs["terrain_names"] == ["Proposed Terrain"]
+    assert second_call.kwargs["target_resolution"] == 6.0
+
+
+# ---------------------------------------------------------------------------
+# terrain publication resolution policy
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("native", "expected"),
+    [
+        (1.0, 5.0),
+        (2.0, 6.0),
+        (3.0, 6.0),
+        (5.0, 5.0),
+        (7.5, 7.5),
+        (30.0, 30.0),
+    ],
+)
+def test_select_terrain_resolution_uses_smallest_native_multiple(native, expected):
+    decision = select_terrain_resolution([native], horizontal_units="Feet")
+
+    assert isinstance(decision, TerrainResolutionDecision)
+    assert decision.target_resolution == pytest.approx(expected)
+    assert decision.factors[0] == pytest.approx(expected / native)
+
+
+def test_select_terrain_resolution_does_not_upsample_coarse_native_grid():
+    with pytest.raises(ValueError, match="upsample"):
+        select_terrain_resolution([30.0], requested=10.0)
+
+
+def test_select_terrain_resolution_requires_explicit_mixed_target():
+    with pytest.raises(ValueError, match="Mixed native"):
+        select_terrain_resolution([1.0, 3.0])
+
+    decision = select_terrain_resolution([1.0, 3.0], requested=6.0)
+    assert decision.target_resolution == 6.0
+    assert decision.mixed_native_resolution is True
+
+
+def test_select_terrain_resolution_rejects_fractional_native_multiple():
+    with pytest.raises(ValueError, match="whole-number multiple"):
+        select_terrain_resolution([2.0, 3.0], requested=7.0)
+
+
+def test_select_terrain_resolution_converts_five_foot_floor_to_meters():
+    decision = select_terrain_resolution([0.5], horizontal_units="Meters")
+    assert decision.target_resolution == 2.0
+    assert decision.minimum_resolution == pytest.approx(1.524)
+
+
+def test_merge_tifs_preserves_priority_and_transparent_nodata(tmp_path):
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    first = tmp_path / "first.tif"
+    second = tmp_path / "second.tif"
+    profile = {
+        "driver": "GTiff",
+        "width": 4,
+        "height": 4,
+        "count": 1,
+        "dtype": "float32",
+        "crs": "EPSG:2271",
+        "transform": from_origin(0, 20, 5, 5),
+        "nodata": -9999.0,
+    }
+    first_values = np.full((4, 4), 10.0, dtype="float32")
+    first_values[0, 0] = -9999.0
+    with rasterio.open(first, "w", **profile) as destination:
+        destination.write(first_values, 1)
+    with rasterio.open(second, "w", **profile) as destination:
+        destination.write(np.full((4, 4), 20.0, dtype="float32"), 1)
+
+    output = _merge_tifs(
+        [first, second],
+        tmp_path / "merged.tif",
+        target_resolution=5.0,
+        block_size=16,
+    )
+
+    with rasterio.open(output) as source:
+        values = source.read(1)
+        assert source.nodata is not None and np.isnan(source.nodata)
+        assert values[0, 0] == 20.0
+        assert np.all(values[1:, :] == 10.0)
+        assert np.all(values[0, 1:] == 10.0)
+
+
+def test_terrain_modifications_export_lines_polygons_and_controls(tmp_path):
+    import h5py
+    import numpy as np
+
+    terrain_hdf = tmp_path / "Terrain.hdf"
+    with h5py.File(terrain_hdf, "w") as hdf:
+        line = hdf.create_group("Modifications/Channel Cut")
+        line.attrs["Type"] = np.bytes_("Channel")
+        line.attrs["Subtype"] = np.bytes_("GroundLine")
+        line.create_dataset("Polyline Points", data=np.array([[0.0, 0.0], [10.0, 5.0]]))
+
+        polygon = hdf.create_group("Modifications/Fill Area")
+        polygon.attrs["Type"] = np.bytes_("Polygon")
+        polygon.attrs["Subtype"] = np.bytes_("Multipoint")
+        polygon.create_dataset(
+            "Polygon Points",
+            data=np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 0.0]]),
+        )
+        polygon.create_dataset("Polygon Parts", data=np.array([[0, 4]], dtype="int32"))
+        polygon.create_dataset("Boundary Elevations", data=np.array([100.0, 101.0, 102.0, 100.0]))
+        controls = polygon.create_group("Control Points")
+        controls.create_dataset("Points", data=np.array([[5.0, 5.0]]))
+        controls.create_dataset("Elevations", data=np.array([99.5]))
+
+    layers = extract_terrain_modification_layers(terrain_hdf, crs="EPSG:2271")
+
+    assert len(layers["terrain_modification_lines"]) == 1
+    assert len(layers["terrain_modification_polygons"]) == 1
+    assert len(layers["terrain_modification_control_points"]) == 1
+    assert layers["terrain_modification_lines"].geometry.iloc[0].geom_type == "LineString"
+    assert layers["terrain_modification_polygons"].geometry.iloc[0].geom_type == "Polygon"
+    assert layers["terrain_modification_polygons"].iloc[0]["boundary_elevation_max"] == 102.0
+    assert layers["terrain_modification_control_points"].iloc[0]["elevation"] == 99.5
+
+    outputs = export_terrain_modifications(
+        terrain_hdf,
+        tmp_path / "modifications",
+        crs="EPSG:2271",
+    )
+    assert set(outputs) == {
+        "terrain_modification_lines",
+        "terrain_modification_polygons",
+        "terrain_modification_control_points",
+    }
+    assert all(path.is_file() for path in outputs.values())
+
+
+def test_terrain_source_footprints_preserve_priority_and_native_metadata(tmp_path):
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    sources = []
+    for index, left in enumerate((0.0, 20.0)):
+        path = tmp_path / f"tile-{index}.tif"
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            width=4,
+            height=4,
+            count=1,
+            dtype="float32",
+            crs="EPSG:2271",
+            transform=from_origin(left, 20, 5, 5),
+            nodata=-9999.0,
+        ) as destination:
+            destination.write(np.full((4, 4), index + 1, dtype="float32"), 1)
+        sources.append(path)
+
+    footprints = extract_terrain_source_footprints(sources)
+
+    assert footprints["priority"].tolist() == [0, 1]
+    assert footprints["source_file"].tolist() == ["tile-0.tif", "tile-1.tif"]
+    assert footprints["resolution_x"].tolist() == [5.0, 5.0]
+    assert footprints.crs.to_epsg() == 2271
+    assert footprints.geometry.iloc[0].bounds == (0.0, 0.0, 20.0, 20.0)
+
+    output = export_terrain_source_footprints(
+        sources,
+        tmp_path / "terrain_source_footprints.parquet",
+    )
+    assert output.is_file()
 
 
 # ---------------------------------------------------------------------------

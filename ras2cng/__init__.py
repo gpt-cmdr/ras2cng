@@ -35,9 +35,47 @@ from ras2cng.precipitation import (
     PrecipitationExportResult,
     PrecipitationGridInfo,
 )
-from ras2cng.duckdb_session import DuckSession, query_parquet, spatial_join
 from ras2cng.pmtiles import generate_pmtiles_from_input
-from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
+from ras2cng.maplibre import (
+    package_maplibre_calculated_map,
+    package_maplibre_stored_map,
+    package_maplibre_terrain,
+    package_maplibre_viewer,
+    PackageSummary,
+    RasterPackageSummary,
+    TerrainPackageSummary,
+)
+from ras2cng.stored_maps import StoredMapImportSummary, import_rasprocess_stored_maps
+from ras2cng.viewer_manifest import (
+    LEGACY_MAPLIBRE_SCHEMA,
+    MAPLIBRE_SCHEMA,
+    apply_manifest_v2,
+    validate_manifest_v2,
+)
+from ras2cng.publication import (
+    PublicationIssue,
+    PublicationReport,
+    validate_example_publication,
+)
+from ras2cng.raster_recipes import (
+    RECIPES,
+    RasterRecipe,
+    RasterRecipeResult,
+    get_raster_recipe,
+    list_raster_recipes,
+    run_raster_recipe,
+)
+from ras2cng.webgis_service import (
+    RASTER_ASSET_SCHEMA,
+    STYLE_PRESETS,
+    RasterAsset,
+    RasterAssetCatalog,
+    RasterServiceSettings,
+    build_raster_asset_catalog,
+    compute_view_statistics,
+    create_raster_app,
+    render_styled_tile,
+)
 from ras2cng.project import (
     archive_project,
     inspect_project,
@@ -51,6 +89,8 @@ from ras2cng.catalog import (
     ManifestGeomEntry,
     ManifestPlanEntry,
     ManifestMapEntry,
+    ManifestTerrainModificationEntry,
+    ManifestTerrainSourceEntry,
 )
 from ras2cng.mapping import generate_result_maps, MapResult
 from ras2cng.scaffold import (
@@ -60,9 +100,55 @@ from ras2cng.scaffold import (
     ScaffoldInfo,
 )
 from ras2cng.spatial_index import postprocess_archive, postprocess_geoparquet, postprocess_result_table
-from ras2cng.terrain import consolidate_terrain, discover_terrains, TerrainInfo
+from ras2cng.terrain import (
+    consolidate_terrain,
+    consolidate_project_terrains,
+    discover_terrains,
+    export_terrain_modifications,
+    export_terrain_source_footprints,
+    extract_terrain_modification_layers,
+    extract_terrain_source_footprints,
+    inspect_terrain_sources,
+    select_terrain_resolution,
+    TerrainInfo,
+    TerrainResolutionDecision,
+)
 
 __version__ = "0.6.0"
+
+_OPTIONAL_EXPORTS = {
+    "DuckSession": ("ras2cng.duckdb_session", "DuckSession", "duckdb"),
+    "query_parquet": ("ras2cng.duckdb_session", "query_parquet", "duckdb"),
+    "spatial_join": ("ras2cng.duckdb_session", "spatial_join", "duckdb"),
+    "sync_to_postgres": ("ras2cng.postgis_sync", "sync_to_postgres", "postgis"),
+    "read_from_postgres": ("ras2cng.postgis_sync", "read_from_postgres", "postgis"),
+}
+
+
+def __getattr__(name: str):
+    """Load exports backed by optional dependencies only when requested."""
+
+    try:
+        module_name, attribute_name, extra = _OPTIONAL_EXPORTS[name]
+    except KeyError as error:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from error
+
+    from importlib import import_module
+
+    try:
+        value = getattr(import_module(module_name), attribute_name)
+    except ModuleNotFoundError as error:
+        raise ModuleNotFoundError(
+            f"{name} requires the ras2cng[{extra}] optional dependencies"
+        ) from error
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_OPTIONAL_EXPORTS))
+
+
 __all__ = [
     # Geometry
     "export_geometry_layers",
@@ -87,6 +173,35 @@ __all__ = [
     "spatial_join",
     # PMTiles
     "generate_pmtiles_from_input",
+    "package_maplibre_viewer",
+    "package_maplibre_terrain",
+    "package_maplibre_stored_map",
+    "package_maplibre_calculated_map",
+    "PackageSummary",
+    "TerrainPackageSummary",
+    "RasterPackageSummary",
+    "LEGACY_MAPLIBRE_SCHEMA",
+    "MAPLIBRE_SCHEMA",
+    "apply_manifest_v2",
+    "validate_manifest_v2",
+    "PublicationIssue",
+    "PublicationReport",
+    "validate_example_publication",
+    "RECIPES",
+    "RasterRecipe",
+    "RasterRecipeResult",
+    "get_raster_recipe",
+    "list_raster_recipes",
+    "run_raster_recipe",
+    "RASTER_ASSET_SCHEMA",
+    "STYLE_PRESETS",
+    "RasterAsset",
+    "RasterAssetCatalog",
+    "RasterServiceSettings",
+    "build_raster_asset_catalog",
+    "compute_view_statistics",
+    "create_raster_app",
+    "render_styled_tile",
     # PostGIS
     "sync_to_postgres",
     "read_from_postgres",
@@ -102,6 +217,8 @@ __all__ = [
     "ManifestGeomEntry",
     "ManifestPlanEntry",
     "ManifestMapEntry",
+    "ManifestTerrainModificationEntry",
+    "ManifestTerrainSourceEntry",
     # Mapping
     "generate_result_maps",
     "MapResult",
@@ -116,6 +233,14 @@ __all__ = [
     "postprocess_result_table",
     # Terrain
     "consolidate_terrain",
+    "consolidate_project_terrains",
     "discover_terrains",
+    "export_terrain_modifications",
+    "export_terrain_source_footprints",
+    "extract_terrain_modification_layers",
+    "extract_terrain_source_footprints",
     "TerrainInfo",
+    "TerrainResolutionDecision",
+    "inspect_terrain_sources",
+    "select_terrain_resolution",
 ]

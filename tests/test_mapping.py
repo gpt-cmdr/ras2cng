@@ -18,6 +18,7 @@ from ras2cng.mapping import (
     generate_result_maps,
     _build_requested_types,
     _configure_rasprocess,
+    _convert_to_cog,
 )
 
 
@@ -562,3 +563,40 @@ def test_map_result_with_data(tmp_path):
     )
     assert len(mr.map_types["depth"]) == 1
     assert mr.map_types["depth"][0] == tif
+
+
+def test_convert_to_cog_uses_bundled_gdal_and_builds_overviews(tmp_path):
+    """COG conversion must not depend on the system gdal_translate."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    source_path = tmp_path / "Depth (Max).tif"
+    with rasterio.open(
+        source_path,
+        "w",
+        driver="GTiff",
+        width=1536,
+        height=1024,
+        count=1,
+        dtype="float32",
+        crs="EPSG:2965",
+        transform=from_origin(500000, 500000, 5, 5),
+        nodata=-9999.0,
+    ) as destination:
+        destination.write(np.ones((1024, 1536), dtype="float32"), 1)
+
+    [output_path] = _convert_to_cog([source_path])
+
+    assert output_path.name == "Depth (Max)_cog.tif"
+    assert source_path.is_file()
+    with rasterio.open(output_path) as source:
+        assert source.is_tiled
+        assert source.overviews(1)
+        assert source.nodata == pytest.approx(-9999.0)
+        assert source.compression.name == "zstd"
+
+
+def test_convert_to_cog_rejects_missing_source(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Result raster does not exist"):
+        _convert_to_cog([tmp_path / "missing.tif"])

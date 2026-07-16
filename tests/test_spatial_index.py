@@ -106,3 +106,85 @@ def test_postprocess_archive_indexes_geometryless_result_tables(tmp_path: Path):
     assert variable["hilbert_index"] == HILBERT_COLUMN
     assert variable["join_index"] == JOIN_INDEX_COLUMN
     assert loaded.postprocessing["spatial_index"]["geometry_file_count"] == 1
+
+
+def test_postprocess_archive_indexes_composite_1d_result_join(tmp_path: Path):
+    pytest.importorskip("duckdb")
+
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    geom_path = archive / "M.g01.parquet"
+    gpd.GeoDataFrame(
+        {
+            "River": ["White"],
+            "Reach": ["Main"],
+            "RS": ["1000"],
+            "layer": ["cross_sections"],
+        },
+        geometry=[Point(1, 1)],
+        crs="EPSG:4326",
+    ).to_parquet(geom_path, index=False)
+    result_path = archive / "results" / "p01" / "steady_cross_sections.parquet"
+    result_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "river": [" White "],
+            "reach": ["Main"],
+            "node_id": ["1000"],
+            "profile": ["Max"],
+            "water_surface": [10.0],
+            "layer": ["steady_cross_sections"],
+        }
+    ).to_parquet(result_path, index=False)
+
+    manifest = Manifest.create("M", tmp_path / "M.prj", tmp_path, archive)
+    geom_entry = ManifestGeomEntry(
+        geom_id="g01",
+        source_file="M.g01.hdf",
+        file_type="hdf",
+        parquet="M.g01.parquet",
+    )
+    geom_entry.add_layer(
+        ManifestLayer(
+            layer="cross_sections",
+            filter_value="cross_sections",
+            rows=1,
+            geometry_type="Point",
+            crs="EPSG:4326",
+        )
+    )
+    manifest.add_geom_entry(geom_entry)
+    plan = ManifestPlanEntry(
+        plan_id="p01",
+        plan_title="Plan 01",
+        geom_id="g01",
+        flow_id=None,
+        hdf_exists=True,
+        completed=True,
+        layout="variable",
+        geometry_mode="none",
+    )
+    plan.add_variable(
+        ManifestResultVariable(
+            variable="steady_cross_sections",
+            filter_value="steady_cross_sections",
+            rows=1,
+            parquet="results/p01/steady_cross_sections.parquet",
+            geometry_mode="none",
+            geometry_filter="cross_sections",
+            join_columns={"River": "river", "Reach": "reach", "RS": "node_id"},
+        )
+    )
+    manifest.add_plan_entry(plan)
+    manifest.write(archive / "manifest.json")
+
+    summary = postprocess_archive(archive)
+
+    assert summary["error_count"] == 0
+    indexed = pd.read_parquet(result_path)
+    assert indexed[JOIN_INDEX_COLUMN].tolist() == [0]
+    assert indexed[HILBERT_COLUMN].notna().all()
+    loaded = Manifest.load(archive / "manifest.json")
+    variable = loaded.results[0]["variables"][0]
+    assert variable["index_status"] == "spatial_join"
+    assert variable["join_index"] == JOIN_INDEX_COLUMN

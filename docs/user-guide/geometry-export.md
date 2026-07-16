@@ -16,15 +16,19 @@ Detection is suffix-based — no file inspection required:
 | Layer | Geometry | Source Class |
 |---|---|---|
 | `mesh_cells` | Polygon (Point fallback) | `HdfMesh` |
+| `mesh_faces` | LineString | `HdfMesh` |
 | `mesh_areas` | Polygon | `HdfMesh` |
 | `cross_sections` | LineString | `HdfXsec` |
 | `centerlines` | LineString | `HdfXsec` |
+| `bank_lines` | LineString | `HdfXsec` |
 | `bc_lines` | LineString | `HdfBndry` |
 | `breaklines` | LineString | `HdfBndry` |
 | `refinement_regions` | Polygon | `HdfBndry` |
 | `reference_lines` | LineString | `HdfBndry` |
 | `reference_points` | Point | `HdfBndry` |
 | `structures` | LineString | `HdfStruc` |
+| `pipe_conduits` | LineString | `HdfPipe` |
+| `pipe_nodes` | Point | `HdfPipe` |
 
 ### Text geometry layers (`.g##`)
 

@@ -24,7 +24,7 @@ with `WHERE layer = 'mesh_cells'` and avoids directory proliferation.
 
 ```
 {output_dir}/
-├── manifest.json                         # Project catalog (schema v2.3, index metadata)
+├── manifest.json                         # Project catalog (schema v2.5, index metadata)
 ├── {ProjectName}.parquet                 # Project metadata (RasPrj dataframes, _table column)
 ├── {ProjectName}.g01.parquet             # All geometry from g01 (HDF + text layers)
 ├── {ProjectName}.g06.parquet             # All geometry from g06
@@ -124,8 +124,12 @@ ras2cng archive path/to/project /output/archive --results --map
 # Generate rasters with a specific render mode
 ras2cng archive path/to/project /output/archive --results --map --render-mode sloping
 
-# Consolidate terrains into a single COG
+# Create one authoritative COG per named RASMapper terrain
 ras2cng archive path/to/project /output/archive --terrain --consolidate-terrain
+
+# Set an explicit target for a mixed-resolution named terrain
+ras2cng archive path/to/project /output/archive --terrain --consolidate-terrain \
+  --terrain-resolution "Existing Terrain=6"
 
 # Skip spatial post-processing during extraction
 ras2cng archive path/to/project /output/archive --no-sort
@@ -174,6 +178,60 @@ the archive has a joinable `mesh_cells` or `mesh_faces` layer; otherwise they
 fall back to deterministic `mesh_name` plus cell/face key ordering. The manifest
 records `index_status=spatial_join` for inherited spatial ordering and
 `index_status=join_key` for key-only ordering.
+
+Auxiliary raw result summaries are enabled by default with `--results`. They cover reference
+points/lines, SA/2D connections, pumps, pipe conduits/nodes, and 1D structures when those
+datasets exist. The exporter reduces time-series datasets in bounded HDF chunks and records
+the source geometry join instead of duplicating geometry. Use `--mesh-results-only` only for
+an intentionally limited archive.
+
+---
+
+## Named Terrain Policy
+
+Terrain names in the RASMapper configuration are separate surfaces. ras2cng never merges
+different named terrains implicitly. With `--consolidate-terrain`, every named terrain gets
+its own authoritative COG, source-inventory provenance JSON, source TIFF footprint
+GeoParquet, and any available terrain-modification construction vectors.
+
+The default publication resolution follows a no-upsample policy:
+
+- Native cells finer than 5 ft are reduced to the smallest whole-number native-cell multiple
+  at or above 5 ft.
+- Native cells at or above 5 ft retain their native resolution, including 30-ft terrain.
+- A named terrain containing mixed native cell sizes requires an explicit
+  `--terrain-resolution NAME=VALUE` decision.
+- The merge is target-grid and windowed, with the first RASMapper source winning where TIFFs
+  overlap. Memory use scales with the processing block rather than the full mosaic.
+
+The output uses transparent nodata, tiled COG storage, ZSTD compression, and overviews. This
+keeps the numerical terrain usable for Identify and analysis while supporting byte-range web
+delivery.
+
+---
+
+## 1D Steady Result Archives
+
+Computed steady-flow plan HDFs are archived as raw cross-section records rather than as
+interpolated surfaces. Each row retains the source `river`, `reach`, `node_id`, and `profile`,
+with the HDF values available at that element, such as WSEL, flow, total top width, and total
+flow area. Optional variables that are not stored in a row-aligned HDF dataset remain null.
+
+Use the same memory-safe archive command for a 1D steady model:
+
+```bash
+ras2cng archive path/to/SteadyModel /output/archive --results \
+  --results-layout variable --results-geometry none --crs EPSG:2249
+```
+
+The result table is stored as `results/pNN/steady_cross_sections.parquet`. Its manifest entry
+declares the exact viewer join: `River -> river`, `Reach -> reach`, and `RS -> node_id`.
+No terrain or floodplain surface is fabricated. RASMapper Stored Map COGs are the separate,
+authoritative delivery path when an interpolated raster display is available.
+
+Use `--crs` only when that CRS has been independently verified for the project. It stamps the
+source geometry GeoParquet and archive manifest when a public release omits a `.rasmap` file or
+HDF projection record; it does not reproject or infer coordinates.
 
 ---
 
@@ -237,11 +295,11 @@ manifest = archive_project(
 
 ## manifest.json Schema
 
-Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 2.3 also records spatial post-processing metadata when the archive has been indexed.
+Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 2.5 records spatial post-processing metadata, composite raw-result joins, named-terrain provenance, terrain source footprints, and terrain-modification vectors.
 
 ```json
 {
-  "schema_version": "2.3",
+  "schema_version": "2.5",
   "project": {
     "name": "BaldEagleDamBrk",
     "prj_file": "BaldEagleDamBrk.prj",
@@ -307,9 +365,12 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
           "filter_value": "maximum_depth",
           "rows": 87039,
           "parquet": "results/p01/maximum_depth.parquet",
-          "geometry_mode": "none",
-          "index_column": "cell_id",
-          "geometry_filter": "mesh_cells",
+           "geometry_mode": "none",
+           "index_column": "cell_id",
+           "geometry_filter": "mesh_cells",
+           "join_columns": {},
+           "profile_column": "",
+           "source": "",
           "hilbert_index": "hilbert_index",
           "join_index": "join_index",
           "sort_order": "hilbert_index",
@@ -325,7 +386,25 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
       "source_file": "Terrain/Terrain50.tif",
       "cog_file": "terrain/Terrain50_cog.tif",
       "size_bytes": 12582912,
-      "crs": "EPSG:2271"
+      "crs": "EPSG:2271",
+      "terrain_name": "Terrain50",
+      "source_files": ["Terrain/Terrain50.tile-01.tif"],
+      "target_resolution": 5.0,
+      "horizontal_units": "Feet",
+      "provenance_file": "terrain/Terrain50_terrain-provenance.json",
+      "authoritative": true
+    }
+  ],
+  "terrain_sources": [
+    {
+      "terrain_name": "Terrain50",
+      "layers": [{"layer": "terrain_source_footprints", "parquet": "terrain/sources/terrain50/terrain_source_footprints.parquet"}]
+    }
+  ],
+  "terrain_modifications": [
+    {
+      "terrain_name": "Terrain50",
+      "layers": [{"layer": "terrain_modification_lines", "parquet": "terrain/modifications/terrain50/terrain_modification_lines.parquet"}]
     }
   ],
   "postprocessing": {

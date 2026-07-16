@@ -32,7 +32,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  "ras-commander>=0.93.0",
+  "ras-commander>=0.98.2",
   "typer>=0.9.0",
   "rich>=13.0.0",
   "pandas>=2.0.0",
@@ -58,12 +58,20 @@ pmtiles = [
 gpio = [
   "geoparquet-io>=0.9",
 ]
+webgis = [
+  "fastapi>=0.115,<1",
+  "rio-tiler>=7,<8",
+  "uvicorn[standard]>=0.34,<1",
+]
 all = [
   "duckdb>=1.0.0",
   "sqlalchemy>=2.0.0",
   "geoalchemy2>=0.14.0",
   "psycopg2-binary>=2.9.0",
   "rasterio>=1.3.0",
+  "fastapi>=0.115,<1",
+  "rio-tiler>=7,<8",
+  "uvicorn[standard]>=0.34,<1",
 ]
 
 [project.scripts]
@@ -94,4 +102,5 @@ dev-dependencies = [
   "mkdocstrings[python]>=0.24.0",
   "mkdocs-git-revision-date-localized-plugin>=1.2.0",
   "twine>=6.2.0",
+  "httpx>=0.27.0",
 ]
