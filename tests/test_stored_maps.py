@@ -9,7 +9,7 @@ import pytest
 from shapely.geometry import box
 
 from ras2cng.catalog import Manifest, ManifestPlanEntry
-from ras2cng.stored_maps import import_rasprocess_stored_maps
+from ras2cng.stored_maps import _discover_plan_maps, import_rasprocess_stored_maps
 
 
 def _bundle(tmp_path: Path):
@@ -99,3 +99,61 @@ def test_import_stored_maps_rejects_incomplete_plan_before_copy(monkeypatch, tmp
         import_rasprocess_stored_maps(maps, archive, viewer)
 
     assert not (archive / "stored-maps").exists()
+
+
+def test_import_stored_maps_discovers_all_supported_raster_families(
+    monkeypatch, tmp_path: Path
+):
+    maps, archive, viewer = _bundle(tmp_path)
+    plan_maps = maps / "p03"
+    extra_names = (
+        "Froude (Max).Terrain_cog.tif",
+        "Shear Stress (Max).Terrain_cog.tif",
+        "Depth x Velocity (Max).Terrain_cog.tif",
+        "Depth x Velocity² (Max).Terrain_cog.tif",
+        "Arrival Time (0.1ft hrs).Terrain_cog.tif",
+        "Duration (0.1ft hrs).Terrain_cog.tif",
+        "Percent Time Inundated (0.1ft).Terrain_cog.tif",
+    )
+    for name in extra_names:
+        (plan_maps / name).write_bytes(name.encode())
+    raster_calls = []
+    monkeypatch.setattr(
+        "ras2cng.stored_maps.package_maplibre_stored_map",
+        lambda cog, _viewer, **kwargs: raster_calls.append((cog, kwargs)),
+    )
+    monkeypatch.setattr(
+        "ras2cng.stored_maps.package_maplibre_stored_vector",
+        lambda *_args, **_kwargs: None,
+    )
+
+    summary = import_rasprocess_stored_maps(maps, archive, viewer)
+
+    assert summary.raster_count == 10
+    assert {call[1]["map_type"] for call in raster_calls} == {
+        "Depth",
+        "WSE",
+        "Velocity",
+        "Froude Number",
+        "Shear Stress",
+        "Depth x Velocity",
+        "Depth x Velocity Squared",
+        "Arrival Time",
+        "Duration",
+        "Percent Time Inundated",
+    }
+    assert (archive / "stored-maps/p03/arrival_time-0-1ft-hrs.cog.tif").is_file()
+    assert (archive / "stored-maps/p03/depth_x_velocity_sq-max.cog.tif").is_file()
+
+
+def test_discover_plan_maps_prefers_complete_vrt_mosaic_cog(tmp_path: Path):
+    plan = tmp_path / "p03"
+    plan.mkdir()
+    component = plan / "Depth (Max).TerrainWithChannel.base_cog.tif"
+    mosaic = plan / "Depth (Max)_cog.tif"
+    component.touch()
+    mosaic.touch()
+
+    discovered = _discover_plan_maps(plan)
+
+    assert discovered["depth"] == (mosaic, "Max")

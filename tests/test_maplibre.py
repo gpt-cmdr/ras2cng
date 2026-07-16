@@ -6,6 +6,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pytest
 import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import LineString, Point, box
@@ -538,6 +539,35 @@ def test_result_color_ramp_makes_nodata_transparent(tmp_path: Path) -> None:
 
     assert preset == "rasmapper.depth"
     assert len(colors) == 4
+    assert ramp.read_text(encoding="ascii").splitlines()[-1] == "nv 0 0 0 0"
+
+
+@pytest.mark.parametrize(
+    ("map_type", "preset"),
+    (
+        ("Froude Number", "rascommander.froude"),
+        ("Shear Stress", "rascommander.shear-stress"),
+        ("Depth x Velocity", "rascommander.depth-velocity"),
+        ("Depth x Velocity Squared", "rascommander.depth-velocity"),
+        ("Arrival Time", "rascommander.arrival-time"),
+        ("Duration", "rascommander.duration"),
+        ("Percent Time Inundated", "rascommander.percent-inundated"),
+    ),
+)
+def test_supported_stored_map_types_use_allowlisted_presets(
+    tmp_path: Path,
+    map_type: str,
+    preset: str,
+) -> None:
+    ramp = tmp_path / f"{map_type}.txt"
+
+    actual, _colors = maplibre._result_color_ramp(
+        {"minimum": 0.0, "maximum": 10.0},
+        map_type,
+        ramp,
+    )
+
+    assert actual == preset
     assert ramp.read_text(encoding="ascii").splitlines()[-1] == "nv 0 0 0 0"
 
 

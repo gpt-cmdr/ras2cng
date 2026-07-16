@@ -215,7 +215,6 @@ def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() ->
     assert [branch["role"] for branch in plan["children"]] == [
         "raw-computation-values",
         "published-raster-maps",
-        "calculated-layers",
     ]
     assert _tree_layer_ids(plan["children"][0]) == {"ras-results-p01-maximum-depth"}
     assert _tree_layer_ids(plan["children"][1]) == {"result-p01-depth-max"}
@@ -239,6 +238,35 @@ def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() ->
         "basis": "viewer-default",
     } in manifest["associations"]
     validate_manifest_v2(manifest)
+
+
+def test_apply_manifest_v2_keeps_required_roots_but_omits_empty_subgroups() -> None:
+    manifest = _legacy_manifest()
+    manifest["tilesets"] = [
+        tileset
+        for tileset in manifest["tilesets"]
+        if tileset["id"] not in {"results", "result-p01-depth-max", "terrain"}
+    ]
+    manifest["groups"] = [
+        group
+        for group in manifest["groups"]
+        if group["id"] not in {"ras-results-p01", "ras-terrains"}
+    ]
+    archive = _archive_manifest()
+    archive["results"].append(
+        {
+            "plan_id": "p02",
+            "plan_title": "No Published Results",
+            "geom_id": "g01",
+        }
+    )
+
+    apply_manifest_v2(manifest, archive=archive)
+
+    results = next(root for root in manifest["tree"] if root["id"] == "results")
+    terrains = next(root for root in manifest["tree"] if root["id"] == "terrains")
+    assert results["children"] == []
+    assert terrains["children"] == []
 
 
 def test_apply_manifest_v2_is_idempotent() -> None:

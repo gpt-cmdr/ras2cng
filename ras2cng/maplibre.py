@@ -26,7 +26,7 @@ import pyarrow.parquet as pq
 import shapely
 
 from ras2cng.pmtiles import _require_cli
-from ras2cng.viewer_manifest import MAPLIBRE_SCHEMA, apply_manifest_v2
+from ras2cng.viewer_manifest import apply_manifest_v2
 
 
 _INTERNAL_COLUMNS = {
@@ -207,6 +207,39 @@ _RESULT_COLOR_RAMPS: dict[str, tuple[tuple[int, int, int, int], ...]] = {
     "inundation": (
         (96, 165, 250, 215),
         (29, 78, 216, 235),
+    ),
+    "froude": (
+        (30, 64, 175, 225),
+        (56, 189, 248, 225),
+        (74, 222, 128, 230),
+        (250, 204, 21, 235),
+        (220, 38, 38, 245),
+    ),
+    "shear_stress": (
+        (254, 249, 195, 215),
+        (251, 146, 60, 230),
+        (220, 38, 38, 240),
+        (126, 34, 206, 245),
+    ),
+    "arrival_time": (
+        (220, 38, 38, 240),
+        (249, 115, 22, 235),
+        (250, 204, 21, 230),
+        (34, 197, 94, 225),
+        (37, 99, 235, 240),
+    ),
+    "duration": (
+        (239, 246, 255, 210),
+        (147, 197, 253, 225),
+        (59, 130, 246, 235),
+        (67, 56, 202, 240),
+        (88, 28, 135, 245),
+    ),
+    "percent_inundated": (
+        (239, 246, 255, 210),
+        (147, 197, 253, 225),
+        (59, 130, 246, 235),
+        (30, 64, 175, 245),
     ),
     "difference": (
         (30, 64, 175, 240),
@@ -594,6 +627,10 @@ def _result_color_ramp(
         "maximum_depth": "depth",
         "max_velocity": "velocity",
         "maximum_velocity": "velocity",
+        "froude_number": "froude",
+        "depth_x_velocity": "depth_velocity",
+        "depth_x_velocity_squared": "depth_velocity",
+        "percent_time_inundated": "percent_inundated",
         "compare_wse": "difference",
         "compare_depth": "difference",
         "compare_velocity": "difference",
@@ -618,6 +655,11 @@ def _result_color_ramp(
     lines.append("nv 0 0 0 0")
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
     preset = {
+        "froude": "rascommander.froude",
+        "shear_stress": "rascommander.shear-stress",
+        "arrival_time": "rascommander.arrival-time",
+        "duration": "rascommander.duration",
+        "percent_inundated": "rascommander.percent-inundated",
         "difference": "rascommander.difference",
         "depth_velocity": "rascommander.depth-velocity",
         "hazard_class": "rascommander.hazard-aidr-2017",

@@ -60,6 +60,29 @@ ADR_MAP_TYPES = {
     "percent_inundated": ("fraction inundated", "Percent Time Inundated"),
 }
 
+TERRAIN_STORED_MAP_TYPES = {
+    "wse": ("elevation", "WSE"),
+    "depth": ("depth", "Depth"),
+    "velocity": ("velocity", "Velocity"),
+    "froude": ("froude", "Froude"),
+    "shear_stress": ("Shear", "Shear Stress"),
+    "depth_x_velocity": ("depth and velocity", "D _ V"),
+    "depth_x_velocity_sq": ("depth and velocity squared", "D _ V^2"),
+}
+
+GENERATED_RASTER_PREFIXES = {
+    "wse": ("WSE (",),
+    "depth": ("Depth (",),
+    "velocity": ("Velocity (",),
+    "froude": ("Froude (",),
+    "shear_stress": ("Shear Stress (",),
+    "depth_x_velocity": ("D _ V (", "Depth x Velocity ("),
+    "depth_x_velocity_sq": ("D _ V^2 (", "Depth x Velocity squared ("),
+    "arrival_time": ("Arrival Time (",),
+    "duration": ("Duration (",),
+    "percent_inundated": ("Percent Time Inundated (",),
+}
+
 
 def generate_result_maps(
     project_path: Path,
@@ -413,6 +436,146 @@ def _inject_adr_stored_maps(
     tree.write(rasmap_path, encoding="utf-8", xml_declaration=True)
 
 
+def _inject_terrain_stored_maps(
+    rasmap_path: Path,
+    plan_hdf_name: str,
+    output_folder: str,
+    profile: str,
+    type_flags: dict[str, bool],
+    terrain_name: str,
+    arrival_depth: float,
+) -> None:
+    """Inject a complete Stored Map set bound to one named terrain."""
+
+    tree = ET.parse(rasmap_path)
+    root = tree.getroot()
+    terrain_names = {
+        str(layer.get("Name") or "") for layer in root.findall(".//Terrains/Layer")
+    }
+    if terrain_name not in terrain_names:
+        available = ", ".join(sorted(name for name in terrain_names if name)) or "none"
+        raise ValueError(
+            f"Terrain {terrain_name!r} is not present in {rasmap_path.name}; "
+            f"available terrains: {available}"
+        )
+
+    results_elem = root.find(".//Results")
+    if results_elem is None:
+        results_elem = ET.SubElement(root, "Results", {"Checked": "True"})
+
+    plan_layer = None
+    for layer in results_elem.findall("Layer"):
+        filename = layer.get("Filename", "").replace("\\", "/")
+        if Path(filename).name.lower() == plan_hdf_name.lower():
+            plan_layer = layer
+            break
+    if plan_layer is None:
+        plan_layer = ET.SubElement(
+            results_elem,
+            "Layer",
+            {
+                "Name": output_folder,
+                "Type": "RASResults",
+                "Filename": f".\\{plan_hdf_name}",
+            },
+        )
+
+    def add_layer(
+        display_name: str,
+        map_type: str,
+        profile_name: str,
+        *,
+        output_mode: str = "Stored Current Terrain",
+        arrival: float | None = None,
+    ) -> None:
+        extension = ".shp" if "Polygon" in output_mode else ".vrt"
+        stored = f".\\{output_folder}\\{display_name} ({profile_name}){extension}"
+        layer_elem = ET.SubElement(
+            plan_layer,
+            "Layer",
+            {
+                "Name": display_name,
+                "Type": "RASResultsMap",
+                "Checked": "True",
+                "Filename": stored,
+            },
+        )
+        attributes = {
+            "MapType": map_type,
+            "OutputMode": output_mode,
+            "StoredFilename": stored,
+            "ProfileIndex": "2147483647",
+            "ProfileName": profile_name,
+            "Terrain": terrain_name,
+        }
+        if arrival is not None:
+            attributes["ArrivalDepth"] = str(arrival)
+        ET.SubElement(layer_elem, "MapParameters", attributes)
+
+    for key, (map_type, display_name) in TERRAIN_STORED_MAP_TYPES.items():
+        if type_flags.get(key):
+            add_layer(
+                display_name,
+                map_type,
+                profile,
+                output_mode="Stored Specified Terrain",
+            )
+    for key, (map_type, display_name) in ADR_MAP_TYPES.items():
+        if type_flags.get(key):
+            add_layer(
+                display_name,
+                map_type,
+                "Max",
+                output_mode="Stored Specified Terrain",
+                arrival=arrival_depth,
+            )
+    if type_flags.get("inundation_boundary"):
+        add_layer(
+            "Inundation Boundary",
+            "depth",
+            profile,
+            output_mode="Stored Polygon Specified Depth",
+        )
+
+    tree.write(rasmap_path, encoding="utf-8", xml_declaration=True)
+
+
+def _plan_output_folder(ras, plan_number: str) -> str:
+    plan_rows = getattr(ras, "plan_df", None)
+    if plan_rows is not None and not plan_rows.empty:
+        normalized = plan_rows["plan_number"].astype(str).str.zfill(2)
+        matches = plan_rows.loc[normalized == str(plan_number).zfill(2)]
+        if not matches.empty:
+            row = matches.iloc[0]
+            for column in ("Short Identifier", "plan_title", "Plan Title"):
+                value = row.get(column)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+    return f"Plan {str(plan_number).zfill(2)}"
+
+
+def _discover_generated_rasters(
+    output_dir: Path,
+    type_flags: dict[str, bool],
+    run_started: float,
+) -> dict[str, list[Path]]:
+    discovered: dict[str, list[Path]] = {}
+    recent = [
+        path
+        for path in output_dir.glob("*.tif")
+        if path.stat().st_mtime >= run_started and not path.stem.endswith("_cog")
+    ]
+    for key, prefixes in GENERATED_RASTER_PREFIXES.items():
+        if not type_flags.get(key):
+            continue
+        matches = sorted(
+            path
+            for path in recent
+            if any(path.name.startswith(prefix) for prefix in prefixes)
+        )
+        if matches:
+            discovered[key] = matches
+    return discovered
 
 
 def _generate_plan_maps(
@@ -477,7 +640,9 @@ def _generate_plan_maps(
 
     rasmap_path = Path(str(ras.project_folder)) / f"{ras.project_name}.rasmap"
     plan_hdf_name = f"{ras.project_name}.p{plan_number}.hdf"
+    terrain_override = bool(terrain_name)
     shim_needed = not native_adr and any(adr_requested.values())
+    manual_injection = shim_needed or terrain_override
     shim_backup = rasmap_path.with_suffix(".rasmap.adrbak")
 
     # A leftover backup from a hard-killed prior run must never be restored
@@ -497,7 +662,7 @@ def _generate_plan_maps(
     run_started = time.time() - 2
 
     try:
-        if shim_needed:
+        if manual_injection:
             # Pre-inject ADR stored-map entries into the rasmap so the same
             # StoreAllMaps execution generates them. store_maps' own
             # clear_existing pass would remove injected entries, so clear
@@ -505,12 +670,29 @@ def _generate_plan_maps(
             shutil.copy2(rasmap_path, shim_backup)
             shim_created = True
             RasProcess._remove_stored_maps_from_rasmap(rasmap_path, plan_hdf_name)
-            _inject_adr_stored_maps(
-                rasmap_path,
-                plan_hdf_name,
-                adr_requested,
-                arrival_depth,
-            )
+            if terrain_override:
+                _inject_terrain_stored_maps(
+                    rasmap_path,
+                    plan_hdf_name,
+                    _plan_output_folder(ras, plan_number),
+                    profile,
+                    type_flags,
+                    str(terrain_name),
+                    arrival_depth,
+                )
+                # All requested entries now exist with an explicit Terrain
+                # attribute. Keep RasProcess from adding unbound duplicates.
+                store_kwargs = {name: False for name in PARAM_MAP.values()}
+                if native_adr:
+                    store_kwargs.update({name: False for name in ADR_MAP_TYPES})
+                    store_kwargs["arrival_depth"] = arrival_depth
+            else:
+                _inject_adr_stored_maps(
+                    rasmap_path,
+                    plan_hdf_name,
+                    adr_requested,
+                    arrival_depth,
+                )
             store_kwargs["clear_existing"] = False
 
         raw_results = RasProcess.store_maps(
@@ -549,6 +731,15 @@ def _generate_plan_maps(
             norm_key = key.lower().replace(" ", "_")
             mapped = REVERSE_MAP.get(norm_key, norm_key)
             result[mapped] = [Path(p) for p in paths if Path(p).exists()]
+
+    if terrain_override:
+        for key, paths in _discover_generated_rasters(
+            output_dir,
+            type_flags,
+            run_started,
+        ).items():
+            if paths and not result.get(key):
+                result[key] = paths
 
     # Shim path: ADR outputs were moved to output_dir by store_maps'
     # move-loop but are absent from its return dict — collect them by their
@@ -604,7 +795,6 @@ def _reproject_tifs(tif_paths: list[Path], target_crs: str) -> list[Path]:
     Outputs are written alongside originals with _wgs84 suffix.
     """
     try:
-        import numpy as np
         import rasterio
         from rasterio.crs import CRS
         from rasterio.transform import calculate_default_transform
@@ -648,13 +838,32 @@ def _reproject_tifs(tif_paths: list[Path], target_crs: str) -> list[Path]:
     return reprojected
 
 
+def _matching_vrt_source(tif_paths: list[Path]) -> Path | None:
+    """Return the RASMapper VRT that mosaics a map's terrain-source TIFFs."""
+
+    if not tif_paths or len({Path(path).parent for path in tif_paths}) != 1:
+        return None
+    parent = Path(tif_paths[0]).parent
+    candidates = []
+    for vrt_path in parent.glob("*.vrt"):
+        prefix = f"{vrt_path.stem}."
+        if all(
+            Path(path).stem == vrt_path.stem or Path(path).name.startswith(prefix)
+            for path in tif_paths
+        ):
+            candidates.append(vrt_path)
+    return max(candidates, key=lambda path: len(path.stem)) if candidates else None
+
+
 def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
-    """Convert result TIFFs to validated Cloud Optimized GeoTIFFs.
+    """Convert one result map to a validated Cloud Optimized GeoTIFF.
 
     Rasterio ships with a compatible GDAL runtime, while a system
     ``gdal_translate`` may be too old to provide the COG driver.  Conversion
     therefore stays inside that runtime and fails loudly rather than silently
-    returning a non-COG source TIFF.
+    returning a non-COG source TIFF. RASMapper writes one TIFF per terrain
+    source plus a VRT mosaic; when that VRT is present, publish the complete
+    mosaic as one COG rather than exposing or selecting a source fragment.
     """
     import uuid
 
@@ -662,17 +871,28 @@ def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
     from rasterio.enums import MaskFlags
     from rasterio.shutil import copy as copy_raster
 
-    converted: list[Path] = []
-    for tif in tif_paths:
-        tif = Path(tif)
-        if not tif.is_file():
-            raise FileNotFoundError(f"Result raster does not exist: {tif}")
+    sources = [Path(path) for path in tif_paths]
+    for source in sources:
+        if not source.is_file():
+            raise FileNotFoundError(f"Result raster does not exist: {source}")
 
-        cog_path = tif.parent / f"{tif.stem}_cog{tif.suffix}"
+    vrt_source = _matching_vrt_source(sources)
+    if len(sources) > 1 and vrt_source is None:
+        raise RuntimeError(
+            "Multiple terrain-source rasters were generated but their "
+            "RASMapper VRT mosaic could not be identified"
+        )
+
+    conversion_sources = [vrt_source] if vrt_source is not None else sources
+    converted: list[Path] = []
+    for source in conversion_sources:
+        assert source is not None
+
+        cog_path = source.parent / f"{source.stem}_cog.tif"
         staged_path = cog_path.with_name(f".{cog_path.name}.{uuid.uuid4().hex}.tmp")
         try:
             copy_raster(
-                tif,
+                source,
                 staged_path,
                 driver="COG",
                 compress="ZSTD",
@@ -700,7 +920,9 @@ def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
             staged_path.replace(cog_path)
             converted.append(cog_path)
         except Exception as error:
-            raise RuntimeError(f"COG conversion failed for {tif}: {error}") from error
+            raise RuntimeError(
+                f"COG conversion failed for {source}: {error}"
+            ) from error
         finally:
             staged_path.unlink(missing_ok=True)
 

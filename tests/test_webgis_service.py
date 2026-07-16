@@ -21,6 +21,7 @@ from ras2cng.webgis_service import (
     create_raster_app,
     render_styled_tile,
     sample_raster_at_point,
+    STYLE_PRESETS,
 )
 from ras2cng.viewer_manifest import apply_manifest_v2
 
@@ -63,6 +64,17 @@ def _asset(path: Path) -> RasterAsset:
         minimum=0,
         maximum=20,
     )
+
+
+def test_all_continuous_stored_map_presets_are_allowlisted() -> None:
+    assert {
+        "rascommander.froude",
+        "rascommander.shear-stress",
+        "rascommander.depth-velocity",
+        "rascommander.arrival-time",
+        "rascommander.duration",
+        "rascommander.percent-inundated",
+    } <= set(STYLE_PRESETS)
 
 
 def test_catalog_rejects_path_escape(tmp_path: Path):

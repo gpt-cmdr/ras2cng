@@ -7,7 +7,7 @@ All tests are fully mocked -- no real HEC-RAS files or RasProcess.exe needed.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -235,6 +235,72 @@ def test_generate_plan_maps_shim_injects_and_restores(tmp_path):
     assert [p.name for p in result["duration"]] == [
         "Duration (0.5ft hrs).TileA.tif"
     ]
+
+
+def test_generate_plan_maps_binds_every_requested_map_to_named_terrain(tmp_path):
+    import xml.etree.ElementTree as ET
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    ras.project_folder = project_dir
+    rasmap = project_dir / "TestModel.rasmap"
+    original_xml = (
+        '<RASMapper><Results Checked="True" />'
+        '<Terrains><Layer Name="Terrain" /><Layer Name="TerrainWithChannel" />'
+        "</Terrains></RASMapper>"
+    )
+    rasmap.write_text(original_xml, encoding="utf-8")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    captured = {}
+
+    def legacy_store_maps(plan_number, output_path=None, **kwargs):
+        captured["rasmap_at_call"] = rasmap.read_text(encoding="utf-8")
+        captured["kwargs"] = kwargs
+        (output_dir / "WSE (Max).TerrainWithChannel.tif").write_text("wse")
+        (output_dir / "D _ V (Max).TerrainWithChannel.tif").write_text("dv")
+        (output_dir / "Arrival Time (0.1ft hrs).TerrainWithChannel.tif").write_text(
+            "arrival"
+        )
+        return {}
+
+    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+        mock_rp.store_maps = legacy_store_maps
+        mock_rp._remove_stored_maps_from_rasmap = MagicMock(return_value=0)
+        result = _generate_plan_maps(
+            ras=ras,
+            plan_number="01",
+            profile="Max",
+            output_dir=output_dir,
+            terrain_name="TerrainWithChannel",
+            arrival_depth=0.1,
+            wse=True,
+            depth=False,
+            velocity=False,
+            depth_x_velocity=True,
+            arrival_time=True,
+        )
+
+    root = ET.fromstring(captured["rasmap_at_call"])
+    params = root.findall(".//MapParameters")
+    assert {item.get("MapType") for item in params} == {
+        "elevation",
+        "depth and velocity",
+        "arrival time",
+    }
+    assert all(item.get("Terrain") == "TerrainWithChannel" for item in params)
+    assert all(item.get("OutputMode") == "Stored Specified Terrain" for item in params)
+    assert captured["kwargs"]["wse"] is False
+    assert captured["kwargs"]["depth_x_velocity"] is False
+    assert captured["kwargs"]["clear_existing"] is False
+    assert [path.name for path in result["wse"]] == ["WSE (Max).TerrainWithChannel.tif"]
+    assert [path.name for path in result["depth_x_velocity"]] == [
+        "D _ V (Max).TerrainWithChannel.tif"
+    ]
+    assert [path.name for path in result["arrival_time"]] == [
+        "Arrival Time (0.1ft hrs).TerrainWithChannel.tif"
+    ]
+    assert rasmap.read_text(encoding="utf-8") == original_xml
 
 
 def test_generate_plan_maps_stale_adrbak_never_restored(tmp_path):
@@ -600,3 +666,66 @@ def test_convert_to_cog_uses_bundled_gdal_and_builds_overviews(tmp_path):
 def test_convert_to_cog_rejects_missing_source(tmp_path):
     with pytest.raises(FileNotFoundError, match="Result raster does not exist"):
         _convert_to_cog([tmp_path / "missing.tif"])
+
+
+def test_convert_to_cog_uses_rasmapper_vrt_for_multiple_terrain_sources(tmp_path):
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    left = tmp_path / "Depth (Max).TerrainWithChannel.ChannelOnly.tif"
+    right = tmp_path / "Depth (Max).TerrainWithChannel.base.tif"
+    for path, x_origin, value in ((left, 0, 1.0), (right, 600, 2.0)):
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            width=600,
+            height=600,
+            count=1,
+            dtype="float32",
+            crs="EPSG:2965",
+            transform=from_origin(x_origin, 600, 1, 1),
+            nodata=-9999.0,
+        ) as destination:
+            destination.write(np.full((600, 600), value, dtype="float32"), 1)
+
+    vrt = tmp_path / "Depth (Max).vrt"
+    vrt.write_text(
+        f"""<VRTDataset rasterXSize="1200" rasterYSize="600">
+  <SRS>EPSG:2965</SRS>
+  <GeoTransform>0, 1, 0, 600, 0, -1</GeoTransform>
+  <VRTRasterBand dataType="Float32" band="1">
+    <NoDataValue>-9999</NoDataValue>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="1">{left.name}</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SrcRect xOff="0" yOff="0" xSize="600" ySize="600"/>
+      <DstRect xOff="0" yOff="0" xSize="600" ySize="600"/>
+      <NODATA>-9999</NODATA>
+    </SimpleSource>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="1">{right.name}</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SrcRect xOff="0" yOff="0" xSize="600" ySize="600"/>
+      <DstRect xOff="600" yOff="0" xSize="600" ySize="600"/>
+      <NODATA>-9999</NODATA>
+    </SimpleSource>
+  </VRTRasterBand>
+</VRTDataset>""",
+        encoding="ascii",
+    )
+
+    [output] = _convert_to_cog([left, right])
+
+    assert output.name == "Depth (Max)_cog.tif"
+    with rasterio.open(output) as source:
+        assert source.width == 1200
+        assert source.height == 600
+        assert source.read(1, window=((300, 301), (300, 301))).item() == pytest.approx(
+            1.0
+        )
+        assert source.read(1, window=((300, 301), (900, 901))).item() == pytest.approx(
+            2.0
+        )
+        assert source.overviews(1)

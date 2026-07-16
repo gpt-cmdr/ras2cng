@@ -18,11 +18,49 @@ from ras2cng.maplibre import (
 
 
 _RASTER_PATTERN = re.compile(
-    r"^(Depth|WSE|Velocity) \(([^)]+)\).*_cog\.tif$",
+    r"^(.+?) \(([^)]+)\)(.*?)_cog\.tif$",
     re.IGNORECASE,
 )
 _BOUNDARY_PATTERN = re.compile(r"^Inundation Boundary \(([^)]+)\)\.shp$", re.IGNORECASE)
 _REQUIRED_TYPES = {"depth", "wse", "velocity", "inundation_boundary"}
+
+
+@dataclass(frozen=True)
+class _RasterMapType:
+    key: str
+    display_name: str
+    units: str
+
+
+_RASTER_TYPES: tuple[_RasterMapType, ...] = (
+    _RasterMapType("depth", "Depth", "ft"),
+    _RasterMapType("wse", "Water Surface Elevation", "ft"),
+    _RasterMapType("velocity", "Velocity", "ft/s"),
+    _RasterMapType("froude", "Froude Number", "dimensionless"),
+    _RasterMapType("shear_stress", "Shear Stress", "lb/ft^2"),
+    _RasterMapType("depth_x_velocity", "Depth x Velocity", "ft^2/s"),
+    _RasterMapType("depth_x_velocity_sq", "Depth x Velocity Squared", "ft^3/s^2"),
+    _RasterMapType("arrival_time", "Arrival Time", "hr"),
+    _RasterMapType("duration", "Duration", "hr"),
+    _RasterMapType("percent_inundated", "Percent Time Inundated", "%"),
+)
+_RASTER_TYPE_ALIASES = {
+    "depth": "depth",
+    "wse": "wse",
+    "water surface elevation": "wse",
+    "velocity": "velocity",
+    "froude": "froude",
+    "froude number": "froude",
+    "shear stress": "shear_stress",
+    "depth x velocity": "depth_x_velocity",
+    "depth x velocity squared": "depth_x_velocity_sq",
+    "d _ v": "depth_x_velocity",
+    "d _ v squared": "depth_x_velocity_sq",
+    "arrival time": "arrival_time",
+    "duration": "duration",
+    "percent time inundated": "percent_inundated",
+    "fraction inundated": "percent_inundated",
+}
 
 
 @dataclass(frozen=True)
@@ -50,6 +88,12 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
+def _map_type_key(value: str) -> str | None:
+    normalized = value.lower().replace("²", " squared").replace("^2", " squared")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return _RASTER_TYPE_ALIASES.get(normalized)
+
+
 def _discover_plan_maps(plan_dir: Path) -> dict[str, tuple[Path, str]]:
     discovered: dict[str, tuple[Path, str]] = {}
     for path in sorted(plan_dir.iterdir()):
@@ -57,8 +101,13 @@ def _discover_plan_maps(plan_dir: Path) -> dict[str, tuple[Path, str]]:
             continue
         raster_match = _RASTER_PATTERN.match(path.name)
         if raster_match:
-            map_type = raster_match.group(1).lower()
-            discovered[map_type] = (path, _profile(raster_match.group(2)))
+            map_type = _map_type_key(raster_match.group(1))
+            if map_type:
+                # Retained per-terrain-source COGs may sit beside the complete
+                # VRT-derived COG. Prefer the latter (no source-name suffix).
+                is_complete_mosaic = not raster_match.group(3)
+                if map_type not in discovered or is_complete_mosaic:
+                    discovered[map_type] = (path, _profile(raster_match.group(2)))
             continue
         boundary_match = _BOUNDARY_PATTERN.match(path.name)
         if boundary_match:
@@ -130,7 +179,8 @@ def import_rasprocess_stored_maps(
         raster_records: list[dict[str, Any]] = []
         vector_records: list[dict[str, Any]] = []
 
-        for map_key in ("depth", "wse", "velocity"):
+        for map_spec in _RASTER_TYPES:
+            map_key = map_spec.key
             if map_key not in plan_maps:
                 continue
             source, profile = plan_maps[map_key]
@@ -138,23 +188,23 @@ def import_rasprocess_stored_maps(
             if target.exists() and not overwrite:
                 raise FileExistsError(f"Stored Map COG already exists: {target}")
             shutil.copy2(source, target)
-            layer_id = f"result-{plan_id}-{map_key}-{_slug(profile)}"
-            display_type = "Water Surface Elevation" if map_key == "wse" else map_key.title()
-            units = "ft/s" if map_key == "velocity" else "ft"
+            layer_id = f"result-{plan_id}-{map_key.replace('_', '-')}-{_slug(profile)}"
             package_maplibre_stored_map(
                 target,
                 viewer_dir,
                 plan=plan_id,
-                map_type="WSE" if map_key == "wse" else map_key.title(),
-                name=f"{display_type} ({profile}) - RASMapper Stored Map",
+                map_type="WSE" if map_key == "wse" else map_spec.display_name,
+                name=f"{map_spec.display_name} ({profile}) - RASMapper Stored Map",
                 profile=profile,
                 geometry=geometry_id,
                 layer_id=layer_id,
                 source_cog=f"../archive/stored-maps/{plan_id}/{target.name}",
-                units=units,
+                units=map_spec.units,
                 visible=False,
                 domain_policy=domain_policy,
-                scratch_dir=(Path(scratch_dir) / plan_id / map_key) if scratch_dir else None,
+                scratch_dir=(Path(scratch_dir) / plan_id / map_key)
+                if scratch_dir
+                else None,
                 overwrite=overwrite,
             )
             raster_records.append(
@@ -164,6 +214,7 @@ def import_rasprocess_stored_maps(
                     "size_bytes": target.stat().st_size,
                     "profile": profile,
                     "geometry": geometry_id,
+                    "units": map_spec.units,
                 }
             )
             layer_ids.append(layer_id)

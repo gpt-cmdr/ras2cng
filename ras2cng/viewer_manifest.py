@@ -645,55 +645,51 @@ def _build_tree(
                     layers,
                 )
             )
-        roots["geometries"]["children"].append(
-            {
-                "id": f"geometry-{geometry_id}",
-                "name": f"Geometry {geometry_id}",
-                "role": "geometry",
-                "metadata": {"geometryId": geometry_id},
-                "children": branches,
-            }
-        )
+        if branches:
+            roots["geometries"]["children"].append(
+                {
+                    "id": f"geometry-{geometry_id}",
+                    "name": f"Geometry {geometry_id}",
+                    "role": "geometry",
+                    "metadata": {"geometryId": geometry_id},
+                    "children": branches,
+                }
+            )
 
     plan_info = _plan_info(layers, archive, associations)
     for plan_id, info in plan_info.items():
         raw_layers = _layers_for_plan(layers, plan_id, "raw-hdf")
         raster_layers = _layers_for_plan(layers, plan_id, "stored-map")
         calculated_layers = _layers_for_plan(layers, plan_id, "calculated")
-        roots["results"]["children"].append(
-            {
-                "id": f"plan-{plan_id}",
-                "name": info["title"],
-                "role": "plan",
-                "metadata": {
-                    "planId": plan_id,
-                    "geometryId": info.get("geometry"),
-                },
-                "children": [
+        result_branches = []
+        for branch_id, branch_name, branch_role, branch_layers in (
+            ("raw", "Raw Computation Values", "raw-computation-values", raw_layers),
+            ("rasters", "Published Raster Maps", "published-raster-maps", raster_layers),
+            ("calculated", "Calculated Layers", "calculated-layers", calculated_layers),
+        ):
+            if branch_layers:
+                result_branches.append(
                     _collection_node(
-                        f"plan-{plan_id}-raw",
-                        "Raw Computation Values",
-                        "raw-computation-values",
-                        raw_layers,
+                        f"plan-{plan_id}-{branch_id}",
+                        branch_name,
+                        branch_role,
+                        branch_layers,
                         layers,
-                    ),
-                    _collection_node(
-                        f"plan-{plan_id}-rasters",
-                        "Published Raster Maps",
-                        "published-raster-maps",
-                        raster_layers,
-                        layers,
-                    ),
-                    _collection_node(
-                        f"plan-{plan_id}-calculated",
-                        "Calculated Layers",
-                        "calculated-layers",
-                        calculated_layers,
-                        layers,
-                    ),
-                ],
-            }
-        )
+                    )
+                )
+        if result_branches:
+            roots["results"]["children"].append(
+                {
+                    "id": f"plan-{plan_id}",
+                    "name": info["title"],
+                    "role": "plan",
+                    "metadata": {
+                        "planId": plan_id,
+                        "geometryId": info.get("geometry"),
+                    },
+                    "children": result_branches,
+                }
+            )
 
     map_layer_ids = [
         layer_id for layer_id, layer in layers.items() if layer.get("sourceKind") == "map-layer"

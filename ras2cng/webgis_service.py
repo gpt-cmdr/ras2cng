@@ -90,6 +90,54 @@ STYLE_PRESETS: dict[str, StylePreset] = {
         "rasmapper.inundation",
         ((96, 165, 250, 215), (29, 78, 216, 235)),
     ),
+    "rascommander.froude": StylePreset(
+        "rascommander.froude",
+        (
+            (30, 64, 175, 225),
+            (56, 189, 248, 225),
+            (74, 222, 128, 230),
+            (250, 204, 21, 235),
+            (220, 38, 38, 245),
+        ),
+    ),
+    "rascommander.shear-stress": StylePreset(
+        "rascommander.shear-stress",
+        (
+            (254, 249, 195, 215),
+            (251, 146, 60, 230),
+            (220, 38, 38, 240),
+            (126, 34, 206, 245),
+        ),
+    ),
+    "rascommander.arrival-time": StylePreset(
+        "rascommander.arrival-time",
+        (
+            (220, 38, 38, 240),
+            (249, 115, 22, 235),
+            (250, 204, 21, 230),
+            (34, 197, 94, 225),
+            (37, 99, 235, 240),
+        ),
+    ),
+    "rascommander.duration": StylePreset(
+        "rascommander.duration",
+        (
+            (239, 246, 255, 210),
+            (147, 197, 253, 225),
+            (59, 130, 246, 235),
+            (67, 56, 202, 240),
+            (88, 28, 135, 245),
+        ),
+    ),
+    "rascommander.percent-inundated": StylePreset(
+        "rascommander.percent-inundated",
+        (
+            (239, 246, 255, 210),
+            (147, 197, 253, 225),
+            (59, 130, 246, 235),
+            (30, 64, 175, 245),
+        ),
+    ),
     "rascommander.difference": StylePreset(
         "rascommander.difference",
         ((30, 64, 175, 240), (147, 197, 253, 225), (248, 250, 252, 210), (252, 165, 165, 225), (185, 28, 28, 240)),
@@ -680,6 +728,16 @@ def _default_preset(layer: Mapping[str, Any]) -> str:
         return "rascommander.difference"
     if role.startswith("depth-velocity"):
         return "rascommander.depth-velocity"
+    if role in {"froude", "froude-number"}:
+        return "rascommander.froude"
+    if role == "shear-stress":
+        return "rascommander.shear-stress"
+    if role == "arrival-time":
+        return "rascommander.arrival-time"
+    if role == "duration":
+        return "rascommander.duration"
+    if role in {"percent-inundated", "percent-time-inundated"}:
+        return "rascommander.percent-inundated"
     if role == "hazard-class":
         return "rascommander.hazard-aidr-2017"
     if role == "inundation-threshold":
