@@ -80,6 +80,7 @@ def _valid_bundle():
                 "visible": True,
                 "queryable": True,
                 "rasterStats": {"minimum": 100.0, "maximum": 200.0},
+                "legend": {"type": "continuous", "preset": "rasmapper.terrain"},
                 "storedMap": {"mapType": "terrain", "source": "HEC-RAS terrain GeoTIFF"},
             },
             {
@@ -96,6 +97,7 @@ def _valid_bundle():
                 "visible": False,
                 "queryable": True,
                 "rasterStats": {"minimum": 0.01, "maximum": 12.0},
+                "legend": {"type": "continuous", "preset": "rasmapper.depth"},
                 "storedMap": {
                     "mapType": "Depth",
                     "plan": "p01",
@@ -107,6 +109,22 @@ def _valid_bundle():
         ],
     }
     apply_manifest_v2(manifest)
+    manifest["services"] = {
+        "numericRaster": {
+            "baseUrl": "/ras-raster",
+            "statisticsPath": "/stats",
+            "samplePath": "/sample",
+            "tilePath": "/tiles/{z}/{x}/{y}.png",
+        }
+    }
+    for layer_id in ("terrain", "p01-depth-max"):
+        numeric_id = manifest["layers"][layer_id]["query"]["numericResource"]
+        numeric = manifest["resources"][numeric_id]
+        numeric["serviceAsset"] = f"example/{layer_id}"
+        numeric["serviceRevision"] = f"revision-{layer_id}"
+        tileset = next(item for item in manifest["tilesets"] if item["id"] == layer_id)
+        tileset["serviceAsset"] = numeric["serviceAsset"]
+        tileset["serviceRevision"] = numeric["serviceRevision"]
     archive = {
         "results": [
             {"plan_id": "p01", "geom_id": "g01", "completed": True, "variables": [{}]}
@@ -224,16 +242,61 @@ def test_publication_gate_rejects_local_paths():
     assert any(issue.code in {"resource.local-path", "manifest.local-path"} for issue in report.errors)
 
 
-def test_publication_gate_rejects_unserved_current_view_layer():
+def test_publication_gate_rejects_unserved_extent_color_layer():
     manifest, archive = _valid_bundle()
+    manifest.pop("services")
+    numeric = manifest["resources"]["p01-depth-max-numeric"]
+    numeric.pop("serviceAsset")
+    numeric.pop("serviceRevision")
     manifest["layers"]["p01-depth-max"]["style"]["domainPolicy"] = "current-view"
 
     report = validate_example_publication(manifest, archive, check_files=False)
 
     codes = {issue.code for issue in report.errors}
     assert "manifest.v2" in codes
-    assert "raster.current-view-asset" in codes
-    assert "raster.current-view-service" in codes
+    assert "raster.extent-color-asset" in codes
+    assert "raster.extent-color-service" in codes
+
+
+def test_publication_gate_requires_extent_color_service_for_fixed_continuous_raster():
+    manifest, archive = _valid_bundle()
+    numeric = manifest["resources"]["terrain-numeric"]
+    numeric.pop("serviceAsset")
+    numeric.pop("serviceRevision")
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "raster.extent-color-asset" and issue.context == "terrain"
+        for issue in report.errors
+    )
+
+
+def test_publication_gate_exempts_fixed_categorical_raster_from_extent_color_service():
+    manifest, archive = _valid_bundle()
+    manifest["legends"]["legend-terrain"]["type"] = "categorical"
+    numeric = manifest["resources"]["terrain-numeric"]
+    numeric.pop("serviceAsset")
+    numeric.pop("serviceRevision")
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert not any(
+        issue.code.startswith("raster.extent-color-") and issue.context == "terrain"
+        for issue in report.errors
+    )
+
+
+def test_publication_gate_requires_extent_color_style_preset():
+    manifest, archive = _valid_bundle()
+    manifest["legends"]["legend-terrain"].pop("preset")
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "raster.extent-color-preset" and issue.context == "terrain"
+        for issue in report.errors
+    )
 
 
 def test_http_range_probe_requires_partial_content(monkeypatch):

@@ -159,9 +159,10 @@ window statistics and styled tiles. A precolored PMTiles file cannot be faithful
 because it no longer contains the original scalar values.
 
 Attach service asset IDs after all published paths are final. See the
-[Numeric Raster Service](numeric-raster-service.md) guide. The viewer offers Dataset,
-Current View, and Custom range modes for service-backed continuous layers and immediately
-restores the PMTiles dataset view if a statistics or styled-tile request fails.
+[Numeric Raster Service](numeric-raster-service.md) guide. Every service-backed continuous
+terrain or raster-result layer exposes a **Color Map by Extents** switch plus Dataset and Custom
+range modes. The viewer immediately restores the PMTiles dataset view if a statistics or
+styled-tile request fails.
 
 ## Calculated Layer Publication
 

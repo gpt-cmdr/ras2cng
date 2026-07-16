@@ -1,6 +1,6 @@
 # Numeric Raster Service
 
-The optional WebGIS service supplies bounded current-view statistics, point Identify
+The optional WebGIS service supplies bounded map-extent statistics, point Identify
 samples, and styled 256-pixel tiles from authoritative numeric COGs. Precolored raster
 PMTiles remain the low-latency dataset view and automatic fallback. Server-side point
 sampling also supports GDAL compression schemes such as ZSTD that browser GeoTIFF
@@ -41,15 +41,20 @@ The repository includes example systemd and Nginx configurations under `deploy/w
 - Statistics reads use source overviews and are capped by pixel count and dimensions.
 - Styled tiles are fixed at 256 pixels and use only built-in RASMapper/RAS Commander presets.
 - Asset revisions reject stale browser requests and make successful responses immutable.
-- Categorical legends use fixed domains; only continuous layers support current-view ranges.
-- Current-view mode uses the robust 2nd-98th percentile by default. Exact minimum/maximum is
+- Categorical legends use fixed domains; only continuous layers support extent-based ranges.
+- Color Map by Extents uses the robust 2nd-98th percentile by default. Exact minimum/maximum is
   available for deliberate comparison.
+- Each continuous terrain and raster-result layer can enable Color Map by Extents independently.
+  After map movement ends, every visible enabled layer refreshes against the new bounds; hidden
+  layers do not generate statistics or styled-tile work.
 - An in-memory bounded LRU avoids unbounded disk cache growth.
 
 Environment settings include `RAS2CNG_RASTER_CATALOG`, `RAS2CNG_RASTER_DATA_ROOT`,
 `RAS2CNG_RASTER_MAX_VIEW_PIXELS`, `RAS2CNG_RASTER_MAX_VIEW_DIMENSION`,
 `RAS2CNG_RASTER_CACHE_ENTRIES`, and comma-separated `RAS2CNG_RASTER_ALLOWED_ORIGINS`.
 
-Manifest validation and the Example Library publication gate reject a layer whose preferred
-`domainPolicy` is `current-view` unless it has a numeric COG, catalog asset/revision, and the
-top-level `services.numericRaster` endpoint contract.
+Manifest validation rejects a layer whose preferred `domainPolicy` is `current-view` unless it
+has the complete service contract. The stricter Example Library publication gate requires that
+contract for every continuous terrain and raster-result layer so the runtime toggle is always
+available, even when the initial `domainPolicy` is `fixed`. Each such layer must also name a
+supported style preset in its continuous legend.

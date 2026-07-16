@@ -95,7 +95,7 @@ def validate_example_publication(
         check_files=check_files,
         check_http_ranges=check_http_ranges,
     )
-    _validate_current_view_service(manifest, resources, layers, report)
+    _validate_extent_color_service(manifest, resources, layers, report)
 
     geometry_layers = {
         layer_id: layer for layer_id, layer in layers.items()
@@ -287,32 +287,53 @@ def validate_example_publication(
     return report
 
 
-def _validate_current_view_service(
+def _validate_extent_color_service(
     manifest: Mapping[str, Any],
     resources: Mapping[str, Mapping[str, Any]],
     layers: Mapping[str, Mapping[str, Any]],
     report: PublicationReport,
 ) -> None:
-    """Require every current-view legend to resolve to the bounded raster service."""
+    """Require continuous public rasters to support extent-based color mapping."""
 
-    service = (manifest.get("services") or {}).get("numericRaster") or {}
+    services = (
+        manifest.get("services") if isinstance(manifest.get("services"), Mapping) else {}
+    )
+    service = (
+        services.get("numericRaster")
+        if isinstance(services.get("numericRaster"), Mapping)
+        else {}
+    )
+    legends = (
+        manifest.get("legends") if isinstance(manifest.get("legends"), Mapping) else {}
+    )
     for layer_id, layer in layers.items():
-        if (layer.get("style") or {}).get("domainPolicy", "fixed") != "current-view":
-            continue
         numeric_id = (layer.get("query") or {}).get("numericResource")
+        if not numeric_id:
+            continue
+        legend_id = (layer.get("style") or {}).get("legendRef")
+        legend = legends.get(legend_id) or {}
+        if legend.get("type") == "categorical":
+            continue
+        if not legend.get("preset"):
+            report.add(
+                "error",
+                "raster.extent-color-preset",
+                "Color Map by Extents requires a style preset in the continuous legend.",
+                layer_id,
+            )
         numeric = resources.get(numeric_id) or {}
         if numeric.get("type") != "cog":
             report.add(
                 "error",
-                "raster.current-view-cog",
-                "Current-view styling requires an authoritative numeric COG.",
+                "raster.extent-color-cog",
+                "Color Map by Extents requires an authoritative numeric COG.",
                 layer_id,
             )
         if not numeric.get("serviceAsset") or not numeric.get("serviceRevision"):
             report.add(
                 "error",
-                "raster.current-view-asset",
-                "Current-view styling requires a cataloged service asset and revision.",
+                "raster.extent-color-asset",
+                "Color Map by Extents requires a cataloged service asset and revision.",
                 layer_id,
             )
         if not all(
@@ -321,8 +342,8 @@ def _validate_current_view_service(
         ):
             report.add(
                 "error",
-                "raster.current-view-service",
-                "Current-view styling requires the numeric raster service contract.",
+                "raster.extent-color-service",
+                "Color Map by Extents requires the numeric raster service contract.",
                 layer_id,
             )
 
