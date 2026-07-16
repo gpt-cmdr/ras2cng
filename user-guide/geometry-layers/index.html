@@ -1096,6 +1096,90 @@
   
   
     <li class="md-nav__item">
+      <a href="../maplibre/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MapLibre Project Bundles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../raster-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controlled Raster Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../numeric-raster-service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Numeric Raster Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../postgis-sync/" class="md-nav__link">
         
   
@@ -1895,6 +1979,90 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/maplibre/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    maplibre
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/raster_recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    raster_recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/webgis_service/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    webgis_service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/postgis_sync/" class="md-nav__link">
         
   
@@ -2265,7 +2433,7 @@
 
 
 <h1 id="geometry-layers-reference">Geometry Layers Reference<a class="headerlink" href="#geometry-layers-reference" title="Permanent link">&para;</a></h1>
-<p>ras2cng can extract up to 13 geometry layers from HEC-RAS project files. This page describes each layer, its source file type, and its geometry.</p>
+<p>ras2cng can extract up to 20 HDF geometry layers from HEC-RAS project files. This page describes each layer, its source file type, and its geometry.</p>
 <hr />
 <h2 id="hdf-geometry-layers-ghdf">HDF Geometry Layers (<code>.g##.hdf</code>)<a class="headerlink" href="#hdf-geometry-layers-ghdf" title="Permanent link">&para;</a></h2>
 <p>These layers are extracted from HEC-RAS geometry HDF files. A layer may or may not be present depending on the model configuration (e.g., a 1D-only model has no <code>mesh_cells</code>).</p>
@@ -2286,6 +2454,12 @@
 <td>2D mesh cell faces. Falls back to centroid points if polygon faces are not stored.</td>
 </tr>
 <tr>
+<td><code>mesh_faces</code></td>
+<td><code>HdfMesh.get_mesh_cell_faces()</code></td>
+<td>LineString</td>
+<td>Native 2D cell faces keyed by <code>face_id</code>.</td>
+</tr>
+<tr>
 <td><code>mesh_areas</code></td>
 <td><code>HdfMesh.get_mesh_areas()</code></td>
 <td>Polygon</td>
@@ -2302,6 +2476,24 @@
 <td><code>HdfXsec.get_river_centerlines()</code></td>
 <td>LineString</td>
 <td>River and reach centerlines for 1D geometry.</td>
+</tr>
+<tr>
+<td><code>river_reaches</code></td>
+<td><code>HdfXsec.get_river_reaches()</code></td>
+<td>LineString</td>
+<td>River/reach network geometry as represented by the geometry HDF.</td>
+</tr>
+<tr>
+<td><code>edge_lines</code></td>
+<td><code>HdfXsec.get_river_edge_lines()</code></td>
+<td>LineString</td>
+<td>Left and right 1D river-edge lines used by the model footprint API.</td>
+</tr>
+<tr>
+<td><code>bank_lines</code></td>
+<td><code>HdfXsec.get_river_bank_lines()</code></td>
+<td>LineString</td>
+<td>Left and right bank lines for 1D reaches.</td>
 </tr>
 <tr>
 <td><code>bc_lines</code></td>
@@ -2338,6 +2530,42 @@
 <td><code>HdfStruc.get_structures()</code></td>
 <td>LineString/Point</td>
 <td>Inline structures (weirs, culverts, bridges) and lateral structures.</td>
+</tr>
+<tr>
+<td><code>storage_areas</code></td>
+<td><code>HdfStruc.get_storage_area_polygons()</code></td>
+<td>Polygon</td>
+<td>Storage-area perimeter polygons.</td>
+</tr>
+<tr>
+<td><code>pipe_conduits</code></td>
+<td><code>HdfPipe.get_pipe_conduits()</code></td>
+<td>LineString</td>
+<td>Pipe-network conduits with connectivity, shape, dimensions, and roughness attributes.</td>
+</tr>
+<tr>
+<td><code>pipe_nodes</code></td>
+<td><code>HdfPipe.get_pipe_nodes()</code></td>
+<td>Point</td>
+<td>Pipe-network nodes with node type, invert, terrain, and depth attributes.</td>
+</tr>
+<tr>
+<td><code>pump_stations</code></td>
+<td><code>HdfPump.get_pump_stations()</code></td>
+<td>Point</td>
+<td>Pump-station locations and identifiers.</td>
+</tr>
+<tr>
+<td><code>mannings_n_regions</code></td>
+<td><code>HdfLandCover.get_mannings_region_polygons()</code></td>
+<td>Polygon</td>
+<td>Geometry-level Manning's n region polygons.</td>
+</tr>
+<tr>
+<td><code>infiltration_regions</code></td>
+<td><code>HdfInfiltration.get_infiltration_region_polygons()</code></td>
+<td>Polygon</td>
+<td>Geometry-level infiltration parameter regions.</td>
 </tr>
 </tbody>
 </table>
@@ -2407,11 +2635,39 @@
 <td>Core layer for 2D models</td>
 </tr>
 <tr>
+<td><code>mesh_faces</code></td>
+<td>✓</td>
+<td>—</td>
+<td>—</td>
+<td>Native faces keyed by <code>face_id</code></td>
+</tr>
+<tr>
 <td><code>mesh_areas</code></td>
 <td>✓</td>
 <td>—</td>
 <td>—</td>
 <td>Domain boundary polygons</td>
+</tr>
+<tr>
+<td><code>river_reaches</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>River/reach network when present</td>
+</tr>
+<tr>
+<td><code>edge_lines</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>1D river-edge lines when present</td>
+</tr>
+<tr>
+<td><code>bank_lines</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>1D bank geometry when present</td>
 </tr>
 <tr>
 <td><code>bc_lines</code></td>
@@ -2456,6 +2712,48 @@
 <td>Inline/lateral structures</td>
 </tr>
 <tr>
+<td><code>storage_areas</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>HDF and text storage-area polygons</td>
+</tr>
+<tr>
+<td><code>pipe_conduits</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>Pipe-network conduits when present</td>
+</tr>
+<tr>
+<td><code>pipe_nodes</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>Pipe-network nodes when present</td>
+</tr>
+<tr>
+<td><code>pump_stations</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>Pump stations when present</td>
+</tr>
+<tr>
+<td><code>mannings_n_regions</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>Manning's n parameter regions when present</td>
+</tr>
+<tr>
+<td><code>infiltration_regions</code></td>
+<td>✓</td>
+<td>✓</td>
+<td>—</td>
+<td>Infiltration parameter regions when present</td>
+</tr>
+<tr>
 <td><code>cross_sections</code></td>
 <td>✓</td>
 <td>✓</td>
@@ -2468,13 +2766,6 @@
 <td>✓</td>
 <td>✓</td>
 <td>Available in all geometry types</td>
-</tr>
-<tr>
-<td><code>storage_areas</code></td>
-<td>—</td>
-<td>—</td>
-<td>✓</td>
-<td>Text geometry only</td>
 </tr>
 </tbody>
 </table>
@@ -2597,7 +2888,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 10, 2026 03:21:51 UTC">March 10, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 16, 2026 03:14:30 UTC">July 16, 2026</span>
   </span>
 
     
