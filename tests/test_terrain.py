@@ -6,6 +6,7 @@ All tests are fully mocked -- no real HEC-RAS files or rasterio needed.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
@@ -17,6 +18,7 @@ from ras2cng.terrain import (
     TerrainResolutionDecision,
     discover_terrains,
     consolidate_terrain,
+    consolidate_terrain_files,
     consolidate_project_terrains,
     extract_terrain_modification_layers,
     export_terrain_modifications,
@@ -183,6 +185,47 @@ def test_discover_terrains_from_rasmap(mock_init, mock_names, tmp_path):
 # ---------------------------------------------------------------------------
 # consolidate_terrain (mocked)
 # ---------------------------------------------------------------------------
+
+
+@patch("ras2cng.terrain._merge_tifs")
+def test_consolidate_terrain_files_records_policy_and_display_paths(mock_merge, tmp_path):
+    source = tmp_path / "native.tif"
+    source.write_bytes(b"fake")
+    output_dir = tmp_path / "output"
+    inventory = [{"resolution_x": 3.0, "resolution_y": 3.0, "path": str(source)}]
+
+    with patch("ras2cng.terrain.inspect_terrain_sources", return_value=inventory):
+        result = consolidate_terrain_files(
+            [source],
+            output_dir,
+            terrain_name="Published",
+            source_terrain_name="Native Terrain",
+            source_paths=["Terrain/native.tif"],
+        )
+
+    assert result == output_dir / "Published_merged.tif"
+    assert mock_merge.call_args.kwargs["target_resolution"] == 6.0
+    provenance = json.loads(
+        (output_dir / "Published_terrain-provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["terrain_name"] == "Native Terrain"
+    assert provenance["sources"][0]["path"] == "Terrain/native.tif"
+    assert provenance["resolution"]["target_resolution"] == 6.0
+    assert provenance["output"] == "Published_merged.tif"
+
+
+def test_consolidate_terrain_files_rejects_mismatched_display_paths(tmp_path):
+    source = tmp_path / "native.tif"
+    source.write_bytes(b"fake")
+    inventory = [{"resolution_x": 5.0, "resolution_y": 5.0, "path": str(source)}]
+
+    with patch("ras2cng.terrain.inspect_terrain_sources", return_value=inventory):
+        with pytest.raises(ValueError, match="one display path"):
+            consolidate_terrain_files(
+                [source],
+                tmp_path / "output",
+                source_paths=[],
+            )
 
 @patch("ras2cng.terrain._merge_tifs")
 @patch("ras2cng.terrain.discover_terrains")

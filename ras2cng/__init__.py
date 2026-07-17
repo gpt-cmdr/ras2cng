@@ -102,6 +102,7 @@ from ras2cng.scaffold import (
 from ras2cng.spatial_index import postprocess_archive, postprocess_geoparquet, postprocess_result_table
 from ras2cng.terrain import (
     consolidate_terrain,
+    consolidate_terrain_files,
     consolidate_project_terrains,
     discover_terrains,
     export_terrain_modifications,
@@ -233,6 +234,7 @@ __all__ = [
     "postprocess_result_table",
     # Terrain
     "consolidate_terrain",
+    "consolidate_terrain_files",
     "consolidate_project_terrains",
     "discover_terrains",
     "export_terrain_modifications",

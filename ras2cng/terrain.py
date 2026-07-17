@@ -166,6 +166,82 @@ def inspect_terrain_sources(tif_files: list[Path]) -> list[dict]:
     return inventory
 
 
+def consolidate_terrain_files(
+    tif_files: list[Path],
+    output_dir: Path,
+    *,
+    terrain_name: str = "Consolidated",
+    source_terrain_name: Optional[str] = None,
+    downsample_factor: Optional[float] = None,
+    target_resolution: Optional[float] = None,
+    horizontal_units: str = "Feet",
+    source_paths: Optional[list[str | Path]] = None,
+) -> Path:
+    """Consolidate an explicit, priority-ordered terrain TIFF mosaic.
+
+    This entry point supports projects whose RAS Mapper paths cannot be resolved
+    on the processing host. The first source wins where valid pixels overlap,
+    and the normal no-upsample publication policy is always enforced.
+    """
+
+    sources = [Path(path) for path in tif_files]
+    if not sources:
+        raise ValueError("No TIFF files provided for terrain consolidation")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    source_inventory = inspect_terrain_sources(sources)
+    if source_paths is not None:
+        if len(source_paths) != len(source_inventory):
+            raise ValueError("source_paths must contain one display path per TIFF source")
+        for item, display_path in zip(source_inventory, source_paths):
+            item["path"] = Path(display_path).as_posix()
+
+    native_resolutions = [
+        max(item["resolution_x"], item["resolution_y"])
+        for item in source_inventory
+    ]
+    if downsample_factor is not None and target_resolution is not None:
+        raise ValueError("Use either downsample_factor or target_resolution, not both")
+
+    requested_resolution = target_resolution
+    if downsample_factor is not None:
+        if downsample_factor < 1:
+            raise ValueError("downsample_factor must be at least 1; upsampling is prohibited")
+        requested_resolution = max(native_resolutions) * float(downsample_factor)
+
+    decision = select_terrain_resolution(
+        native_resolutions,
+        requested=requested_resolution,
+        horizontal_units=horizontal_units,
+    )
+
+    console.print(f"[bold]Terrain consolidation:[/bold] {len(sources)} TIFF(s)")
+    merged_tif = output_dir / f"{terrain_name}_merged.tif"
+    _merge_tifs(
+        sources,
+        merged_tif,
+        target_resolution=decision.target_resolution,
+    )
+    console.print(f"  Merged -> {merged_tif.name}")
+
+    provenance = {
+        "schema": "ras2cng.terrain-consolidation/v1",
+        "terrain_name": source_terrain_name or terrain_name,
+        "output_name": terrain_name,
+        "source_priority": "first-valid-value-wins",
+        "resampling": "bilinear",
+        "resolution": asdict(decision),
+        "sources": source_inventory,
+        "output": merged_tif.name,
+    }
+    provenance_path = output_dir / f"{terrain_name}_terrain-provenance.json"
+    provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    console.print(f"  Provenance -> {provenance_path.name}")
+    return merged_tif
+
+
 def discover_terrains(project_path: Path) -> list[TerrainInfo]:
     """Discover terrain layers from rasmap in priority order.
 
@@ -350,49 +426,16 @@ def consolidate_terrain(
     if not all_tifs:
         raise ValueError("No TIFF files found for terrain consolidation")
 
-    source_inventory = inspect_terrain_sources(all_tifs)
-    native_resolutions = [
-        max(item["resolution_x"], item["resolution_y"])
-        for item in source_inventory
-    ]
-    if downsample_factor is not None and target_resolution is not None:
-        raise ValueError("Use either downsample_factor or target_resolution, not both")
-    requested_resolution = target_resolution
-    if downsample_factor is not None:
-        if downsample_factor < 1:
-            raise ValueError("downsample_factor must be at least 1; upsampling is prohibited")
-        requested_resolution = max(native_resolutions) * float(downsample_factor)
-    decision = select_terrain_resolution(
-        native_resolutions,
-        requested=requested_resolution,
+    # Step 2: Merge TIFFs and record the publication-resolution decision.
+    final_tif = consolidate_terrain_files(
+        all_tifs,
+        output_dir,
+        terrain_name=terrain_name,
+        source_terrain_name=terrains[0].name,
+        downsample_factor=downsample_factor,
+        target_resolution=target_resolution,
         horizontal_units=horizontal_units,
     )
-
-    console.print(f"[bold]Terrain consolidation:[/bold] {len(all_tifs)} TIFF(s) from {len(terrains)} terrain(s)")
-
-    # Step 2: Merge TIFFs
-    merged_tif = output_dir / f"{terrain_name}_merged.tif"
-    _merge_tifs(
-        all_tifs,
-        merged_tif,
-        target_resolution=decision.target_resolution,
-    )
-    console.print(f"  Merged -> {merged_tif.name}")
-    final_tif = merged_tif
-
-    provenance = {
-        "schema": "ras2cng.terrain-consolidation/v1",
-        "terrain_name": terrains[0].name,
-        "output_name": terrain_name,
-        "source_priority": "first-valid-value-wins",
-        "resampling": "bilinear",
-        "resolution": asdict(decision),
-        "sources": source_inventory,
-        "output": str(final_tif.resolve()),
-    }
-    provenance_path = output_dir / f"{terrain_name}_terrain-provenance.json"
-    provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-    console.print(f"  Provenance -> {provenance_path.name}")
 
     # Step 4: Create HEC-RAS terrain HDF (requires RasProcess.exe)
     if not create_hdf:
