@@ -177,6 +177,20 @@ def validate_example_publication(
                 "No raw HDF vector result layers are published.",
                 plan_id,
             )
+        expected_variables = _mappable_archive_variables(archive_plans.get(plan_id, {}))
+        published_variables = {
+            str((layer.get("provenance") or {}).get("variable") or "").casefold()
+            for layer in plan_raw
+            if (layer.get("provenance") or {}).get("variable")
+        }
+        for normalized_name, variable_name in expected_variables.items():
+            if normalized_name not in published_variables:
+                report.add(
+                    "error",
+                    "results.raw-variable",
+                    f"Joinable raw HDF result variable {variable_name} is not published.",
+                    f"{plan_id}:{variable_name}",
+                )
         plan_geometry = str(archive_plans.get(plan_id, {}).get("geom_id") or "")
         stored_maps_applicable = bool(terrain_layers) or (
             plan_geometry in geometry_2d_ids
@@ -313,6 +327,29 @@ def validate_example_publication(
         "terrains": len(terrain_layers),
     }
     return report
+
+
+def _mappable_archive_variables(plan: Mapping[str, Any]) -> dict[str, str]:
+    """Return archive variables that have enough metadata for a geometry join."""
+
+    expected: dict[str, str] = {}
+    for variable in plan.get("variables", []):
+        if not isinstance(variable, Mapping):
+            continue
+        rows = variable.get("rows")
+        if rows is not None:
+            try:
+                if int(rows) <= 0:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        variable_name = str(variable.get("variable") or "").strip()
+        if not variable_name or not variable.get("geometry_filter"):
+            continue
+        if not (variable.get("index_column") or variable.get("join_columns")):
+            continue
+        expected[variable_name.casefold()] = variable_name
+    return expected
 
 
 def _validate_extent_color_service(

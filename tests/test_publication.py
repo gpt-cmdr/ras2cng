@@ -241,6 +241,43 @@ def test_publication_gate_requires_both_result_families_for_every_completed_plan
     assert report.counts["completed_plans"] == 2
 
 
+def test_publication_gate_requires_every_joinable_raw_result_variable():
+    manifest, archive = _valid_bundle()
+    archive["results"][0]["variables"] = [
+        {
+            "variable": "sa2d_structure_summary",
+            "parquet": "results/p01/sa2d_structure_summary.parquet",
+            "rows": 1,
+            "geometry_filter": "structures",
+            "join_columns": {"Connection": "structure_name"},
+        },
+        {
+            "variable": "empty_result",
+            "rows": 0,
+            "geometry_filter": "mesh_cells",
+            "index_column": "cell_index",
+        },
+        {"variable": "not_joinable", "rows": 1},
+    ]
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.raw-variable"
+        and issue.context == "p01:sa2d_structure_summary"
+        for issue in report.errors
+    )
+    assert not any("empty_result" in issue.context for issue in report.errors)
+    assert not any("not_joinable" in issue.context for issue in report.errors)
+
+    manifest["layers"]["p01-face-velocity"]["provenance"]["variable"] = (
+        "SA2D_STRUCTURE_SUMMARY"
+    )
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert not any(issue.code == "results.raw-variable" for issue in report.errors)
+
+
 def test_publication_gate_accepts_pure_1d_plan_without_terrain_stored_maps():
     manifest, archive = _valid_bundle()
     geometry = next(item for item in manifest["tilesets"] if item["id"] == "geometry")
