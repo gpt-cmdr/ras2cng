@@ -1527,11 +1527,13 @@ def _extent_from_hdf(hdf_path: Path, fallback_crs: str | None = None) -> gpd.Geo
             hdf_path,
             geometry_type="footprint",
             buffer_percent=0,
+            fill_holes=True,
         )
     except TypeError as error:
         raise RuntimeError(
-            "MapLibre packaging requires the ras-commander footprint API "
-            "(HdfProject.get_project_extent(..., geometry_type='footprint')). "
+            "MapLibre packaging requires the current ras-commander footprint API "
+            "(HdfProject.get_project_extent(..., geometry_type='footprint', "
+            "fill_holes=True)). "
             "Install ras-commander from current main before packaging."
         ) from error
     if footprint.empty:
@@ -1785,7 +1787,10 @@ def package_maplibre_viewer(
                     "bounds": bounds,
                     "sort": 0,
                     "queryable": True,
-                    "extentSource": "HdfProject.get_project_extent(geometry_type='footprint')",
+                    "extentSource": (
+                        "HdfProject.get_project_extent(geometry_type='footprint', "
+                        "fill_holes=True)"
+                    ),
                 }
             )
             extent_features.extend(extent.iterfeatures(drop_id=True, na="null", show_bbox=False))

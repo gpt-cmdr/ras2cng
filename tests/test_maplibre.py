@@ -306,6 +306,37 @@ def test_default_visibility_uses_2d_refinement_context_when_present() -> None:
     assert layers["mesh_faces"]["visible"] is False
 
 
+def test_extent_from_hdf_explicitly_fills_interior_holes(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+    footprint = gpd.GeoDataFrame(
+        geometry=[box(-85.01, 39.99, -84.98, 40.02)],
+        crs="EPSG:4326",
+    )
+
+    def fake_get_project_extent(path: Path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return footprint, tuple(footprint.total_bounds)
+
+    monkeypatch.setattr(
+        "ras_commander.hdf.HdfProject.get_project_extent",
+        fake_get_project_extent,
+    )
+    hdf_path = tmp_path / "model.g01.hdf"
+    hdf_path.touch()
+
+    result = maplibre._extent_from_hdf(hdf_path)
+
+    assert result.geometry.iloc[0].equals(footprint.geometry.iloc[0])
+    assert calls == [
+        {
+            "path": hdf_path,
+            "geometry_type": "footprint",
+            "buffer_percent": 0,
+            "fill_holes": True,
+        }
+    ]
+
+
 def test_default_visibility_includes_pipe_network_geometry() -> None:
     manifest = {
         "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True}],
