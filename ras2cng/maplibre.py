@@ -797,6 +797,18 @@ def _render_raster_pmtiles(
     return selected_max_zoom
 
 
+def _viewer_archive_metadata(viewer_dir: Path) -> dict[str, Any] | None:
+    """Load the sibling archive context used by incremental viewer imports."""
+
+    archive_manifest = Path(viewer_dir).parent / "archive" / "manifest.json"
+    if not archive_manifest.is_file():
+        return None
+    value = json.loads(archive_manifest.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Archive manifest must contain an object: {archive_manifest}")
+    return value
+
+
 def package_maplibre_terrain(
     cog_path: Path,
     viewer_dir: Path,
@@ -906,7 +918,7 @@ def package_maplibre_terrain(
     groups = manifest.setdefault("groups", [])
     if not any(group.get("id") == "ras-terrains" for group in groups):
         groups.append({"id": "ras-terrains", "name": "Terrain", "visible": True})
-    apply_manifest_v2(manifest)
+    apply_manifest_v2(manifest, archive=_viewer_archive_metadata(viewer_dir))
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return TerrainPackageSummary(
         manifest_path=manifest_path,
@@ -1110,7 +1122,7 @@ def package_maplibre_stored_vector(
                 "resultKind": "stored_map",
             }
         )
-    apply_manifest_v2(manifest)
+    apply_manifest_v2(manifest, archive=_viewer_archive_metadata(viewer_dir))
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return VectorResultPackageSummary(
         manifest_path=manifest_path,
@@ -1361,7 +1373,7 @@ def _package_maplibre_numeric_raster(
                 "resultKind": result_kind,
             }
         )
-    apply_manifest_v2(manifest)
+    apply_manifest_v2(manifest, archive=_viewer_archive_metadata(viewer_dir))
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return RasterPackageSummary(
         manifest_path=manifest_path,

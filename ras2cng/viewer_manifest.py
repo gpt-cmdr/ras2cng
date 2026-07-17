@@ -114,6 +114,7 @@ def apply_manifest_v2(
         or manifest.get("schema")
         or LEGACY_MAPLIBRE_SCHEMA
     )
+    existing_layers = manifest.get("layers") if isinstance(manifest.get("layers"), dict) else {}
     resources: dict[str, dict[str, Any]] = {}
     layers: dict[str, dict[str, Any]] = {}
     legends: dict[str, dict[str, Any]] = deepcopy(manifest.get("legends") or {})
@@ -155,6 +156,23 @@ def apply_manifest_v2(
             resource.setdefault("crs", raster_query["sourceCrs"])
         if raster_query.get("sourceProj4"):
             resource.setdefault("proj4", raster_query["sourceProj4"])
+
+    # Incremental terrain/result packaging rebuilds the semantic contract from
+    # compatibility tilesets. Retain context already enriched by the archive
+    # so a later layer import cannot erase HEC-RAS plan and geometry titles.
+    for layer_id, layer in layers.items():
+        previous = existing_layers.get(layer_id)
+        if not isinstance(previous, dict):
+            continue
+        _copy_present(
+            previous,
+            layer,
+            "plan",
+            "planTitle",
+            "geometry",
+            "geometryTitle",
+            "terrain",
+        )
 
     _add_hybrid_basemap(resources, layers)
     _enrich_layer_context(layers, archive)

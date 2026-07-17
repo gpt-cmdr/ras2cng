@@ -384,8 +384,38 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
     archive_dir.mkdir(parents=True)
     cog = archive_dir / "terrain.cog.tif"
     cog.write_bytes(b"cog")
+    archive_dir.parent.joinpath("manifest.json").write_text(
+        json.dumps(
+            {
+                "geometry": [{"geom_id": "g01", "geom_title": "Muncie Geometry"}],
+                "results": [],
+            }
+        ),
+        encoding="utf-8",
+    )
     viewer_dir.joinpath("manifest.json").write_text(
-        json.dumps({"tilesets": [], "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01"}]}),
+        json.dumps(
+            {
+                "tilesets": [
+                    {
+                        "id": "geometry",
+                        "type": "vector",
+                        "href": "tiles/geometry.pmtiles",
+                        "layers": [
+                            {
+                                "id": "ras-geometry-g01-model-extents",
+                                "name": "Model Extents",
+                                "sourceLayer": "ras-geometry-g01-model-extents",
+                                "groupId": "ras-geometry-g01",
+                                "kind": "model_extents",
+                                "visible": True,
+                            }
+                        ],
+                    }
+                ],
+                "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01"}],
+            }
+        ),
         encoding="utf-8",
     )
     source_info = {
@@ -427,7 +457,7 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
     summary = maplibre.package_maplibre_terrain(cog, viewer_dir, scratch_dir=tmp_path / "scratch")
 
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
-    terrain = manifest["tilesets"][0]
+    terrain = next(item for item in manifest["tilesets"] if item["id"] == "terrain")
     assert summary.max_zoom == 16
     assert terrain["id"] == "terrain"
     assert terrain["visible"] is True
@@ -449,6 +479,9 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
     assert manifest["layers"]["terrain"]["query"]["numericResource"] == "terrain-numeric"
     assert manifest["legends"]["legend-terrain"]["preset"] == "rasmapper.terrain"
     assert manifest["legends"]["legend-terrain"]["domainPolicy"] == "fixed"
+    geometry_root = next(root for root in manifest["tree"] if root["id"] == "geometries")
+    assert geometry_root["children"][0]["name"] == "Geometry 01 - Muncie Geometry"
+    assert manifest["layers"]["ras-geometry-g01-model-extents"]["geometryTitle"] == "Muncie Geometry"
     assert any(command[:2] == ["gdaldem", "color-relief"] for command in commands)
     warp = next(command for command in commands if command[0] == "gdalwarp")
     assert "-srcalpha" in warp
@@ -472,6 +505,24 @@ def test_package_stored_map_adds_plan_raster_with_numeric_provenance(monkeypatch
     archive_dir.mkdir(parents=True)
     cog = archive_dir / "depth-max.cog.tif"
     cog.write_bytes(b"numeric-cog")
+    archive_root = viewer_dir.parent / "archive"
+    archive_root.joinpath("manifest.json").write_text(
+        json.dumps(
+            {
+                "geometry": [{"geom_id": "g04", "geom_title": "2D 50ft Grid"}],
+                "results": [
+                    {
+                        "plan_id": "p03",
+                        "plan_title": "Muncie 2D Unsteady",
+                        "geom_id": "g04",
+                        "completed": True,
+                        "variables": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     viewer_dir.joinpath("manifest.json").write_text(
         json.dumps(
             {
@@ -556,6 +607,8 @@ def test_package_stored_map_adds_plan_raster_with_numeric_provenance(monkeypatch
     assert layer["query"]["numericResource"] == "p03-depth-max-numeric"
     assert layer["provenance"]["profile"] == "Max"
     assert raster_branch["children"][0]["layerId"] == "p03-depth-max"
+    assert plan_node["name"] == "P03 - Muncie 2D Unsteady"
+    assert plan_node["metadata"]["geometryLabel"] == "Geometry 04 - 2D 50ft Grid"
     assert manifest["resources"]["p03-depth-max-numeric"]["type"] == "cog"
 
 
