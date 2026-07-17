@@ -154,6 +154,12 @@ the colorized pixels. The manifest records `RASMapper/RasProcess` as the interpo
 authority, making the layer distinct from raw HDF computation-element values. Raster nodata
 is transparent. Stored Maps are hidden initially unless `--visible` is passed.
 
+For a complete project tranche, use `maplibre-import-stored-maps` with its default
+`--require-all` policy. Admission then requires every completed plan to contain Depth,
+WSE, Velocity, Froude Number, Shear Stress, Depth x Velocity, Depth x Velocity Squared,
+Arrival Time, Duration, Percent Time Inundated, and the inundation boundary. Reserve
+`--allow-partial` for explicit diagnostic or exploratory bundles.
+
 Use `--domain-policy current-view` only when the deployed WebGIS service supports bounded
 window statistics and styled tiles. A precolored PMTiles file cannot be faithfully recolored
 because it no longer contains the original scalar values.
