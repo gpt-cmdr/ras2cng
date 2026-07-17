@@ -22,7 +22,6 @@ _RASTER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _BOUNDARY_PATTERN = re.compile(r"^Inundation Boundary \(([^)]+)\)\.shp$", re.IGNORECASE)
-_REQUIRED_TYPES = {"depth", "wse", "velocity", "inundation_boundary"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +43,7 @@ _RASTER_TYPES: tuple[_RasterMapType, ...] = (
     _RasterMapType("duration", "Duration", "hr"),
     _RasterMapType("percent_inundated", "Percent Time Inundated", "%"),
 )
+_REQUIRED_TYPES = {map_type.key for map_type in _RASTER_TYPES} | {"inundation_boundary"}
 _RASTER_TYPE_ALIASES = {
     "depth": "depth",
     "wse": "wse",

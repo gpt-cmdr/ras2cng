@@ -12,6 +12,20 @@ from ras2cng.catalog import Manifest, ManifestPlanEntry
 from ras2cng.stored_maps import _discover_plan_maps, import_rasprocess_stored_maps
 
 
+RASTER_NAMES = (
+    "Depth (Max).Terrain_cog.tif",
+    "WSE (Max).Terrain_cog.tif",
+    "Velocity (Max).Terrain_cog.tif",
+    "Froude (Max).Terrain_cog.tif",
+    "Shear Stress (Max).Terrain_cog.tif",
+    "Depth x Velocity (Max).Terrain_cog.tif",
+    "Depth x Velocity² (Max).Terrain_cog.tif",
+    "Arrival Time (0.1ft hrs).Terrain_cog.tif",
+    "Duration (0.1ft hrs).Terrain_cog.tif",
+    "Percent Time Inundated (0.1ft).Terrain_cog.tif",
+)
+
+
 def _bundle(tmp_path: Path):
     archive = tmp_path / "archive"
     viewer = tmp_path / "viewer"
@@ -41,8 +55,8 @@ def _bundle(tmp_path: Path):
     )
     manifest.write(archive / "manifest.json")
     (viewer / "manifest.json").write_text(json.dumps({"tilesets": [], "groups": []}))
-    for map_type in ("Depth", "WSE", "Velocity"):
-        (plan_maps / f"{map_type} (Max).Terrain_cog.tif").write_bytes(map_type.encode())
+    for name in RASTER_NAMES:
+        (plan_maps / name).write_bytes(name.encode())
     gpd.GeoDataFrame(
         {"Name": ["Max"], "geometry": [box(500000, 500000, 501000, 501000)]},
         crs="EPSG:2965",
@@ -74,16 +88,16 @@ def test_import_stored_maps_registers_archive_and_packages_layers(monkeypatch, t
     )
 
     assert summary.plan_count == 1
-    assert summary.raster_count == 3
+    assert summary.raster_count == 10
     assert summary.vector_count == 1
-    assert len(raster_calls) == 3
+    assert len(raster_calls) == 10
     assert raster_calls[0][2]["geometry"] == "g02"
     assert vector_calls[0][2]["geometry"] == "g02"
     assert (archive / "stored-maps/p03/depth-max.cog.tif").is_file()
     assert (archive / "stored-maps/p03/inundation-boundary-max.parquet").is_file()
     loaded = Manifest.load(archive / "manifest.json")
     assert len(loaded.maps) == 1
-    assert len(loaded.maps[0]["rasters"]) == 3
+    assert len(loaded.maps[0]["rasters"]) == 10
     assert len(loaded.maps[0]["vectors"]) == 1
 
 
@@ -101,22 +115,26 @@ def test_import_stored_maps_rejects_incomplete_plan_before_copy(monkeypatch, tmp
     assert not (archive / "stored-maps").exists()
 
 
+def test_import_stored_maps_rejects_missing_extended_raster_family(
+    monkeypatch, tmp_path: Path
+):
+    maps, archive, viewer = _bundle(tmp_path)
+    (maps / "p03" / "Froude (Max).Terrain_cog.tif").unlink()
+    monkeypatch.setattr(
+        "ras2cng.stored_maps.package_maplibre_stored_map",
+        lambda *_args, **_kwargs: pytest.fail("packaging should not start"),
+    )
+
+    with pytest.raises(ValueError, match="p03: missing froude"):
+        import_rasprocess_stored_maps(maps, archive, viewer)
+
+    assert not (archive / "stored-maps").exists()
+
+
 def test_import_stored_maps_discovers_all_supported_raster_families(
     monkeypatch, tmp_path: Path
 ):
     maps, archive, viewer = _bundle(tmp_path)
-    plan_maps = maps / "p03"
-    extra_names = (
-        "Froude (Max).Terrain_cog.tif",
-        "Shear Stress (Max).Terrain_cog.tif",
-        "Depth x Velocity (Max).Terrain_cog.tif",
-        "Depth x Velocity² (Max).Terrain_cog.tif",
-        "Arrival Time (0.1ft hrs).Terrain_cog.tif",
-        "Duration (0.1ft hrs).Terrain_cog.tif",
-        "Percent Time Inundated (0.1ft).Terrain_cog.tif",
-    )
-    for name in extra_names:
-        (plan_maps / name).write_bytes(name.encode())
     raster_calls = []
     monkeypatch.setattr(
         "ras2cng.stored_maps.package_maplibre_stored_map",

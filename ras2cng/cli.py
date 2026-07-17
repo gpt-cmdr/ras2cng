@@ -670,7 +670,7 @@ def maplibre_import_stored_maps_command(
     require_all: bool = typer.Option(
         True,
         "--require-all/--allow-partial",
-        help="Require Depth, WSE, Velocity, and Inundation Boundary for every completed plan",
+        help="Require all supported raster families and Inundation Boundary for every completed plan",
     ),
     overwrite: bool = typer.Option(False, "--overwrite", help="Replace imported artifacts and viewer layers"),
 ):
