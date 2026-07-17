@@ -142,7 +142,7 @@ def _legacy_manifest() -> dict:
 def _archive_manifest() -> dict:
     return {
         "schema_version": "2.4",
-        "geometry": [{"geom_id": "g01"}],
+        "geometry": [{"geom_id": "g01", "geom_title": "Main Channel Geometry"}],
         "results": [
             {
                 "plan_id": "p01",
@@ -210,8 +210,20 @@ def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() ->
         "ras-geometry-g01-mesh-cells",
     }
     plan = results["children"][0]
-    assert plan["name"] == "Existing Conditions"
-    assert plan["metadata"] == {"planId": "p01", "geometryId": "g01"}
+    assert plan["name"] == "P01 - Existing Conditions"
+    assert plan["metadata"] == {
+        "planId": "p01",
+        "planTitle": "Existing Conditions",
+        "geometryId": "g01",
+        "geometryTitle": "Main Channel Geometry",
+        "geometryLabel": "Geometry 01 - Main Channel Geometry",
+    }
+    assert manifest["layers"]["ras-results-p01-maximum-depth"]["planTitle"] == (
+        "Existing Conditions"
+    )
+    assert manifest["layers"]["ras-results-p01-maximum-depth"]["geometryTitle"] == (
+        "Main Channel Geometry"
+    )
     assert [branch["role"] for branch in plan["children"]] == [
         "raw-computation-values",
         "published-raster-maps",

@@ -96,6 +96,7 @@ class GeomFileInfo:
     text_path: Optional[Path]
     hdf_exists: bool
     text_exists: bool
+    geom_title: str = ""
     has_2d_mesh: bool = False
     has_1d_xs: bool = False
 
@@ -170,6 +171,7 @@ def inspect_project(project_path: Path) -> ProjectInfo:
                 text_path=text_p,
                 hdf_exists=hdf_p.exists() if hdf_p else False,
                 text_exists=text_p.exists() if text_p else False,
+                geom_title=str(row.get("geom_title") or ""),
                 has_2d_mesh=bool(row.get("has_2d_mesh", False)),
                 has_1d_xs=bool(row.get("has_1d_xs", False)),
             ))
@@ -603,6 +605,7 @@ def archive_project(
                 geom_id=geom_id,
                 source_file=prj_file.parent.name + f"/{ras.project_name}.{geom_id}.hdf",
                 file_type="",
+                geom_title=str(row.get("geom_title") or ""),
                 parquet=parquet_name,
                 plans_using=plans_using,
             )

@@ -437,6 +437,11 @@ def maplibre_command(
         "--primary-geometry",
         help="Geometry ID enabled initially, such as g02",
     ),
+    all_primary_geometry: bool = typer.Option(
+        False,
+        "--all-primary-geometry/--standard-primary-geometry",
+        help="Enable every published layer in the primary geometry initially",
+    ),
     scratch_dir: Optional[Path] = typer.Option(
         None,
         "--scratch-dir",
@@ -477,6 +482,7 @@ def maplibre_command(
             crs=crs,
             include_vector_results=vector_results,
             primary_geometry=primary_geometry,
+            show_all_primary_geometry=all_primary_geometry,
             scratch_dir=scratch_dir,
             min_zoom=min_zoom,
             max_zoom=max_zoom,

@@ -141,7 +141,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     assert layers["mesh_cells"]["visible"] is True
     assert layers["centerlines"]["visible"] is False
     assert layers["model_extents"]["extentSource"].startswith("HdfProject.get_project_extent")
-    assert manifest["groups"][0] == {"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True}
+    assert manifest["groups"][0] == {"id": "ras-geometry-g01", "name": "Geometry 01", "visible": True}
     assert manifest["groups"][1]["id"] == "ras-results-p01"
     assert manifest["groups"][1]["resultKind"] == "raw_hdf"
     detail_tiles = next(tileset for tileset in geometry_tiles if tileset["id"] == "geometry-detail")
@@ -283,6 +283,37 @@ def test_default_visibility_includes_pipe_network_geometry() -> None:
     maplibre.apply_maplibre_default_visibility(manifest)
 
     assert all(layer["visible"] is True for layer in manifest["tilesets"][0]["layers"])
+
+
+def test_default_visibility_can_enable_every_primary_geometry_layer() -> None:
+    manifest = {
+        "groups": [
+            {"id": "ras-geometry-g01", "name": "Geometry 01", "visible": True},
+            {"id": "ras-geometry-g02", "name": "Geometry 02", "visible": False},
+        ],
+        "tilesets": [
+            {
+                "type": "vector",
+                "layers": [
+                    {"groupId": "ras-geometry-g01", "kind": "model_extents", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "cross_sections", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "structures", "visible": False},
+                    {"groupId": "ras-geometry-g02", "kind": "model_extents", "visible": True},
+                ],
+            }
+        ],
+    }
+
+    maplibre.apply_maplibre_default_visibility(
+        manifest,
+        primary_geometry_group_id="ras-geometry-g01",
+        show_all_primary_geometry=True,
+    )
+
+    layers = manifest["tilesets"][0]["layers"]
+    assert [layer["visible"] for layer in layers] == [True, True, True, False]
+    assert manifest["groups"][0]["visible"] is True
+    assert manifest["groups"][1]["visible"] is False
 
 
 def test_default_visibility_prefers_computed_plan_geometry() -> None:
@@ -1067,6 +1098,7 @@ def test_cli_passes_hdf_mappings_and_vector_results(monkeypatch, tmp_path: Path)
             "--vector-results",
             "--primary-geometry",
             "g02",
+            "--all-primary-geometry",
             "--scratch-dir",
             str(tmp_path / "scratch"),
         ],
@@ -1076,6 +1108,7 @@ def test_cli_passes_hdf_mappings_and_vector_results(monkeypatch, tmp_path: Path)
     assert received["geometry_hdfs"] == {"g01": Path("model.g01.hdf")}
     assert received["include_vector_results"] is True
     assert received["primary_geometry"] == "g02"
+    assert received["show_all_primary_geometry"] is True
     assert received["scratch_dir"] == tmp_path / "scratch"
 
 

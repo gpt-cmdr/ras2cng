@@ -1476,6 +1476,7 @@ def package_maplibre_viewer(
     crs: str | None = None,
     include_vector_results: bool = False,
     primary_geometry: str | None = None,
+    show_all_primary_geometry: bool = False,
     min_zoom: int = 0,
     max_zoom: int = 17,
     scratch_dir: Path | None = None,
@@ -1553,7 +1554,10 @@ def package_maplibre_viewer(
             groups.append(
                 {
                     "id": group_id,
-                    "name": f"Geometry {geom_id}",
+                    "name": _geometry_display_label(
+                        geom_id,
+                        entry.get("geom_title"),
+                    ),
                     "visible": geometry_index == 0,
                 }
             )
@@ -1946,6 +1950,7 @@ def package_maplibre_viewer(
         primary_geometry_group_id=(
             primary_geometry_group_id or _preferred_result_geometry_group_id(archive)
         ),
+        show_all_primary_geometry=show_all_primary_geometry,
     )
     if result_pmtiles:
         manifest["tilesets"].append(
@@ -2025,6 +2030,7 @@ def apply_maplibre_default_visibility(
     manifest: dict[str, Any],
     *,
     primary_geometry_group_id: str | None = None,
+    show_all_primary_geometry: bool = False,
 ) -> None:
     """Apply the standard initial geometry view to a MapLibre manifest.
 
@@ -2063,6 +2069,11 @@ def apply_maplibre_default_visibility(
                 group["visible"] = group_id == primary_geometry_group_id
 
     primary_layers = geometry_groups[primary_geometry_group_id]
+    if show_all_primary_geometry:
+        for layer in primary_layers:
+            layer["visible"] = True
+        return
+
     kinds = {str(layer.get("kind") or "") for layer in primary_layers}
     is_2d = bool({"mesh_areas", "mesh_cells", "mesh_faces", "breaklines", "refinement_regions"} & kinds)
     default_kinds = {"model_extents", "pipe_conduits", "pipe_nodes"}
@@ -2074,3 +2085,13 @@ def apply_maplibre_default_visibility(
     for layer in primary_layers:
         if layer.get("kind") in default_kinds:
             layer["visible"] = True
+
+
+def _geometry_display_label(geom_id: str, geom_title: Any = None) -> str:
+    """Return a compact RASMapper-style geometry label."""
+
+    normalized = str(geom_id or "").strip().lower()
+    number = normalized[1:] if normalized.startswith("g") else normalized
+    label = f"Geometry {number or normalized}"
+    title = str(geom_title or "").strip()
+    return f"{label} - {title}" if title else label

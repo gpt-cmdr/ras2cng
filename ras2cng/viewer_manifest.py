@@ -157,6 +157,7 @@ def apply_manifest_v2(
             resource.setdefault("proj4", raster_query["sourceProj4"])
 
     _add_hybrid_basemap(resources, layers)
+    _enrich_layer_context(layers, archive)
     associations = _build_associations(manifest, layers, archive)
     tree = _build_tree(manifest, layers, archive, associations)
     interaction = _build_interaction(manifest, layers)
@@ -588,7 +589,10 @@ def _build_tree(
         for root_id, name in ROOT_DEFINITIONS
     }
     geometry_ids = _geometry_ids(manifest, layers, archive)
+    geometry_info = _geometry_info(manifest, layers, archive)
     for geometry_id in geometry_ids:
+        geometry_title = geometry_info.get(geometry_id, {}).get("title")
+        geometry_label = _geometry_label(geometry_id, geometry_title)
         geometry_layers = [
             layer_id
             for layer_id, layer in layers.items()
@@ -608,7 +612,7 @@ def _build_tree(
             roots["features"]["children"].append(
                 _collection_node(
                     f"features-{geometry_id}",
-                    f"Geometry {geometry_id}",
+                    geometry_label,
                     "geometry-features",
                     feature_layers,
                     layers,
@@ -649,14 +653,17 @@ def _build_tree(
             roots["geometries"]["children"].append(
                 {
                     "id": f"geometry-{geometry_id}",
-                    "name": f"Geometry {geometry_id}",
+                    "name": geometry_label,
                     "role": "geometry",
-                    "metadata": {"geometryId": geometry_id},
+                    "metadata": {
+                        "geometryId": geometry_id,
+                        "geometryTitle": geometry_title,
+                    },
                     "children": branches,
                 }
             )
 
-    plan_info = _plan_info(layers, archive, associations)
+    plan_info = _plan_info(layers, archive, associations, geometry_info)
     for plan_id, info in plan_info.items():
         raw_layers = _layers_for_plan(layers, plan_id, "raw-hdf")
         raster_layers = _layers_for_plan(layers, plan_id, "stored-map")
@@ -681,11 +688,17 @@ def _build_tree(
             roots["results"]["children"].append(
                 {
                     "id": f"plan-{plan_id}",
-                    "name": info["title"],
+                    "name": _plan_label(plan_id, info["title"]),
                     "role": "plan",
                     "metadata": {
                         "planId": plan_id,
+                        "planTitle": info["title"],
                         "geometryId": info.get("geometry"),
+                        "geometryTitle": info.get("geometry_title"),
+                        "geometryLabel": _geometry_label(
+                            info.get("geometry"),
+                            info.get("geometry_title"),
+                        ),
                     },
                     "children": result_branches,
                 }
@@ -744,6 +757,7 @@ def _plan_info(
     layers: Mapping[str, Mapping[str, Any]],
     archive: Mapping[str, Any] | None,
     associations: list[dict[str, Any]],
+    geometry_info: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     info: dict[str, dict[str, Any]] = {}
     if archive:
@@ -759,6 +773,10 @@ def _plan_info(
         plan_id = _normalize_id(layer.get("plan"))
         if plan_id:
             info.setdefault(plan_id, {"title": f"Plan {plan_id}", "geometry": None})
+            if layer.get("planTitle"):
+                info[plan_id]["title"] = str(layer["planTitle"])
+            if layer.get("geometry"):
+                info[plan_id]["geometry"] = _normalize_id(layer.get("geometry"))
     for association in associations:
         if association.get("type") != "plan-geometry":
             continue
@@ -766,7 +784,85 @@ def _plan_info(
         if plan_id:
             info.setdefault(plan_id, {"title": f"Plan {plan_id}", "geometry": None})
             info[plan_id]["geometry"] = _normalize_id(association.get("geometry"))
+    for value in info.values():
+        geometry_id = value.get("geometry")
+        value["geometry_title"] = geometry_info.get(geometry_id, {}).get("title")
     return dict(sorted(info.items()))
+
+
+def _enrich_layer_context(
+    layers: dict[str, dict[str, Any]],
+    archive: Mapping[str, Any] | None,
+) -> None:
+    """Attach human-readable plan and geometry context to every layer."""
+
+    if not archive:
+        return
+    geometries = {
+        geometry_id: str(entry.get("geom_title") or "").strip()
+        for entry in archive.get("geometry", [])
+        if (geometry_id := _normalize_id(entry.get("geom_id")))
+    }
+    plans = {
+        plan_id: {
+            "title": str(entry.get("plan_title") or "").strip(),
+            "geometry": _normalize_id(entry.get("geom_id")),
+        }
+        for entry in archive.get("results", [])
+        if (plan_id := _normalize_id(entry.get("plan_id")))
+    }
+    for layer in layers.values():
+        plan_id = _normalize_id(layer.get("plan"))
+        plan = plans.get(plan_id, {})
+        geometry_id = _normalize_id(layer.get("geometry")) or plan.get("geometry")
+        if plan_id:
+            layer["plan"] = plan_id
+            if plan.get("title"):
+                layer["planTitle"] = plan["title"]
+        if geometry_id:
+            layer["geometry"] = geometry_id
+            geometry_title = geometries.get(geometry_id)
+            if geometry_title:
+                layer["geometryTitle"] = geometry_title
+
+
+def _geometry_info(
+    manifest: Mapping[str, Any],
+    layers: Mapping[str, Mapping[str, Any]],
+    archive: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    info: dict[str, dict[str, Any]] = {}
+    if archive:
+        for entry in archive.get("geometry", []):
+            geometry_id = _normalize_id(entry.get("geom_id"))
+            if geometry_id:
+                info[geometry_id] = {
+                    "title": str(entry.get("geom_title") or "").strip() or None,
+                }
+    for layer in layers.values():
+        geometry_id = _normalize_id(layer.get("geometry"))
+        if geometry_id:
+            value = info.setdefault(geometry_id, {"title": None})
+            if layer.get("geometryTitle"):
+                value["title"] = str(layer["geometryTitle"])
+    return info
+
+
+def _geometry_label(geometry_id: Any, geometry_title: Any = None) -> str:
+    normalized = _normalize_id(geometry_id)
+    if not normalized:
+        return "Geometry not specified"
+    number = normalized[1:] if normalized.startswith("g") else normalized
+    label = f"Geometry {number}"
+    title = str(geometry_title or "").strip()
+    return f"{label} - {title}" if title else label
+
+
+def _plan_label(plan_id: str, plan_title: Any = None) -> str:
+    label = str(plan_id or "Plan").upper()
+    title = str(plan_title or "").strip()
+    fallback_titles = {f"plan {str(plan_id).lower()}", f"plan {str(plan_id).upper()}"}
+    return f"{label} - {title}" if title and title.lower() not in fallback_titles else label
 
 
 def _geometry_ids(

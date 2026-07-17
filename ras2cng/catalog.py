@@ -15,7 +15,7 @@ from typing import Optional
 
 
 # Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.5"
+SCHEMA_VERSION = "2.6"
 
 
 @dataclass
@@ -36,6 +36,7 @@ class ManifestGeomEntry:
     geom_id: str                            # e.g. "g01"
     source_file: str                        # relative or abs path to original
     file_type: str                          # "hdf", "text", "hdf+text"
+    geom_title: str = ""                    # HEC-RAS Geom Title
     parquet: str = ""                       # relative path from archive root
     plans_using: list[str] = field(default_factory=list)
     layers: list[dict] = field(default_factory=list)
