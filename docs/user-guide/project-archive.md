@@ -200,7 +200,10 @@ The default publication resolution follows a no-upsample policy:
   at or above 5 ft.
 - Native cells at or above 5 ft retain their native resolution, including 30-ft terrain.
 - A named terrain containing mixed native cell sizes requires an explicit
-  `--terrain-resolution NAME=VALUE` decision.
+  `--terrain-resolution NAME=VALUE` decision. The target must be a whole-number multiple
+  of the coarsest source cell. This avoids upsampling without forcing an impractical common
+  multiple for mosaics that mix grids such as 2-foot and 1-meter tiles.
+- Every source resolution and resampling factor is retained in the terrain provenance JSON.
 - The merge is target-grid and windowed, with the first RASMapper source winning where TIFFs
   overlap. Memory use scales with the processing block rather than the full mosaic.
 

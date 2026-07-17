@@ -60,6 +60,7 @@ from ras2cng import (
     ScaffoldInfo,
     # Terrain
     consolidate_terrain,
+    consolidate_terrain_files,
     consolidate_project_terrains,
     discover_terrains,
     export_terrain_modifications,
@@ -79,7 +80,7 @@ from ras2cng.pmtiles import generate_pmtiles_from_input
 from ras2cng.postgis_sync import sync_to_postgres, read_from_postgres
 from ras2cng.mapping import generate_result_maps, MapResult
 from ras2cng.scaffold import build_scaffold, read_plan_hdf_metadata
-from ras2cng.terrain import consolidate_terrain, consolidate_project_terrains, discover_terrains, TerrainInfo
+from ras2cng.terrain import consolidate_terrain, consolidate_terrain_files, consolidate_project_terrains, discover_terrains, TerrainInfo
 ```
 
 ## Modules

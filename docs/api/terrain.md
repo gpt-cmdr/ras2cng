@@ -9,6 +9,7 @@ The `terrain` module discovers named terrain layers from a HEC-RAS project's ras
 - **Inspecting terrain configuration**: Enumerate all terrain layers, their CRS, resolution, and file locations
 - **Consolidating terrain**: Merge the TIFF members of each named terrain into its own authoritative file
 - **Downsampling without upsampling**: Select a whole native-cell multiple with a 5 ft publication floor
+- **Recovering relocated projects**: Consolidate an explicit, priority-ordered TIFF list when stored RASMapper paths cannot be resolved on the processing host
 - **Publishing source construction**: Export source TIFF footprints and terrain-modification vectors
 - **Creating HEC-RAS terrain HDFs**: Generate new terrain HDF files via RasProcess.exe (required for result mapping)
 
@@ -35,7 +36,7 @@ TIF files are associated with a terrain by matching the file stem against the te
 
 1. **Discover** terrain TIFs from rasmap (priority ordered)
 2. **Keep terrain names separate**: different named RASMapper terrains are never merged implicitly
-3. **Choose a target grid**: preserve native resolution at or above 5 ft; otherwise use the smallest whole native-cell multiple at or above 5 ft
+3. **Choose a target grid**: preserve native resolution at or above 5 ft; otherwise use the smallest whole native-cell multiple at or above 5 ft. A mixed-resolution mosaic requires an explicit target that is a whole multiple of its coarsest native grid; every source factor is retained in provenance.
 4. **Merge by windows**: reproject each member to the target grid and let the first RASMapper source win in overlaps without allocating the full mosaic in memory
 5. **Optionally create HEC-RAS terrain HDF** via `RasTerrain.create_terrain_from_rasters()` (requires RasProcess.exe)
 6. **Optionally register** the new terrain in the project's rasmap
@@ -53,6 +54,10 @@ Steps 5-6 require RasProcess.exe (Windows or Wine). Steps 1-4 are pure Python (r
       show_source: true
 
 ::: ras2cng.terrain.consolidate_terrain
+    options:
+      show_source: true
+
+::: ras2cng.terrain.consolidate_terrain_files
     options:
       show_source: true
 

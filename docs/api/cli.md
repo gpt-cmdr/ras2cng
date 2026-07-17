@@ -282,6 +282,9 @@ Options:
 `terrain` requires the selected TIFFs to belong to one named RASMapper surface. For
 Example Library archives, prefer `archive --consolidate-terrain`, which processes each
 named terrain independently and records the resolution decision and source inventory.
+When a relocated project's stored RASMapper paths cannot be resolved, use the Python
+`consolidate_terrain_files()` API with an explicit priority-ordered source list. It applies
+the same bounded-memory merge, transparent NoData, no-upsample policy, and provenance model.
 
 ## ras2cng map
 
