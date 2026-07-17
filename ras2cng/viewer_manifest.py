@@ -342,9 +342,16 @@ def validate_manifest_v2(manifest: Mapping[str, Any]) -> None:
 
     expected_roots = [root_id for root_id, _ in ROOT_DEFINITIONS]
     observed_roots = [node.get("id") for node in tree]
-    if observed_roots != expected_roots:
+    canonical_roots = [root_id for root_id in expected_roots if root_id in observed_roots]
+    if observed_roots != canonical_roots or len(set(observed_roots)) != len(observed_roots):
         raise ValueError(
-            "Viewer manifest roots must be ordered as " + ", ".join(expected_roots)
+            "Viewer manifest roots must be a unique ordered subset of "
+            + ", ".join(expected_roots)
+        )
+    empty_roots = [str(node.get("id")) for node in tree if not node.get("children")]
+    if empty_roots:
+        raise ValueError(
+            "Viewer manifest must omit empty roots: " + ", ".join(empty_roots)
         )
 
     for layer_id, layer in layers.items():
@@ -899,7 +906,11 @@ def _build_tree(
     roots["map-layers"]["children"].extend(
         _leaf(layer_id, layers[layer_id]) for layer_id in unassigned
     )
-    return [roots[root_id] for root_id, _ in ROOT_DEFINITIONS]
+    return [
+        roots[root_id]
+        for root_id, _ in ROOT_DEFINITIONS
+        if roots[root_id]["children"]
+    ]
 
 
 def _plan_info(

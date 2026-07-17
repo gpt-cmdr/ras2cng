@@ -165,11 +165,9 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == "rascommander.maplibre/v2"
     assert [root["id"] for root in manifest["tree"]] == [
-        "features",
         "geometries",
         "results",
         "map-layers",
-        "terrains",
     ]
     assert manifest["resources"]["geometry"]["type"] == "vector-pmtiles"
     assert manifest["resources"]["results"]["type"] == "vector-pmtiles"
@@ -847,7 +845,10 @@ def test_package_stored_vector_adds_rasmapper_result_to_plan(monkeypatch, tmp_pa
 
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
     layer = manifest["layers"][summary.layer_id]
-    plan = next(node for node in manifest["tree"][2]["children"] if node["metadata"]["planId"] == "p03")
+    results = next(node for node in manifest["tree"] if node["id"] == "results")
+    plan = next(
+        node for node in results["children"] if node["metadata"]["planId"] == "p03"
+    )
     published = next(node for node in plan["children"] if node["role"] == "published-raster-maps")
     assert layer["sourceKind"] == "stored-map"
     assert layer["geometry"] == "g02"
@@ -922,7 +923,10 @@ def test_package_calculated_vector_preserves_provenance_and_tree(
     manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
     tileset = next(item for item in manifest["tilesets"] if item["id"] == summary.layer_id)
     layer = manifest["layers"][summary.layer_id]
-    plan = next(node for node in manifest["tree"][2]["children"] if node["metadata"]["planId"] == "p03")
+    results = next(node for node in manifest["tree"] if node["id"] == "results")
+    plan = next(
+        node for node in results["children"] if node["metadata"]["planId"] == "p03"
+    )
     calculated = next(node for node in plan["children"] if node["role"] == "calculated-layers")
     assert tileset["resultKind"] == "calculated_vector"
     assert layer["sourceKind"] == "calculated"
@@ -1183,7 +1187,8 @@ def test_package_calculated_map_uses_recipe_provenance_and_tree(monkeypatch, tmp
         "H5",
         "H6",
     ]
-    plan_group = next(node for node in manifest["tree"][2]["children"] if node["id"] == "plan-p03")
+    results = next(node for node in manifest["tree"] if node["id"] == "results")
+    plan_group = next(node for node in results["children"] if node["id"] == "plan-p03")
     calculated = next(node for node in plan_group["children"] if node["role"] == "calculated-layers")
     assert calculated["children"][0]["layerId"] == summary.layer_id
 

@@ -262,7 +262,7 @@ def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() ->
     validate_manifest_v2(manifest)
 
 
-def test_apply_manifest_v2_keeps_required_roots_but_omits_empty_subgroups() -> None:
+def test_apply_manifest_v2_omits_empty_roots_and_subgroups() -> None:
     manifest = _legacy_manifest()
     manifest["tilesets"] = [
         tileset
@@ -285,10 +285,25 @@ def test_apply_manifest_v2_keeps_required_roots_but_omits_empty_subgroups() -> N
 
     apply_manifest_v2(manifest, archive=archive)
 
-    results = next(root for root in manifest["tree"] if root["id"] == "results")
-    terrains = next(root for root in manifest["tree"] if root["id"] == "terrains")
-    assert results["children"] == []
-    assert terrains["children"] == []
+    assert [root["id"] for root in manifest["tree"]] == [
+        "features",
+        "geometries",
+        "map-layers",
+    ]
+
+
+def test_validate_manifest_v2_rejects_empty_root() -> None:
+    manifest = _legacy_manifest()
+    apply_manifest_v2(manifest, archive=_archive_manifest())
+    manifest["tree"][0] = {
+        "id": "features",
+        "name": "Features",
+        "role": "features",
+        "children": [],
+    }
+
+    with pytest.raises(ValueError, match="omit empty roots: features"):
+        validate_manifest_v2(manifest)
 
 
 def test_apply_manifest_v2_is_idempotent() -> None:

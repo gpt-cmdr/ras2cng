@@ -14,17 +14,17 @@ display layers, navigation, and interaction state:
 | --- | --- |
 | `resources` | PMTiles, numeric COGs, and viewer-managed basemaps. A display raster and its numeric COG are separate resources. |
 | `layers` | Stable semantic records for style, visibility, provenance, units, query behavior, plan, geometry, and terrain associations. |
-| `tree` | Ordered `Features`, `Geometries`, `Results`, `Map Layers`, and `Terrains` hierarchy. |
+| `tree` | Content-aware `Features`, `Geometries`, `Results`, `Map Layers`, and `Terrains` hierarchy in canonical order. Empty roots and branches are omitted. |
 | `associations` | Explicit plan-to-geometry and geometry-to-terrain links. |
 | `legends` | Reusable categorical or continuous legend definitions and fixed/current-view domain policy. |
 | `interaction` | The active Identify layer and up to three optional pinned comparison layers. |
 | `timeAxes` | Named time axes for time-varying result layers. |
 | `provenance` | Generator, source CRS/project, archive schema, and result-value semantics. |
 
-Each plan always contains `Raw Computation Values`, `Published Raster Maps`, and
-`Calculated Layers`, even when one branch is empty. Raw HDF layers retain values at
-HEC-RAS computation elements and declare that no surface interpolation occurred.
-Published raster maps identify RASMapper/RasProcess as the interpolation authority.
+Each plan contains only its populated `Raw Computation Values`, `Published Raster Maps`,
+and `Calculated Layers` branches. Raw HDF layers retain values at HEC-RAS computation
+elements and declare that no surface interpolation occurred. Published raster maps
+identify RASMapper/RasProcess as the interpolation authority.
 
 The manifest temporarily retains v1 `tilesets` and `groups` fields so deployed viewers
 can be upgraded independently. Consumers should treat the v2 fields as authoritative.
