@@ -121,6 +121,18 @@ def validate_example_publication(
             if layer.get("geometry")
         }
     )
+    visible_geometry_ids = {
+        str(layer.get("geometry"))
+        for layer in geometry_layers.values()
+        if layer.get("geometry") and layer.get("visible") is True
+    }
+    if geometry_ids and len(visible_geometry_ids) != 1:
+        report.add(
+            "error",
+            "defaults.geometry",
+            "Exactly one geometry must be enabled by default; enabled geometries: "
+            + (", ".join(sorted(visible_geometry_ids)) or "none"),
+        )
     if not extent_layers:
         report.add("error", "geometry.extent", "No API-derived Model Extents layer is published.")
     for geometry_id in geometry_ids:
@@ -157,6 +169,26 @@ def validate_example_publication(
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "terrain"
     }
+    for layer_id, layer in {**raw_layers, **stored_layers}.items():
+        missing_titles = [
+            key
+            for key in ("planTitle", "geometryTitle")
+            if not str(layer.get(key) or "").strip()
+        ]
+        if missing_titles:
+            report.add(
+                "error",
+                "results.metadata",
+                "Result layer is missing " + ", ".join(missing_titles) + ".",
+                layer_id,
+            )
+        if layer.get("visible") is True:
+            report.add(
+                "error",
+                "defaults.results",
+                "Result layers must be disabled by default.",
+                layer_id,
+            )
     if not plan_ids:
         report.add("error", "results.plan", "No result plan is published.")
     admission_plan_ids = sorted(set(plan_ids) | completed_plan_ids)

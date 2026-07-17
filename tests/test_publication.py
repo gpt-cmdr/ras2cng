@@ -170,6 +170,10 @@ def _valid_bundle():
         }
     )
     apply_manifest_v2(manifest)
+    for layer in manifest["layers"].values():
+        if layer.get("sourceKind") in {"raw-hdf", "stored-map"}:
+            layer["planTitle"] = "Existing Conditions"
+            layer["geometryTitle"] = "Main Channel Geometry"
     manifest["services"] = {
         "numericRaster": {
             "baseUrl": "/ras-raster",
@@ -292,6 +296,35 @@ def test_publication_gate_requires_every_stored_map_type():
         and "froude" in issue.message
         for issue in report.errors
     )
+
+
+def test_publication_gate_requires_result_titles_and_hidden_defaults():
+    manifest, archive = _valid_bundle()
+    layer = manifest["layers"]["p01-depth-max"]
+    layer.pop("planTitle")
+    layer["visible"] = True
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.metadata" and issue.context == "p01-depth-max"
+        for issue in report.errors
+    )
+    assert any(
+        issue.code == "defaults.results" and issue.context == "p01-depth-max"
+        for issue in report.errors
+    )
+
+
+def test_publication_gate_requires_one_default_geometry():
+    manifest, archive = _valid_bundle()
+    for layer in manifest["layers"].values():
+        if layer.get("sourceKind") == "geometry":
+            layer["visible"] = False
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(issue.code == "defaults.geometry" for issue in report.errors)
 
 
 def test_publication_gate_requires_every_joinable_raw_result_variable():
