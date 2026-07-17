@@ -149,9 +149,24 @@ def validate_example_publication(
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "stored-map"
     }
+    terrain_layers = {
+        layer_id: layer for layer_id, layer in layers.items()
+        if layer.get("sourceKind") == "terrain"
+    }
     if not plan_ids:
         report.add("error", "results.plan", "No result plan is published.")
     admission_plan_ids = sorted(set(plan_ids) | completed_plan_ids)
+    geometry_2d_ids = {
+        str(layer.get("geometry"))
+        for layer in geometry_layers.values()
+        if layer.get("role") in _TWO_DIMENSIONAL_ROLES and layer.get("geometry")
+    }
+    archive_plans = {
+        str(plan.get("plan_id")): plan
+        for plan in (archive or {}).get("results", [])
+        if isinstance(plan, Mapping) and plan.get("plan_id")
+    }
+    stored_map_exempt_plans: set[str] = set()
     for plan_id in admission_plan_ids:
         plan_raw = [layer for layer in raw_layers.values() if layer.get("plan") == plan_id]
         plan_stored = [layer for layer in stored_layers.values() if layer.get("plan") == plan_id]
@@ -162,11 +177,25 @@ def validate_example_publication(
                 "No raw HDF vector result layers are published.",
                 plan_id,
             )
-        if not plan_stored:
+        plan_geometry = str(archive_plans.get(plan_id, {}).get("geom_id") or "")
+        stored_maps_applicable = bool(terrain_layers) or (
+            plan_geometry in geometry_2d_ids
+            if plan_geometry
+            else bool(geometry_2d_ids)
+        )
+        if not plan_stored and stored_maps_applicable:
             report.add(
                 "error",
                 "results.stored-map",
                 "No RASMapper Stored Map rasters are published.",
+                plan_id,
+            )
+        elif not plan_stored:
+            stored_map_exempt_plans.add(plan_id)
+            report.add(
+                "warning",
+                "results.stored-map-not-applicable",
+                "Pure 1D plan has no project terrain; continuous RASMapper Stored Map rasters are not applicable.",
                 plan_id,
             )
 
@@ -215,10 +244,6 @@ def validate_example_publication(
             )
 
     has_2d = any(layer.get("role") in _TWO_DIMENSIONAL_ROLES for layer in geometry_layers.values())
-    terrain_layers = {
-        layer_id: layer for layer_id, layer in layers.items()
-        if layer.get("sourceKind") == "terrain"
-    }
     if has_2d and not terrain_layers:
         report.add("error", "terrain.required", "A 2D model has no published terrain layer.")
     if has_2d and terrain_layers and not any(layer.get("visible") is True for layer in terrain_layers.values()):
@@ -284,6 +309,7 @@ def validate_example_publication(
         "completed_plans": len(completed_plan_ids),
         "raw_results": len(raw_layers),
         "stored_maps": len(stored_layers),
+        "stored_map_exempt_plans": len(stored_map_exempt_plans),
         "terrains": len(terrain_layers),
     }
     return report

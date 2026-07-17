@@ -200,6 +200,16 @@ def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() ->
     )
     assert manifest["interaction"]["activeLayerId"] == "ras-geometry-g01-model-extents"
     assert manifest["interaction"]["identify"]["mode"] == "active-and-pinned"
+    assert manifest["capabilities"]["terrain"] == {
+        "applicable": True,
+        "published": True,
+        "reason": None,
+    }
+    assert manifest["capabilities"]["plans"]["p01"]["storedMaps"] == {
+        "applicable": True,
+        "published": True,
+        "reason": None,
+    }
 
     features = manifest["tree"][0]
     geometries = manifest["tree"][1]

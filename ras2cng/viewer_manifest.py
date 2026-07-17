@@ -33,6 +33,8 @@ _TERRAIN_MODIFICATION_KINDS = {
 
 _TERRAIN_SOURCE_KINDS = {"terrain_source_footprints"}
 
+_TWO_DIMENSIONAL_KINDS = {"mesh_areas", "mesh_cells", "mesh_faces"}
+
 _GEOMETRY_BRANCHES = (
     (
         "model",
@@ -179,6 +181,7 @@ def apply_manifest_v2(
     associations = _build_associations(manifest, layers, archive)
     tree = _build_tree(manifest, layers, archive, associations)
     interaction = _build_interaction(manifest, layers)
+    capabilities = _build_capabilities(layers, archive)
 
     provenance = deepcopy(manifest.get("provenance") or {})
     provenance.setdefault("generatedBy", manifest.get("generatedBy", "ras2cng maplibre"))
@@ -201,6 +204,7 @@ def apply_manifest_v2(
     manifest["associations"] = associations
     manifest["legends"] = legends
     manifest["interaction"] = interaction
+    manifest["capabilities"] = capabilities
     manifest.setdefault("timeAxes", {})
     manifest["provenance"] = provenance
     manifest["compatibility"] = {
@@ -210,6 +214,115 @@ def apply_manifest_v2(
     }
     validate_manifest_v2(manifest)
     return manifest
+
+
+def _build_capabilities(
+    layers: Mapping[str, Mapping[str, Any]],
+    archive: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Describe which terrain and result families apply to each plan.
+
+    Continuous RASMapper result surfaces require either a 2D computation mesh
+    or a project terrain. A terrain-free, pure 1D source can still publish its
+    authoritative cross-section values, but raster Stored Maps are not an
+    applicable deliverable for that source package.
+    """
+
+    terrain_published = any(
+        layer.get("sourceKind") == "terrain" for layer in layers.values()
+    )
+    raw_plan_ids = {
+        _normalize_id(layer.get("plan"))
+        for layer in layers.values()
+        if layer.get("sourceKind") == "raw-hdf"
+    }
+    stored_plan_ids = {
+        _normalize_id(layer.get("plan"))
+        for layer in layers.values()
+        if layer.get("sourceKind") == "stored-map"
+    }
+    geometry_2d_ids = {
+        _normalize_id(layer.get("geometry"))
+        for layer in layers.values()
+        if layer.get("sourceKind") == "geometry"
+        and layer.get("role") in _TWO_DIMENSIONAL_KINDS
+    }
+    geometry_2d_ids.discard(None)
+
+    archive_plans: dict[str, Mapping[str, Any]] = {}
+    if archive:
+        for geometry in archive.get("geometry", []):
+            geometry_id = _normalize_id(geometry.get("geom_id"))
+            if not geometry_id:
+                continue
+            kinds = {
+                str(layer.get("layer") or layer.get("filter_value") or "")
+                for layer in geometry.get("layers", [])
+                if isinstance(layer, Mapping)
+            }
+            if kinds & _TWO_DIMENSIONAL_KINDS:
+                geometry_2d_ids.add(geometry_id)
+        for plan in archive.get("results", []):
+            plan_id = _normalize_id(plan.get("plan_id"))
+            if plan_id:
+                archive_plans[plan_id] = plan
+
+    plan_ids = sorted(
+        set(archive_plans)
+        | {plan_id for plan_id in raw_plan_ids | stored_plan_ids if plan_id}
+    )
+    plan_capabilities: dict[str, dict[str, Any]] = {}
+    for plan_id in plan_ids:
+        plan = archive_plans.get(plan_id, {})
+        geometry_id = _normalize_id(plan.get("geom_id"))
+        stored_maps_applicable = terrain_published or (
+            geometry_id in geometry_2d_ids if geometry_id else bool(geometry_2d_ids)
+        )
+        plan_capabilities[plan_id] = {
+            "geometry": geometry_id,
+            "rawResults": {
+                "applicable": True,
+                "published": plan_id in raw_plan_ids,
+            },
+            "storedMaps": {
+                "applicable": stored_maps_applicable,
+                "published": plan_id in stored_plan_ids,
+                "reason": (
+                    None
+                    if stored_maps_applicable
+                    else "pure-1d-source-without-project-terrain"
+                ),
+            },
+        }
+
+    stored_maps_applicable = any(
+        item["storedMaps"]["applicable"] for item in plan_capabilities.values()
+    )
+    return {
+        "terrain": {
+            "applicable": terrain_published or bool(geometry_2d_ids),
+            "published": terrain_published,
+            "reason": (
+                None
+                if terrain_published or geometry_2d_ids
+                else "pure-1d-source-without-project-terrain"
+            ),
+        },
+        "rawResults": {
+            "applicable": bool(plan_capabilities),
+            "published": bool(raw_plan_ids),
+        },
+        "storedMaps": {
+            "applicable": stored_maps_applicable,
+            "published": bool(stored_plan_ids),
+            "reason": (
+                None
+                if stored_maps_applicable
+                else "pure-1d-source-without-project-terrain"
+            ),
+        },
+        "plans": plan_capabilities,
+    }
 
 
 def validate_manifest_v2(manifest: Mapping[str, Any]) -> None:

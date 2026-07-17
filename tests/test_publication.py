@@ -241,6 +241,56 @@ def test_publication_gate_requires_both_result_families_for_every_completed_plan
     assert report.counts["completed_plans"] == 2
 
 
+def test_publication_gate_accepts_pure_1d_plan_without_terrain_stored_maps():
+    manifest, archive = _valid_bundle()
+    geometry = next(item for item in manifest["tilesets"] if item["id"] == "geometry")
+    geometry["layers"] = [
+        layer for layer in geometry["layers"] if layer["kind"] == "model_extents"
+    ]
+    geometry["layers"].append(
+        {
+            "id": "g01-river-reaches",
+            "name": "River Reaches",
+            "sourceLayer": "g01-river-reaches",
+            "groupId": "ras-geometry-g01",
+            "kind": "river_reaches",
+            "visible": True,
+            "bounds": [-85.01, 39.99, -84.98, 40.02],
+        }
+    )
+    manifest["tilesets"] = [
+        item
+        for item in manifest["tilesets"]
+        if item["id"] not in {"terrain", "p01-depth-max"}
+    ]
+    archive["geometry"] = [
+        {
+            "geom_id": "g01",
+            "layers": [{"layer": "river_reaches"}, {"layer": "cross_sections"}],
+        }
+    ]
+    apply_manifest_v2(manifest, archive=archive)
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert report.ok, report.to_dict()
+    assert report.counts["stored_map_exempt_plans"] == 1
+    assert any(
+        issue.code == "results.stored-map-not-applicable" and issue.context == "p01"
+        for issue in report.warnings
+    )
+    assert manifest["capabilities"]["terrain"] == {
+        "applicable": False,
+        "published": False,
+        "reason": "pure-1d-source-without-project-terrain",
+    }
+    assert manifest["capabilities"]["plans"]["p01"]["storedMaps"] == {
+        "applicable": False,
+        "published": False,
+        "reason": "pure-1d-source-without-project-terrain",
+    }
+
+
 def test_publication_gate_rejects_raster_outside_model_extent():
     manifest, archive = _valid_bundle()
     manifest["resources"]["p01-depth-max-numeric"]["bounds"] = [-100.0, 30.0, -99.0, 31.0]
