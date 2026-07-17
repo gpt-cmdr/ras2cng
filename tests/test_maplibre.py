@@ -210,7 +210,7 @@ def test_package_reads_plan_layout_raw_results(monkeypatch, tmp_path: Path):
     }
 
 
-def test_default_visibility_uses_1d_centerlines_without_cross_sections() -> None:
+def test_default_visibility_uses_1d_river_context_without_cross_sections() -> None:
     manifest = {
         "groups": [
             {"id": "ras-geometry-g01", "name": "Geometry g01", "visible": True},
@@ -222,6 +222,7 @@ def test_default_visibility_uses_1d_centerlines_without_cross_sections() -> None
                 "layers": [
                     {"groupId": "ras-geometry-g01", "kind": "model_extents", "visible": False},
                     {"groupId": "ras-geometry-g01", "kind": "centerlines", "visible": False},
+                    {"groupId": "ras-geometry-g01", "kind": "river_reaches", "visible": False},
                     {"groupId": "ras-geometry-g01", "kind": "cross_sections", "visible": True},
                     {"groupId": "ras-geometry-g02", "kind": "model_extents", "visible": True},
                     {"groupId": "ras-geometry-g02", "kind": "centerlines", "visible": True},
@@ -233,7 +234,7 @@ def test_default_visibility_uses_1d_centerlines_without_cross_sections() -> None
     maplibre.apply_maplibre_default_visibility(manifest)
 
     layers = manifest["tilesets"][0]["layers"]
-    assert [layer["visible"] for layer in layers] == [True, True, False, False, False]
+    assert [layer["visible"] for layer in layers] == [True, True, True, False, False, False]
     assert manifest["groups"][0]["visible"] is True
     assert manifest["groups"][1]["visible"] is False
 

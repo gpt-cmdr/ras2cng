@@ -2092,7 +2092,7 @@ def apply_maplibre_default_visibility(
     if is_2d:
         default_kinds.update({"mesh_areas", "mesh_cells", "breaklines", "refinement_regions"})
     else:
-        default_kinds.update({"centerlines", "river_centerlines"})
+        default_kinds.update({"centerlines", "river_centerlines", "river_reaches"})
 
     for layer in primary_layers:
         if layer.get("kind") in default_kinds:
