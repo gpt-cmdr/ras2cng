@@ -16,6 +16,46 @@ from ras2cng import maplibre
 from ras2cng.cli import app
 
 
+def test_raw_sa2d_results_join_prefixed_hdf_names_to_geometry_connections(
+    tmp_path: Path,
+) -> None:
+    geometry = gpd.GeoDataFrame(
+        {
+            "Connection": ["Sayers Dam", "Highway 150", "Highway 150 Lowe"],
+        },
+        geometry=[
+            LineString([(0, 0), (1, 0)]),
+            LineString([(0, 1), (1, 1)]),
+            LineString([(0, 2), (1, 2)]),
+        ],
+        crs="EPSG:2271",
+    )
+    result_path = tmp_path / "sa2d.parquet"
+    pd.DataFrame(
+        {
+            "structure_name": [
+                "BaldEagleCr Sayers Dam",
+                "BaldEagleCr Highway 150",
+                "BaldEagleCr Highway 150 Lowe",
+            ],
+            "maximum_total_flow": [100.0, 200.0, 300.0],
+        }
+    ).to_parquet(result_path)
+
+    joined = maplibre._join_raw_result(
+        result_path,
+        geometry,
+        join_columns={"Connection": "structure_name"},
+    )
+
+    assert joined["Connection"].tolist() == [
+        "Sayers Dam",
+        "Highway 150",
+        "Highway 150 Lowe",
+    ]
+    assert joined["maximum_total_flow"].tolist() == [100.0, 200.0, 300.0]
+
+
 def test_raster_source_metadata_includes_browser_projection_definition(tmp_path: Path) -> None:
     raster = tmp_path / "depth.tif"
     with rasterio.open(

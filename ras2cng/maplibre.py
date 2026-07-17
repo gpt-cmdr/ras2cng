@@ -1415,6 +1415,49 @@ def _result_style(variable: str) -> dict[str, float | str]:
     return {"fill": "#64748b", "fillOpacity": 0.42, "line": "#475569", "lineWidth": 0.35}
 
 
+def _normalize_text_join_key(value: Any) -> str:
+    if pd.isna(value):
+        return ""
+    return " ".join(str(value).split()).casefold()
+
+
+def _reconcile_sa2d_structure_keys(
+    geometry_values: pd.Series,
+    result_values: pd.Series,
+    *,
+    result_path: Path,
+) -> tuple[pd.Series, pd.Series]:
+    """Match HDF ``<area> <connection>`` names to geometry connections."""
+
+    geometry_keys = geometry_values.map(_normalize_text_join_key)
+    available = {value for value in geometry_keys if value}
+    resolved: list[Any] = []
+    for raw_value in result_values:
+        result_key = _normalize_text_join_key(raw_value)
+        if result_key in available:
+            resolved.append(result_key)
+            continue
+        candidates = [
+            candidate
+            for candidate in available
+            if result_key.endswith(f" {candidate}")
+        ]
+        if not candidates:
+            resolved.append(pd.NA)
+            continue
+        longest = max(map(len, candidates))
+        best = [candidate for candidate in candidates if len(candidate) == longest]
+        resolved.append(best[0] if len(best) == 1 else pd.NA)
+
+    resolved_keys = pd.Series(resolved, index=result_values.index, dtype="string")
+    if resolved_keys.dropna().duplicated().any():
+        raise ValueError(
+            f"Cannot join raw results from {result_path}: normalized SA/2D "
+            "structure keys are not unique."
+        )
+    return geometry_keys.astype("string"), resolved_keys
+
+
 def _join_raw_result(
     result_path: Path,
     geometry: gpd.GeoDataFrame,
@@ -1458,13 +1501,28 @@ def _join_raw_result(
         for geometry_column, result_column in join_columns.items():
             delivery_geometry[geometry_column] = delivery_geometry[geometry_column].astype("string").str.strip()
             delivery_attributes[result_column] = delivery_attributes[result_column].astype("string").str.strip()
-        joined = delivery_geometry.merge(
-            delivery_attributes,
-            left_on=geometry_columns,
-            right_on=result_columns,
-            how="inner",
-            suffixes=("", "_result"),
-        )
+        if join_columns == {"Connection": "structure_name"}:
+            geometry_key, result_key = _reconcile_sa2d_structure_keys(
+                delivery_geometry["Connection"],
+                delivery_attributes["structure_name"],
+                result_path=result_path,
+            )
+            delivery_geometry["__ras2cng_join_key"] = geometry_key
+            delivery_attributes["__ras2cng_join_key"] = result_key
+            joined = delivery_geometry.merge(
+                delivery_attributes.dropna(subset=["__ras2cng_join_key"]),
+                on="__ras2cng_join_key",
+                how="inner",
+                suffixes=("", "_result"),
+            ).drop(columns=["__ras2cng_join_key"])
+        else:
+            joined = delivery_geometry.merge(
+                delivery_attributes,
+                left_on=geometry_columns,
+                right_on=result_columns,
+                how="inner",
+                suffixes=("", "_result"),
+            )
         joined = joined.drop(columns=result_columns, errors="ignore")
     else:
         raise ValueError(f"Cannot join raw results from {result_path}: no join key was declared.")
