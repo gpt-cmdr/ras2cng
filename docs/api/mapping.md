@@ -19,7 +19,7 @@ On Linux, RasProcess.exe runs under Wine. See the [Linux/Wine Setup](../user-gui
 | `shear_stress` | `--shear-stress` | Off | Shear Stress |
 | `depth_x_velocity` | `--dv` | Off | Depth x Velocity |
 | `depth_x_velocity_sq` | `--dv-sq` | Off | Depth x Velocity² |
-| `inundation_boundary` | `--inundation-boundary` | Off | Inundation Boundary (shapefile) |
+| `inundation_boundary` | `--inundation-boundary` | Off | Native RASMapper Inundation Boundary, or an explicitly requested raster-derived Calculated Layer |
 | `arrival_time` | `--arrival-time` | Off | Arrival Time (hours, whole-simulation) |
 | `duration` | `--duration` | Off | Inundation Duration (hours, whole-simulation) |
 | `percent_inundated` | `--percent-inundated` | Off | Percent Time Inundated (whole-simulation) |
@@ -27,6 +27,49 @@ On Linux, RasProcess.exe runs under Wine. See the [Linux/Wine Setup](../user-gui
 `--recession` is accepted for compatibility but ignored with a warning —
 RasMapperLib has no recession map type, and only RasMapperLib-native outputs
 are produced.
+
+## Inundation Boundary Authority
+
+`--inundation-boundary` uses RASMapper's native Stored Polygon by default. This is the
+preferred output because RASMapper remains the derivation authority:
+
+```bash
+ras2cng map PROJECT OUTPUT --inundation-boundary
+```
+
+Some large projects cannot produce that polygon reliably within the available memory.
+Use `--boundary-method depth-raster` only as an explicit fallback. It requires the Depth
+Stored Map and creates a ras2cng **Calculated Layer**, not a native RASMapper Stored Map:
+
+```bash
+ras2cng map PROJECT OUTPUT --inundation-boundary \
+  --boundary-method depth-raster --boundary-threshold 0 \
+  --boundary-resolution 4 --boundary-max-edges 5000000
+```
+
+The derived path builds the wet mask in bounded windows, applies the strict comparison
+`depth > threshold`, excludes masked, nodata, NaN, and infinite samples, and uses
+4-connected polygonization. The edge count is checked before polygonization. If the
+fixed 5,000,000-edge guard is exceeded, retry at an even multiple of the native grid
+resolution. `--boundary-resolution` may only coarsen the source and uses maximum
+resampling so a wet source cell remains represented; it never upsamples.
+
+Successful derivation publishes one atomic six-file family:
+
+```text
+Inundation Boundary (PROFILE).raster-derived.shp
+Inundation Boundary (PROFILE).raster-derived.shx
+Inundation Boundary (PROFILE).raster-derived.dbf
+Inundation Boundary (PROFILE).raster-derived.prj
+Inundation Boundary (PROFILE).raster-derived.cpg
+Inundation Boundary (PROFILE).raster-derived.provenance.json
+```
+
+The provenance records the source and output resolutions, threshold, scale/offset,
+nodata handling, connectivity, edge count, and both authorities. Do not rename a derived
+family to look native, publish both native and derived boundaries for one plan, or raise
+the edge cap merely to force polygonization; the importer rejects partial or ambiguous
+families.
 
 ### Whole-simulation map types
 

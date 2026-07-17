@@ -157,8 +157,10 @@ is transparent. Stored Maps are hidden initially unless `--visible` is passed.
 For a complete project tranche, use `maplibre-import-stored-maps` with its default
 `--require-all` policy. Admission then requires every completed plan to contain Depth,
 WSE, Velocity, Froude Number, Shear Stress, Depth x Velocity, Depth x Velocity Squared,
-Arrival Time, Duration, Percent Time Inundated, and the inundation boundary. Reserve
-`--allow-partial` for explicit diagnostic or exploratory bundles.
+Arrival Time, Duration, and Percent Time Inundated, plus exactly one inundation boundary.
+That boundary can be either the native RASMapper Stored Polygon or the strict
+ras2cng raster-derived family described below. Reserve `--allow-partial` for explicit
+diagnostic or exploratory bundles.
 
 Tranche imports cap precolored display PMTiles at zoom 16 by default. This limits browser
 payload and packaging work for very fine or very large result grids without changing the
@@ -183,6 +185,33 @@ branch with `maplibre-calculated-map`. Their provenance records both ras2cng's a
 and RASMapper/RasProcess as the source-surface interpolation authority. See
 [Controlled Raster Recipes](raster-recipes.md) for synchronized profile requirements and
 the fixed hazard/threshold categories.
+
+An inundation boundary derived from a Depth COG follows the same semantic rule. Prefer
+the native RASMapper Stored Polygon. When native generation fails its bounded memory
+budget, derive the fallback explicitly:
+
+```bash
+ras2cng boundary-from-depth \
+  "Depth (Max).cog.tif" \
+  "Inundation Boundary (Max).raster-derived.shp" \
+  --threshold 0 --resolution 4 --max-edges 5000000 \
+  --profile Max --units ft
+```
+
+The output is a five-part shapefile plus
+`Inundation Boundary (Max).raster-derived.provenance.json`. The importer validates the
+complete family and publishes it as `sourceKind: calculated` and
+`resultKind: calculated_vector` under `Calculated Layers`. Its provenance identifies the
+RASMapper/RasProcess Depth Stored Map as interpolation authority and ras2cng as derivation
+authority. It is never labeled as a native RASMapper Stored Polygon.
+
+The derivation is windowed and checks a fixed edge limit before polygonization. It applies
+`depth > threshold`, treats nodata and non-finite cells as dry, and uses 4-connectivity.
+If the native grid exceeds the edge limit, select a coarser cell size at an even multiple
+of the native resolution. Coarsening uses maximum resampling and cannot upsample. Do not
+increase the edge limit reflexively: it is the bounded-memory admission control. A plan
+directory containing both native and raster-derived boundaries is ambiguous and is
+rejected.
 
 ## Example Library Publication Gate
 

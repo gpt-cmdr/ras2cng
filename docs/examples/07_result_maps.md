@@ -42,6 +42,12 @@ ras2cng map-hdf results.p07.hdf ./maps --terrain-hdf Terrain50.hdf
 ras2cng map-hdf results.p07.hdf ./maps --terrain dem.tif ^
     --no-wse --no-depth --no-velocity ^
     --arrival-time --duration --percent-inundated --arrival-depth 0.5
+
+# Explicit bounded fallback when a native RASMapper inundation boundary fails
+ras2cng map-hdf results.p07.hdf ./maps --terrain dem.tif ^
+    --inundation-boundary --boundary-method depth-raster ^
+    --boundary-threshold 0 --boundary-resolution 10 ^
+    --boundary-max-edges 5000000
 ```
 
 ## Requirements & notes
@@ -62,6 +68,13 @@ ras2cng map-hdf results.p07.hdf ./maps --terrain dem.tif ^
   recession map type.
 - The scaffold directory (`OUTPUT/_scaffold` by default) is reused across
   reruns so the terrain build happens once; pass `--rm-scaffold` to delete it.
+- Inundation boundaries are native RASMapper Stored Polygons by default. The
+  `depth-raster` fallback is a ras2cng Calculated Layer derived from the authoritative
+  Depth Stored Map. Its output name includes `.raster-derived`, and its provenance
+  records the threshold, resolution, nodata rules, and derivation authority.
+- Raster-derived boundaries use bounded, 4-connected polygonization. If the default
+  5,000,000-edge check fails, coarsen at an even multiple of the native cell size rather
+  than increasing the cap. The implementation uses maximum resampling and never upsamples.
 
 ## Expected output structure
 

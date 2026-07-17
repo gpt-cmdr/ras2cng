@@ -306,6 +306,33 @@ When a relocated project's stored RASMapper paths cannot be resolved, use the Py
 `consolidate_terrain_files()` API with an explicit priority-ordered source list. It applies
 the same bounded-memory merge, transparent NoData, no-upsample policy, and provenance model.
 
+## ras2cng boundary-from-depth
+
+```
+Usage: ras2cng boundary-from-depth [OPTIONS] DEPTH_COG OUTPUT_SHP
+
+  Derive a bounded 4-connected inundation polygon from a Depth COG.
+
+Arguments:
+  DEPTH_COG   Complete RASMapper/RasProcess Depth COG
+  OUTPUT_SHP  Output inundation-boundary shapefile
+
+Options:
+  --threshold FLOAT    Strict depth threshold (depth > threshold) [default: 0.0]
+  --resolution FLOAT   Optional coarser output cell size
+  --max-edges INTEGER  Maximum wet/dry edges allowed before polygonization
+                       [default: 5000000]
+  --profile TEXT       Profile recorded in provenance
+  --units TEXT         Depth units recorded in provenance: ft or m
+  --source-id TEXT     Portable relative source identifier
+```
+
+The command publishes `.shp`, `.shx`, `.dbf`, `.prj`, `.cpg`, and a
+`.raster-derived.provenance.json` sidecar atomically. It checks the edge cap before
+polygonization and removes partial output on failure. Use a coarser even multiple of the
+native cell size after an edge-cap failure; do not use this command to impersonate a
+native RASMapper Stored Polygon.
+
 ## ras2cng map
 
 ```
@@ -331,6 +358,13 @@ Options:
   --dv                          Depth x Velocity
   --dv-sq                       Depth x Velocity²
   --inundation-boundary         Inundation boundary polygon
+  --boundary-method TEXT        Boundary authority: rasmapper or depth-raster
+                                [default: rasmapper]
+  --boundary-threshold FLOAT    Strict threshold for a depth-raster boundary
+                                [default: 0.0]
+  --boundary-resolution FLOAT   Optional coarser depth-raster boundary cell size
+  --boundary-max-edges INTEGER  Maximum edges before depth-raster polygonization
+                                [default: 5000000]
   --arrival-time                Arrival time (hours, whole-simulation)
   --duration                    Inundation duration (hours)
   --percent-inundated           Percent time inundated
@@ -355,6 +389,10 @@ threshold, e.g. `Arrival Time (0.1ft hrs).tif`. Works with any ras-commander
 version: newer versions generate these natively; older versions are handled by
 a rasmap pre-injection shim inside ras2cng. `--recession` is accepted but
 ignored with a warning — RasMapperLib has no recession map type.
+
+`--boundary-method rasmapper` requests the native RASMapper Stored Polygon.
+`depth-raster` requires Depth to remain enabled and writes a separately identified
+Calculated Layer. Its resolution override can only coarsen the source grid.
 
 ## ras2cng map-hdf
 
@@ -390,6 +428,13 @@ Options:
   --dv                          Depth x Velocity
   --dv-sq                       Depth x Velocity²
   --inundation-boundary         Inundation boundary polygon
+  --boundary-method TEXT        Boundary authority: rasmapper or depth-raster
+                                [default: rasmapper]
+  --boundary-threshold FLOAT    Strict threshold for a depth-raster boundary
+                                [default: 0.0]
+  --boundary-resolution FLOAT   Optional coarser depth-raster boundary cell size
+  --boundary-max-edges INTEGER  Maximum edges before depth-raster polygonization
+                                [default: 5000000]
   --arrival-time                Arrival time (hours, whole-simulation)
   --duration                    Inundation duration (hours)
   --percent-inundated           Percent time inundated
