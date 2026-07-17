@@ -7,6 +7,7 @@ All tests are fully mocked -- no real HEC-RAS files or rasterio needed.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
@@ -411,6 +412,18 @@ def test_select_terrain_resolution_requires_explicit_mixed_target():
     decision = select_terrain_resolution([1.0, 3.0], requested=6.0)
     assert decision.target_resolution == 6.0
     assert decision.mixed_native_resolution is True
+    assert decision.policy == "whole-coarsest-native-multiple-no-upsample"
+
+
+def test_select_terrain_resolution_supports_mixed_foot_and_meter_tiles():
+    native = [2.0, 3.27873, 3.28084, 3.28]
+    target = 2 * max(native)
+
+    decision = select_terrain_resolution(native, requested=target)
+
+    assert decision.target_resolution == pytest.approx(6.56168)
+    assert decision.factors[2] == pytest.approx(2.0)
+    assert any(not math.isclose(factor, round(factor)) for factor in decision.factors)
 
 
 def test_select_terrain_resolution_rejects_fractional_native_multiple():

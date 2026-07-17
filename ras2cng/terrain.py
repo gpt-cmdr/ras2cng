@@ -70,7 +70,9 @@ def select_terrain_resolution(
     whole-number multiple of its native cell size that reaches five feet.
     Native grids already at or above that threshold retain their resolution.
     Mixed native grids require an explicit target so the resampling decision is
-    visible and reviewable.
+    visible and reviewable. Their target must be a whole-number multiple of the
+    coarsest source grid; requiring a common multiple of unlike source grids
+    (for example, 2-foot and 1-meter tiles) would force an unusably coarse map.
     """
 
     values = tuple(float(value) for value in native_resolutions)
@@ -117,12 +119,14 @@ def select_terrain_resolution(
         )
 
     factors = tuple(target / value for value in values)
-    non_integral = [factor for factor in factors if not math.isclose(
-        factor, round(factor), rel_tol=1e-7, abs_tol=1e-7
-    )]
-    if non_integral:
+    reference_resolution = max(values) if mixed else first
+    reference_factor = target / reference_resolution
+    if not math.isclose(
+        reference_factor, round(reference_factor), rel_tol=1e-7, abs_tol=1e-7
+    ):
+        qualifier = "the coarsest native cell size" if mixed else "the native cell size"
         raise ValueError(
-            "target_resolution must be a whole-number multiple of every native cell size"
+            f"target_resolution must be a whole-number multiple of {qualifier}"
         )
 
     return TerrainResolutionDecision(
@@ -132,6 +136,11 @@ def select_terrain_resolution(
         horizontal_units=normalized_units,
         factors=factors,
         mixed_native_resolution=mixed,
+        policy=(
+            "whole-coarsest-native-multiple-no-upsample"
+            if mixed
+            else "whole-native-multiple-no-upsample"
+        ),
     )
 
 
