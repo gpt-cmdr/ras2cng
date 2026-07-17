@@ -2468,6 +2468,11 @@ is transparent. Stored Maps are hidden initially unless <code>--visible</code> i
 WSE, Velocity, Froude Number, Shear Stress, Depth x Velocity, Depth x Velocity Squared,
 Arrival Time, Duration, Percent Time Inundated, and the inundation boundary. Reserve
 <code>--allow-partial</code> for explicit diagnostic or exploratory bundles.</p>
+<p>Tranche imports cap precolored display PMTiles at zoom 16 by default. This limits browser
+payload and packaging work for very fine or very large result grids without changing the
+authoritative numerical COG. Identify and analysis therefore retain the full source fidelity.
+Use <code>--max-zoom</code> to select a lower display cap; the renderer will not upsample beyond the
+native grid resolution.</p>
 <p>Use <code>--domain-policy current-view</code> only when the deployed WebGIS service supports bounded
 window statistics and styled tiles. A precolored PMTiles file cannot be faithfully recolored
 because it no longer contains the original scalar values.</p>
@@ -2515,7 +2520,7 @@ tiling, overviews, and nodata/mask behavior; hosted artifacts can be required to
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 17, 2026 08:00:32 UTC">July 17, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 17, 2026 09:35:55 UTC">July 17, 2026</span>
   </span>
 
     
