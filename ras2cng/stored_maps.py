@@ -43,7 +43,9 @@ _RASTER_TYPES: tuple[_RasterMapType, ...] = (
     _RasterMapType("duration", "Duration", "hr"),
     _RasterMapType("percent_inundated", "Percent Time Inundated", "%"),
 )
-_REQUIRED_TYPES = {map_type.key for map_type in _RASTER_TYPES} | {"inundation_boundary"}
+REQUIRED_STORED_MAP_TYPE_KEYS = frozenset(
+    {map_type.key for map_type in _RASTER_TYPES} | {"inundation_boundary"}
+)
 _RASTER_TYPE_ALIASES = {
     "depth": "depth",
     "wse": "wse",
@@ -60,6 +62,7 @@ _RASTER_TYPE_ALIASES = {
     "duration": "duration",
     "percent time inundated": "percent_inundated",
     "fraction inundated": "percent_inundated",
+    "inundation boundary": "inundation_boundary",
 }
 
 
@@ -88,7 +91,9 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
-def _map_type_key(value: str) -> str | None:
+def stored_map_type_key(value: str) -> str | None:
+    """Normalize a published or on-disk Stored Map type name."""
+
     normalized = value.lower().replace("²", " squared").replace("^2", " squared")
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return _RASTER_TYPE_ALIASES.get(normalized)
@@ -101,7 +106,7 @@ def _discover_plan_maps(plan_dir: Path) -> dict[str, tuple[Path, str]]:
             continue
         raster_match = _RASTER_PATTERN.match(path.name)
         if raster_match:
-            map_type = _map_type_key(raster_match.group(1))
+            map_type = stored_map_type_key(raster_match.group(1))
             if map_type:
                 # Retained per-terrain-source COGs may sit beside the complete
                 # VRT-derived COG. Prefer the latter (no source-name suffix).
@@ -159,7 +164,7 @@ def import_rasprocess_stored_maps(
         plan_dir = maps_dir / plan_id
         plan_maps = _discover_plan_maps(plan_dir) if plan_dir.is_dir() else {}
         discovered[plan_id] = plan_maps
-        missing = sorted(_REQUIRED_TYPES - set(plan_maps))
+        missing = sorted(REQUIRED_STORED_MAP_TYPE_KEYS - set(plan_maps))
         if require_all and missing:
             errors.append(f"{plan_id}: missing {', '.join(missing)}")
     if errors:

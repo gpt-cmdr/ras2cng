@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 
 import pytest
@@ -108,44 +109,38 @@ def _valid_bundle():
             },
         ],
     }
-    apply_manifest_v2(manifest)
-    manifest["services"] = {
-        "numericRaster": {
-            "baseUrl": "/ras-raster",
-            "statisticsPath": "/stats",
-            "samplePath": "/sample",
-            "tilePath": "/tiles/{z}/{x}/{y}.png",
-        }
-    }
-    for layer_id in ("terrain", "p01-depth-max"):
-        numeric_id = manifest["layers"][layer_id]["query"]["numericResource"]
-        numeric = manifest["resources"][numeric_id]
-        numeric["serviceAsset"] = f"example/{layer_id}"
-        numeric["serviceRevision"] = f"revision-{layer_id}"
-        tileset = next(item for item in manifest["tilesets"] if item["id"] == layer_id)
-        tileset["serviceAsset"] = numeric["serviceAsset"]
-        tileset["serviceRevision"] = numeric["serviceRevision"]
-    archive = {
-        "results": [
-            {"plan_id": "p01", "geom_id": "g01", "completed": True, "variables": [{}]}
-        ]
-    }
-    return manifest, archive
-
-
-def test_valid_example_publication_passes_gate():
-    manifest, archive = _valid_bundle()
-
-    report = validate_example_publication(manifest, archive, check_files=False)
-
-    assert report.ok, report.to_dict()
-    assert report.counts["raw_results"] == 1
-    assert report.counts["stored_maps"] == 1
-    assert report.counts["terrains"] == 1
-
-
-def test_publication_gate_accepts_queryable_vector_stored_map():
-    manifest, archive = _valid_bundle()
+    depth_tileset = manifest["tilesets"][-1]
+    for slug, map_type, preset in (
+        ("wse", "WSE", "rasmapper.wse"),
+        ("velocity", "Velocity", "rasmapper.velocity"),
+        ("froude", "Froude Number", "rasmapper.froude"),
+        ("shear-stress", "Shear Stress", "rasmapper.shear-stress"),
+        ("depth-x-velocity", "Depth x Velocity", "rasmapper.depth-x-velocity"),
+        (
+            "depth-x-velocity-sq",
+            "Depth x Velocity Squared",
+            "rasmapper.depth-x-velocity-sq",
+        ),
+        ("arrival-time", "Arrival Time", "rasmapper.arrival-time"),
+        ("duration", "Duration", "rasmapper.duration"),
+        (
+            "percent-inundated",
+            "Percent Time Inundated",
+            "rasmapper.percent-inundated",
+        ),
+    ):
+        tileset = deepcopy(depth_tileset)
+        tileset.update(
+            {
+                "id": f"p01-{slug}-max",
+                "name": f"{map_type} Max",
+                "href": f"https://rascommander.info/data/example/p01-{slug}-max.pmtiles",
+                "sourceCog": f"https://rascommander.info/data/example/p01-{slug}-max.cog.tif",
+            }
+        )
+        tileset["legend"]["preset"] = preset
+        tileset["storedMap"]["mapType"] = map_type
+        manifest["tilesets"].append(tileset)
     manifest["tilesets"].append(
         {
             "id": "p01-inundation-boundary-max",
@@ -175,11 +170,51 @@ def test_publication_gate_accepts_queryable_vector_stored_map():
         }
     )
     apply_manifest_v2(manifest)
+    manifest["services"] = {
+        "numericRaster": {
+            "baseUrl": "/ras-raster",
+            "statisticsPath": "/stats",
+            "samplePath": "/sample",
+            "tilePath": "/tiles/{z}/{x}/{y}.png",
+        }
+    }
+    for layer_id, layer in manifest["layers"].items():
+        numeric_id = layer.get("query", {}).get("numericResource")
+        if not numeric_id:
+            continue
+        numeric = manifest["resources"][numeric_id]
+        numeric["serviceAsset"] = f"example/{layer_id}"
+        numeric["serviceRevision"] = f"revision-{layer_id}"
+        tileset = next(item for item in manifest["tilesets"] if item["id"] == layer_id)
+        tileset["serviceAsset"] = numeric["serviceAsset"]
+        tileset["serviceRevision"] = numeric["serviceRevision"]
+    archive = {
+        "results": [
+            {"plan_id": "p01", "geom_id": "g01", "completed": True, "variables": [{}]}
+        ]
+    }
+    return manifest, archive
+
+
+def test_valid_example_publication_passes_gate():
+    manifest, archive = _valid_bundle()
 
     report = validate_example_publication(manifest, archive, check_files=False)
 
     assert report.ok, report.to_dict()
-    assert report.counts["stored_maps"] == 2
+    assert report.counts["raw_results"] == 1
+    assert report.counts["stored_maps"] == 11
+    assert report.counts["terrains"] == 1
+
+
+def test_publication_gate_accepts_queryable_vector_stored_map():
+    manifest, archive = _valid_bundle()
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert report.ok, report.to_dict()
+    assert manifest["layers"]["p01-inundation-boundary-max"]["query"]["enabled"] is True
+    assert report.counts["stored_maps"] == 11
 
 
 def test_publication_gate_rejects_missing_result_families():
@@ -191,8 +226,10 @@ def test_publication_gate_rejects_missing_result_families():
     }
     # Rebuild from compatibility fields with both result tilesets removed.
     manifest["tilesets"] = [
-        item for item in manifest["tilesets"]
-        if item["id"] not in {"results", "p01-depth-max"}
+        item
+        for item in manifest["tilesets"]
+        if item.get("resultKind") not in {"raw_hdf", "stored_map"}
+        and item.get("sourceKind") != "stored-map"
     ]
     apply_manifest_v2(manifest)
 
@@ -239,6 +276,22 @@ def test_publication_gate_requires_both_result_families_for_every_completed_plan
     )
     assert report.counts["plans"] == 1
     assert report.counts["completed_plans"] == 2
+
+
+def test_publication_gate_requires_every_stored_map_type():
+    manifest, archive = _valid_bundle()
+    froude_layer = manifest["layers"]["p01-froude-max"]
+    froude_layer["provenance"]["mapType"] = "Unsupported"
+    froude_layer["role"] = "unsupported"
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.stored-map-type"
+        and issue.context == "p01"
+        and "froude" in issue.message
+        for issue in report.errors
+    )
 
 
 def test_publication_gate_requires_every_joinable_raw_result_variable():
@@ -298,7 +351,9 @@ def test_publication_gate_accepts_pure_1d_plan_without_terrain_stored_maps():
     manifest["tilesets"] = [
         item
         for item in manifest["tilesets"]
-        if item["id"] not in {"terrain", "p01-depth-max"}
+        if item["id"] != "terrain"
+        and item.get("resultKind") != "stored_map"
+        and item.get("sourceKind") != "stored-map"
     ]
     archive["geometry"] = [
         {

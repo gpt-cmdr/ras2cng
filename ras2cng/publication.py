@@ -11,6 +11,10 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from ras2cng.stored_maps import (
+    REQUIRED_STORED_MAP_TYPE_KEYS,
+    stored_map_type_key,
+)
 from ras2cng.viewer_manifest import validate_manifest_v2
 
 
@@ -212,6 +216,27 @@ def validate_example_publication(
                 "Pure 1D plan has no project terrain; continuous RASMapper Stored Map rasters are not applicable.",
                 plan_id,
             )
+        elif stored_maps_applicable:
+            published_map_types = {
+                map_type
+                for layer in plan_stored
+                if (
+                    map_type := stored_map_type_key(
+                        str((layer.get("provenance") or {}).get("mapType") or layer.get("role") or "")
+                    )
+                )
+            }
+            missing_map_types = sorted(
+                REQUIRED_STORED_MAP_TYPE_KEYS - published_map_types
+            )
+            if missing_map_types:
+                report.add(
+                    "error",
+                    "results.stored-map-type",
+                    "Complete Stored Map set is missing: "
+                    + ", ".join(missing_map_types),
+                    plan_id,
+                )
 
     for layer_id, layer in raw_layers.items():
         query = layer.get("query") or {}
