@@ -667,6 +667,11 @@ def maplibre_import_stored_maps_command(
         "--domain-policy",
         help="Initial raster legend policy; attach the service before using current-view",
     ),
+    max_zoom: Optional[int] = typer.Option(
+        16,
+        "--max-zoom",
+        help="Maximum zoom for precolored PMTiles; numeric COGs retain full fidelity",
+    ),
     require_all: bool = typer.Option(
         True,
         "--require-all/--allow-partial",
@@ -685,6 +690,7 @@ def maplibre_import_stored_maps_command(
             viewer_dir,
             scratch_dir=scratch_dir,
             domain_policy=domain_policy,
+            max_zoom=max_zoom,
             require_all=require_all,
             overwrite=overwrite,
         )

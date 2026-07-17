@@ -482,6 +482,7 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
         return type("Completed", (), {"stdout": ""})()
 
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
+    monkeypatch.setattr(maplibre, "_web_mercator_raster_resolution", lambda _: 1.5)
     monkeypatch.setattr(
         maplibre,
         "_raster_source_metadata",
@@ -525,6 +526,11 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
     assert manifest["layers"]["ras-geometry-g01-model-extents"]["geometryTitle"] == "Muncie Geometry"
     assert any(command[:2] == ["gdaldem", "color-relief"] for command in commands)
     warp = next(command for command in commands if command[0] == "gdalwarp")
+    assert warp[warp.index("-tr") + 1 : warp.index("-tr") + 3] == [
+        str(maplibre._WEB_MERCATOR_INITIAL_RESOLUTION / (2**16)),
+        str(maplibre._WEB_MERCATOR_INITIAL_RESOLUTION / (2**16)),
+    ]
+    assert "-tap" in warp
     assert "-srcalpha" in warp
     assert "-dstalpha" in warp
     translate = next(command for command in commands if command[0] == "gdal_translate")
@@ -618,6 +624,8 @@ def test_package_stored_map_adds_plan_raster_with_numeric_provenance(monkeypatch
         },
     )
     monkeypatch.setattr(maplibre.subprocess, "run", fake_run)
+
+    monkeypatch.setattr(maplibre, "_web_mercator_raster_resolution", lambda _: 1.5)
 
     summary = maplibre.package_maplibre_stored_map(
         cog,

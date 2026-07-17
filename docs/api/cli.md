@@ -227,6 +227,26 @@ Other options:
   --overwrite                 Replace an existing layer/display derivative
 ```
 
+## ras2cng maplibre-import-stored-maps
+
+```
+Usage: ras2cng maplibre-import-stored-maps [OPTIONS] MAPS_DIR ARCHIVE_DIR VIEWER_DIR
+
+  Import and publish a complete distributed RasProcess Stored Map tranche.
+
+Options:
+  --scratch-dir PATH          Local scratch for bounded raster processing
+  --domain-policy TEXT        Initial raster legend policy [default: fixed]
+  --max-zoom INTEGER          Maximum zoom for precolored PMTiles [default: 16]
+  --require-all / --allow-partial
+                              Require all supported map families [default: require-all]
+  --overwrite                 Replace imported artifacts and viewer layers
+```
+
+`--max-zoom` applies only to the precolored browser derivative. The authoritative numeric
+COG retains its full source resolution for Identify and analysis, and display PMTiles are
+never upsampled beyond the native grid.
+
 ## ras2cng validate-publication
 
 ```

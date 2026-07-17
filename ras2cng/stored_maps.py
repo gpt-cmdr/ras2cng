@@ -130,6 +130,7 @@ def import_rasprocess_stored_maps(
     *,
     scratch_dir: Path | None = None,
     domain_policy: str = "fixed",
+    max_zoom: int | None = 16,
     require_all: bool = True,
     overwrite: bool = False,
 ) -> StoredMapImportSummary:
@@ -207,6 +208,7 @@ def import_rasprocess_stored_maps(
                 units=map_spec.units,
                 visible=False,
                 domain_policy=domain_policy,
+                max_zoom=max_zoom,
                 scratch_dir=(Path(scratch_dir) / plan_id / map_key)
                 if scratch_dir
                 else None,

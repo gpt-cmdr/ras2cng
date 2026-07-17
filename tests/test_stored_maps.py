@@ -92,6 +92,7 @@ def test_import_stored_maps_registers_archive_and_packages_layers(monkeypatch, t
     assert summary.vector_count == 1
     assert len(raster_calls) == 10
     assert raster_calls[0][2]["geometry"] == "g02"
+    assert raster_calls[0][2]["max_zoom"] == 16
     assert vector_calls[0][2]["geometry"] == "g02"
     assert (archive / "stored-maps/p03/depth-max.cog.tif").is_file()
     assert (archive / "stored-maps/p03/inundation-boundary-max.parquet").is_file()

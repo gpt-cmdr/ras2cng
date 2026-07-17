@@ -39,6 +39,8 @@ _INTERNAL_COLUMNS = {
     "join_index",
 }
 
+_WEB_MERCATOR_INITIAL_RESOLUTION = 156543.03392804097
+
 _DELIVERY_ATTRIBUTE_COLUMNS = {
     "mesh_areas": ("mesh_name", "Name", "SA-2D"),
     "mesh_cells": ("mesh_name", "cell_id"),
@@ -583,7 +585,26 @@ def _native_raster_zoom_from_resolution(resolution: float) -> int:
 
     if resolution <= 0:
         raise ValueError("Terrain cell resolution must be positive.")
-    return max(0, int(math.floor(math.log2(156543.03392804097 / resolution))))
+    return max(0, int(math.floor(math.log2(_WEB_MERCATOR_INITIAL_RESOLUTION / resolution))))
+
+
+def _web_mercator_raster_resolution(cog_path: Path) -> float:
+    """Return the source grid's approximate pixel size after EPSG:3857 reprojection."""
+
+    import rasterio
+    from rasterio.warp import calculate_default_transform
+
+    with rasterio.open(cog_path) as source:
+        if source.crs is None:
+            raise ValueError(f"Numeric COG has no CRS: {cog_path}")
+        transform, _, _ = calculate_default_transform(
+            source.crs,
+            "EPSG:3857",
+            source.width,
+            source.height,
+            *source.bounds,
+        )
+    return max(abs(float(transform.a)), abs(float(transform.e)))
 
 
 def _terrain_color_ramp(stats: Mapping[str, float], path: Path) -> None:
@@ -728,6 +749,17 @@ def _render_raster_pmtiles(
 ) -> int:
     """Render a numeric COG to transparent PNG PMTiles with bounded GDAL work."""
 
+    native_resolution = _web_mercator_raster_resolution(cog_path)
+    native_max_zoom = _native_raster_zoom_from_resolution(native_resolution)
+    selected_max_zoom = (
+        native_max_zoom
+        if max_zoom is None
+        else min(int(max_zoom), native_max_zoom)
+    )
+    if selected_max_zoom < 0:
+        raise ValueError("max_zoom must be zero or greater")
+    display_resolution = _WEB_MERCATOR_INITIAL_RESOLUTION / (2**selected_max_zoom)
+
     with tempfile.TemporaryDirectory(
         prefix=f"ras2cng-{prefix}-",
         dir=str(scratch_dir) if scratch_dir is not None else None,
@@ -754,6 +786,8 @@ def _render_raster_pmtiles(
                 "-multi",
                 "-wo", f"NUM_THREADS={_gdal_thread_count()}",
                 "-wm", "512",
+                "-tr", str(display_resolution), str(display_resolution),
+                "-tap",
                 str(colorized),
                 str(web_mercator),
             ],
@@ -761,13 +795,6 @@ def _render_raster_pmtiles(
             capture_output=True,
             text=True,
         )
-        transformed_info = _gdalinfo(web_mercator)
-        transform = transformed_info.get("geoTransform") or []
-        if len(transform) < 6:
-            raise ValueError("Reprojected raster is missing a GDAL geotransform.")
-        native_resolution = max(abs(float(transform[1])), abs(float(transform[5])))
-        native_max_zoom = _native_raster_zoom_from_resolution(native_resolution)
-        selected_max_zoom = native_max_zoom if max_zoom is None else min(max_zoom, native_max_zoom)
         subprocess.run(
             [
                 _gdal_translate_command(),

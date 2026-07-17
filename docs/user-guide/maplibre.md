@@ -160,6 +160,12 @@ WSE, Velocity, Froude Number, Shear Stress, Depth x Velocity, Depth x Velocity S
 Arrival Time, Duration, Percent Time Inundated, and the inundation boundary. Reserve
 `--allow-partial` for explicit diagnostic or exploratory bundles.
 
+Tranche imports cap precolored display PMTiles at zoom 16 by default. This limits browser
+payload and packaging work for very fine or very large result grids without changing the
+authoritative numerical COG. Identify and analysis therefore retain the full source fidelity.
+Use `--max-zoom` to select a lower display cap; the renderer will not upsample beyond the
+native grid resolution.
+
 Use `--domain-policy current-view` only when the deployed WebGIS service supports bounded
 window statistics and styled tiles. A precolored PMTiles file cannot be faithfully recolored
 because it no longer contains the original scalar values.
