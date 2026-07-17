@@ -15,6 +15,7 @@ from ras2cng.stored_maps import (
     REQUIRED_STORED_MAP_TYPE_KEYS,
     stored_map_type_key,
 )
+from ras2cng.terrain import select_terrain_resolution
 from ras2cng.viewer_manifest import validate_manifest_v2
 
 
@@ -76,7 +77,11 @@ def validate_example_publication(
     """Run the strict RAS Commander Example Library publication gate."""
 
     manifest, manifest_path = _load_document(viewer_manifest)
-    archive, _ = _load_document(archive_manifest) if archive_manifest is not None else (None, None)
+    archive, archive_path = (
+        _load_document(archive_manifest)
+        if archive_manifest is not None
+        else (None, None)
+    )
     base_dir = manifest_path.parent if manifest_path else None
     report = PublicationReport(str(manifest_path or "<mapping>"))
 
@@ -354,6 +359,13 @@ def validate_example_publication(
                     "Published result plan is not recorded as successfully computed.",
                     plan_id,
                 )
+        if terrain_layers:
+            _validate_archive_terrain_policy(
+                archive,
+                report,
+                base_dir=archive_path.parent if archive_path else None,
+                check_files=check_files,
+            )
 
     model_bounds = [layer.get("bounds") for layer in extent_layers.values() if _valid_wgs84_bounds(layer.get("bounds"))]
     numeric_stored_layers = {
@@ -384,6 +396,185 @@ def validate_example_publication(
         "terrains": len(terrain_layers),
     }
     return report
+
+
+def _validate_archive_terrain_policy(
+    archive: Mapping[str, Any],
+    report: PublicationReport,
+    *,
+    base_dir: Path | None,
+    check_files: bool,
+) -> None:
+    """Require reproducible, fidelity-preserving authoritative terrain metadata."""
+
+    entries = [
+        entry
+        for entry in archive.get("terrain", [])
+        if isinstance(entry, Mapping)
+    ]
+    authoritative = [entry for entry in entries if entry.get("authoritative") is True]
+    if not authoritative:
+        report.add(
+            "error",
+            "terrain.authoritative",
+            "Archive has no terrain entry marked authoritative.",
+        )
+        authoritative = [entry for entry in entries if entry.get("authoritative") is not False]
+
+    for index, entry in enumerate(authoritative, start=1):
+        context = str(entry.get("terrain_name") or entry.get("cog_file") or f"terrain-{index}")
+        source_files = entry.get("source_files")
+        if not isinstance(source_files, list) or not source_files:
+            source_file = entry.get("source_file")
+            source_files = [source_file] if source_file else []
+        if not source_files or any(not str(path or "").strip() for path in source_files):
+            report.add(
+                "error",
+                "terrain.source-inventory",
+                "Authoritative terrain has no source-file inventory.",
+                context,
+            )
+
+        native_values = entry.get("native_resolutions")
+        if not isinstance(native_values, list) or not native_values:
+            native = entry.get("native_resolution")
+            native_values = [native] if native is not None else []
+        target = entry.get("target_resolution")
+        if not native_values or target is None:
+            report.add(
+                "error",
+                "terrain.resolution-provenance",
+                "Authoritative terrain must record native and target resolutions.",
+                context,
+            )
+            continue
+
+        resolution_metadata = entry.get("resolution_decision")
+        resolution_metadata = (
+            resolution_metadata if isinstance(resolution_metadata, Mapping) else {}
+        )
+        units = str(resolution_metadata.get("horizontal_units") or "Feet")
+        try:
+            native_resolutions = [float(value) for value in native_values]
+            target_resolution = float(target)
+            decision = select_terrain_resolution(
+                native_resolutions,
+                requested=target_resolution,
+                horizontal_units=units,
+            )
+        except (TypeError, ValueError) as error:
+            report.add("error", "terrain.resolution-policy", str(error), context)
+            continue
+
+        if all(
+            native >= decision.minimum_resolution
+            or math.isclose(
+                native,
+                decision.minimum_resolution,
+                rel_tol=1e-7,
+                abs_tol=1e-9,
+            )
+            for native in native_resolutions
+        ) and not math.isclose(
+            target_resolution,
+            max(native_resolutions),
+            rel_tol=1e-7,
+            abs_tol=1e-9,
+        ):
+            report.add(
+                "error",
+                "terrain.resolution-fidelity",
+                "Terrain already at or above the publication floor must retain its coarsest native resolution.",
+                context,
+            )
+
+        provenance_file = entry.get("provenance_file")
+        if not isinstance(provenance_file, str) or not provenance_file.strip():
+            report.add(
+                "error",
+                "terrain.provenance",
+                "Authoritative terrain has no consolidation provenance file.",
+                context,
+            )
+
+        if not check_files or base_dir is None:
+            continue
+
+        cog_file = entry.get("cog_file")
+        if not isinstance(cog_file, str) or not cog_file.strip():
+            report.add("error", "terrain.cog", "Authoritative terrain has no COG path.", context)
+        else:
+            cog_path = (base_dir / cog_file).resolve()
+            if not cog_path.is_relative_to(base_dir.resolve()) or not cog_path.is_file():
+                report.add("error", "terrain.cog", f"Terrain COG does not exist: {cog_path}", context)
+            else:
+                try:
+                    import rasterio
+
+                    with rasterio.open(cog_path) as source:
+                        actual = max(abs(float(value)) for value in source.res)
+                    if not math.isclose(
+                        actual,
+                        target_resolution,
+                        rel_tol=1e-7,
+                        abs_tol=1e-8,
+                    ):
+                        report.add(
+                            "error",
+                            "terrain.resolution-mismatch",
+                            f"Terrain COG resolution {actual:g} does not match recorded target {target_resolution:g}.",
+                            context,
+                        )
+                except Exception as error:
+                    report.add("error", "terrain.cog", f"Terrain COG could not be read: {error}", context)
+
+        if isinstance(provenance_file, str) and provenance_file.strip():
+            provenance_path = (base_dir / provenance_file).resolve()
+            if (
+                not provenance_path.is_relative_to(base_dir.resolve())
+                or not provenance_path.is_file()
+            ):
+                report.add(
+                    "error",
+                    "terrain.provenance",
+                    f"Terrain provenance does not exist: {provenance_path}",
+                    context,
+                )
+            else:
+                try:
+                    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+                    if _contains_local_absolute_path(provenance):
+                        report.add(
+                            "error",
+                            "terrain.provenance-local-path",
+                            "Terrain provenance contains a processing-host path.",
+                            context,
+                        )
+                except (OSError, json.JSONDecodeError, AttributeError) as error:
+                    report.add(
+                        "error",
+                        "terrain.provenance",
+                        f"Terrain provenance could not be read: {error}",
+                        context,
+                    )
+
+
+def _contains_local_absolute_path(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(_contains_local_absolute_path(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_local_absolute_path(child) for child in value)
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"}:
+        return False
+    return (
+        Path(value).is_absolute()
+        or value.startswith("/")
+        or bool(_WINDOWS_PATH.match(value))
+        or value.lower().startswith("file://")
+    )
 
 
 def _mappable_archive_variables(plan: Mapping[str, Any]) -> dict[str, str]:

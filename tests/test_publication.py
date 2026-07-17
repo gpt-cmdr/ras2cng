@@ -7,7 +7,11 @@ import pytest
 from typer.testing import CliRunner
 
 from ras2cng.cli import app
-from ras2cng.publication import _require_http_range, validate_example_publication
+from ras2cng.publication import (
+    _contains_local_absolute_path,
+    _require_http_range,
+    validate_example_publication,
+)
 from ras2cng.viewer_manifest import apply_manifest_v2
 
 
@@ -195,7 +199,20 @@ def _valid_bundle():
     archive = {
         "results": [
             {"plan_id": "p01", "geom_id": "g01", "completed": True, "variables": [{}]}
-        ]
+        ],
+        "terrain": [
+            {
+                "terrain_name": "Terrain",
+                "source_file": "Terrain/terrain.tif",
+                "source_files": ["Terrain/terrain.tif"],
+                "cog_file": "terrain/terrain.cog.tif",
+                "native_resolution": 5.0,
+                "native_resolutions": [5.0],
+                "target_resolution": 5.0,
+                "authoritative": True,
+                "provenance_file": "terrain/terrain-provenance.json",
+            }
+        ],
     }
     return manifest, archive
 
@@ -209,6 +226,13 @@ def test_valid_example_publication_passes_gate():
     assert report.counts["raw_results"] == 1
     assert report.counts["stored_maps"] == 11
     assert report.counts["terrains"] == 1
+
+
+def test_terrain_provenance_path_detection_allows_only_portable_or_hosted_paths():
+    assert _contains_local_absolute_path({"path": "/mnt/scratch/terrain.tif"})
+    assert _contains_local_absolute_path({"path": r"C:\RAS\terrain.tif"})
+    assert not _contains_local_absolute_path({"path": "Terrain/terrain.tif"})
+    assert not _contains_local_absolute_path({"href": "https://example.com/terrain.tif"})
 
 
 def test_publication_gate_accepts_queryable_vector_stored_map():
@@ -251,6 +275,39 @@ def test_publication_gate_rejects_2d_project_without_terrain():
     report = validate_example_publication(manifest, archive, check_files=False)
 
     assert any(issue.code == "terrain.required" for issue in report.errors)
+
+
+def test_publication_gate_rejects_terrain_below_publication_floor():
+    manifest, archive = _valid_bundle()
+    archive["terrain"][0]["native_resolution"] = 1.0
+    archive["terrain"][0]["native_resolutions"] = [1.0]
+    archive["terrain"][0]["target_resolution"] = 3.0
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(issue.code == "terrain.resolution-policy" for issue in report.errors)
+
+
+def test_publication_gate_rejects_unnecessary_coarse_terrain_derivative():
+    manifest, archive = _valid_bundle()
+    archive["terrain"][0]["native_resolution"] = 10.0
+    archive["terrain"][0]["native_resolutions"] = [10.0]
+    archive["terrain"][0]["target_resolution"] = 30.0
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(issue.code == "terrain.resolution-fidelity" for issue in report.errors)
+
+
+def test_publication_gate_accepts_mixed_foot_and_meter_terrain_target():
+    manifest, archive = _valid_bundle()
+    archive["terrain"][0]["native_resolution"] = 2.0
+    archive["terrain"][0]["native_resolutions"] = [2.0, 3.28084]
+    archive["terrain"][0]["target_resolution"] = 6.56168
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert report.ok, report.to_dict()
 
 
 def test_publication_gate_rejects_uncomputed_plan():
