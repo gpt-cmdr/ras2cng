@@ -57,6 +57,14 @@ def _steady_results_requested(result_variables: Optional[Sequence[str]]) -> bool
     return bool(requested & {"steady_cross_sections", "cross_sections"})
 
 
+def _unsteady_results_requested(result_variables: Optional[Sequence[str]]) -> bool:
+    """Return whether an unsteady cross-section result table was requested."""
+    if not result_variables:
+        return True
+    requested = {str(value).strip().lower().replace(" ", "_") for value in result_variables}
+    return bool(requested & {"unsteady_cross_sections", "cross_sections"})
+
+
 # ---------------------------------------------------------------------------
 # Project discovery
 # ---------------------------------------------------------------------------
@@ -790,8 +798,10 @@ def archive_project(
     if include_results:
         from ras2cng.results import (
             STEADY_CROSS_SECTION_RESULT_VARIABLE,
+            UNSTEADY_CROSS_SECTION_RESULT_VARIABLE,
             extract_auxiliary_result_tables,
             extract_steady_cross_section_results,
+            extract_unsteady_cross_section_results,
             extract_results_variable,
             merge_all_variables,
             result_variable_slug,
@@ -849,7 +859,8 @@ def archive_project(
             console.print(f"  [{plan_id}] -> {parquet_name if results_layout == 'plan' else f'results/{plan_id}/'}")
             try:
                 steady_results = extract_steady_cross_section_results(plan_hdf)
-                if not steady_results.empty:
+                has_steady_results = not steady_results.empty
+                if has_steady_results:
                     if _steady_results_requested(result_variables):
                         steady_results["layer"] = STEADY_CROSS_SECTION_RESULT_VARIABLE
                         if results_layout == "variable":
@@ -878,7 +889,42 @@ def archive_project(
                         plan_entry.size_bytes = size_bytes
                     del steady_results
                     gc.collect()
-                elif results_layout == "variable":
+                else:
+                    unsteady_results = extract_unsteady_cross_section_results(plan_hdf)
+                    if (
+                        not unsteady_results.empty
+                        and _unsteady_results_requested(result_variables)
+                    ):
+                        unsteady_results["layer"] = UNSTEADY_CROSS_SECTION_RESULT_VARIABLE
+                        variable_rel = (
+                            Path("results")
+                            / plan_id
+                            / f"{UNSTEADY_CROSS_SECTION_RESULT_VARIABLE}.parquet"
+                        )
+                        variable_path = output_dir / variable_rel
+                        _write_result_frame(unsteady_results, variable_path)
+                        size_bytes = variable_path.stat().st_size
+                        plan_entry.add_variable(
+                            ManifestResultVariable(
+                                variable=UNSTEADY_CROSS_SECTION_RESULT_VARIABLE,
+                                filter_value=UNSTEADY_CROSS_SECTION_RESULT_VARIABLE,
+                                rows=len(unsteady_results),
+                                parquet=variable_rel.as_posix(),
+                                geometry_mode="none",
+                                geometry_filter="cross_sections",
+                                join_columns=_STEADY_RESULT_JOIN_COLUMNS,
+                                source=(
+                                    "Raw HEC-RAS HDF unsteady cross-section "
+                                    "summary values"
+                                ),
+                                size_bytes=size_bytes,
+                            )
+                        )
+                        plan_entry.size_bytes += size_bytes
+                    del unsteady_results
+                    gc.collect()
+
+                if not has_steady_results and results_layout == "variable":
                     selected_variables = selected_summary_variables(plan_hdf, result_variables)
                     for variable in selected_variables:
                         variable_slug = result_variable_slug(variable)
@@ -918,7 +964,7 @@ def archive_project(
                             except UnboundLocalError:
                                 pass
                             gc.collect()
-                else:
+                elif not has_steady_results:
                     results_gdf = merge_all_variables(
                         plan_hdf,
                         mesh_cells_gdf=mesh_cells_gdf,

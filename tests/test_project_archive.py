@@ -514,7 +514,13 @@ def test_archive_results_flag_writes_consolidated_plan(
     results_gdf = _make_fake_gdf("Polygon", n=3)
     results_gdf["layer"] = "maximum_depth"
 
-    with patch("ras2cng.results.merge_all_variables", return_value=results_gdf):
+    with (
+        patch("ras2cng.results.merge_all_variables", return_value=results_gdf),
+        patch(
+            "ras2cng.results.extract_unsteady_cross_section_results",
+            return_value=pd.DataFrame(),
+        ),
+    ):
         manifest = archive_project(
             project_dir / "FakeModel.prj",
             tmp_path / "out",
@@ -553,6 +559,10 @@ def test_archive_results_variable_layout_writes_attribute_tables(
     with (
         patch("ras2cng.results.selected_summary_variables", return_value=["Maximum Depth"]),
         patch("ras2cng.results.extract_results_variable", return_value=results_df),
+        patch(
+            "ras2cng.results.extract_unsteady_cross_section_results",
+            return_value=pd.DataFrame(),
+        ),
     ):
         manifest = archive_project(
             project_dir / "FakeModel.prj",
@@ -619,6 +629,67 @@ def test_archive_steady_results_write_profiled_cross_section_attributes(
     assert variable["profile_column"] == "profile"
     assert variable["source"] == "Raw HEC-RAS HDF steady cross-section result values"
     assert pd.read_parquet(result_path)["profile"].tolist() == ["10-percent AEP", "1-percent AEP"]
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_unsteady_results_write_cross_section_summary_attributes(
+    mock_init, mock_merge, tmp_path
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+    (project_dir / "FakeModel.p01.hdf").touch()
+    unsteady_results = pd.DataFrame(
+        {
+            "river": ["River A"],
+            "reach": ["Reach A"],
+            "node_id": ["1000"],
+            "maximum_water_surface": [102.0],
+            "maximum_velocity_total": [4.5],
+        }
+    )
+
+    from ras2cng.project import archive_project
+
+    with (
+        patch(
+            "ras2cng.results.extract_steady_cross_section_results",
+            return_value=pd.DataFrame(),
+        ),
+        patch(
+            "ras2cng.results.extract_unsteady_cross_section_results",
+            return_value=unsteady_results,
+        ),
+        patch("ras2cng.results.selected_summary_variables", return_value=[]),
+        patch("ras2cng.results.extract_auxiliary_result_tables", return_value=[]),
+    ):
+        manifest = archive_project(
+            project_dir / "FakeModel.prj",
+            tmp_path / "out",
+            include_results=True,
+            results_layout="variable",
+            results_geometry="none",
+            sort=False,
+        )
+
+    result_path = (
+        tmp_path / "out" / "results" / "p01" / "unsteady_cross_sections.parquet"
+    )
+    assert result_path.is_file()
+    variable = manifest.results[0]["variables"][0]
+    assert variable["geometry_filter"] == "cross_sections"
+    assert variable["join_columns"] == {
+        "River": "river",
+        "Reach": "reach",
+        "RS": "node_id",
+    }
+    assert variable["source"] == (
+        "Raw HEC-RAS HDF unsteady cross-section summary values"
+    )
+    exported = pd.read_parquet(result_path)
+    assert exported["maximum_water_surface"].tolist() == [102.0]
+    assert exported["maximum_velocity_total"].tolist() == [4.5]
 
 
 @patch("ras2cng.project.merge_all_layers")

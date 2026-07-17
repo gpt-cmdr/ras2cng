@@ -17,6 +17,7 @@ from ras_commander.hdf import (
     HdfPump,
     HdfResultsMesh,
     HdfResultsPlan,
+    HdfResultsXsec,
     HdfStruc1D,
     HdfUtils,
 )
@@ -24,6 +25,7 @@ from ras_commander.hdf import (
 
 VALID_RESULTS_GEOMETRY_MODES = {"polygon", "point", "none"}
 STEADY_CROSS_SECTION_RESULT_VARIABLE = "steady_cross_sections"
+UNSTEADY_CROSS_SECTION_RESULT_VARIABLE = "unsteady_cross_sections"
 
 
 @dataclass
@@ -266,6 +268,65 @@ def extract_steady_cross_section_results(plan_hdf: Path) -> pd.DataFrame:
     if not HdfResultsPlan.is_steady_plan(plan_path):
         return pd.DataFrame()
     return HdfResultsPlan.get_steady_results(plan_path)
+
+
+def extract_unsteady_cross_section_results(
+    plan_hdf: Path,
+    *,
+    chunk_rows: int = 4096,
+) -> pd.DataFrame:
+    """Extract bounded-memory summaries for raw 1D unsteady XS results."""
+    summary_method = getattr(HdfResultsXsec, "get_xsec_summary", None)
+    if callable(summary_method):
+        return summary_method(
+            Path(plan_hdf),
+            chunk_rows=chunk_rows,
+        )
+
+    # Compatibility with ras-commander builds predating get_xsec_summary().
+    # Current versions use the bounded reader above.
+    try:
+        dataset = HdfResultsXsec.get_xsec_timeseries(Path(plan_hdf))
+    except KeyError:
+        return pd.DataFrame()
+    if not dataset.data_vars:
+        return pd.DataFrame()
+
+    frame = pd.DataFrame(
+        {
+            "river": dataset.coords["River"].values.astype(str),
+            "reach": dataset.coords["Reach"].values.astype(str),
+            "node_id": dataset.coords["Station"].values.astype(str),
+            "name": dataset.coords["Name"].values.astype(str),
+        }
+    )
+    timestamps = np.asarray(dataset.coords["time"].values, dtype="datetime64[ns]")
+    for native_name, values in dataset.data_vars.items():
+        variable_slug = result_variable_slug(native_name.replace("_", " "))
+        block = np.asarray(values.values, dtype="float64")
+        valid = np.isfinite(block) & (np.abs(block) < 1.0e30)
+        maximum_block = np.where(valid, block, -np.inf)
+        minimum_block = np.where(valid, block, np.inf)
+        maximum = maximum_block.max(axis=0)
+        minimum = minimum_block.min(axis=0)
+        time_index = maximum_block.argmax(axis=0).astype("int64")
+        no_values = ~np.isfinite(maximum)
+        maximum[no_values] = np.nan
+        minimum[~np.isfinite(minimum)] = np.nan
+        time_index[no_values] = -1
+
+        frame[f"maximum_{variable_slug}"] = maximum
+        frame[f"minimum_{variable_slug}"] = minimum
+        frame[f"maximum_{variable_slug}_time_index"] = time_index
+        maximum_times = np.full(
+            len(frame),
+            np.datetime64("NaT", "ns"),
+            dtype="datetime64[ns]",
+        )
+        valid_time = (time_index >= 0) & (time_index < len(timestamps))
+        maximum_times[valid_time] = timestamps[time_index[valid_time]]
+        frame[f"maximum_{variable_slug}_time"] = maximum_times
+    return frame
 
 
 def result_variable_slug(variable: str) -> str:
