@@ -83,6 +83,11 @@ def validate_example_publication(
 
     resources = manifest.get("resources") if isinstance(manifest.get("resources"), Mapping) else {}
     layers = manifest.get("layers") if isinstance(manifest.get("layers"), Mapping) else {}
+    completed_plan_ids = {
+        str(plan.get("plan_id"))
+        for plan in (archive or {}).get("results", [])
+        if isinstance(plan, Mapping) and plan.get("completed") is True and plan.get("plan_id")
+    }
     source_crs = (manifest.get("provenance") or {}).get("sourceCrs") or manifest.get("sourceCrs")
     if not source_crs:
         report.add("error", "project.crs", "The viewer manifest has no validated project CRS.")
@@ -146,7 +151,8 @@ def validate_example_publication(
     }
     if not plan_ids:
         report.add("error", "results.plan", "No result plan is published.")
-    for plan_id in plan_ids:
+    admission_plan_ids = sorted(set(plan_ids) | completed_plan_ids)
+    for plan_id in admission_plan_ids:
         plan_raw = [layer for layer in raw_layers.values() if layer.get("plan") == plan_id]
         plan_stored = [layer for layer in stored_layers.values() if layer.get("plan") == plan_id]
         if not plan_raw:
@@ -242,15 +248,10 @@ def validate_example_publication(
             "The archive manifest is required to verify successful plan completion.",
         )
     else:
-        completed = {
-            str(plan.get("plan_id"))
-            for plan in archive.get("results", [])
-            if plan.get("completed") is True
-        }
-        if not completed:
+        if not completed_plan_ids:
             report.add("error", "results.completed", "No successfully computed plan is recorded.")
         for plan_id in plan_ids:
-            if plan_id not in completed:
+            if plan_id not in completed_plan_ids:
                 report.add(
                     "error",
                     "results.completed",
@@ -280,6 +281,7 @@ def validate_example_publication(
         "layers": len(layers),
         "geometries": len(geometry_ids),
         "plans": len(plan_ids),
+        "completed_plans": len(completed_plan_ids),
         "raw_results": len(raw_layers),
         "stored_maps": len(stored_layers),
         "terrains": len(terrain_layers),

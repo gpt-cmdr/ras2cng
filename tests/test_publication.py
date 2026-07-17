@@ -221,6 +221,26 @@ def test_publication_gate_rejects_uncomputed_plan():
     assert any(issue.code == "results.completed" for issue in report.errors)
 
 
+def test_publication_gate_requires_both_result_families_for_every_completed_plan():
+    manifest, archive = _valid_bundle()
+    archive["results"].append(
+        {"plan_id": "p02", "geom_id": "g01", "completed": True, "variables": [{}]}
+    )
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.raw-hdf" and issue.context == "p02"
+        for issue in report.errors
+    )
+    assert any(
+        issue.code == "results.stored-map" and issue.context == "p02"
+        for issue in report.errors
+    )
+    assert report.counts["plans"] == 1
+    assert report.counts["completed_plans"] == 2
+
+
 def test_publication_gate_rejects_raster_outside_model_extent():
     manifest, archive = _valid_bundle()
     manifest["resources"]["p01-depth-max-numeric"]["bounds"] = [-100.0, 30.0, -99.0, 31.0]
