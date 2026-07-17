@@ -12,7 +12,9 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from ras2cng.stored_maps import (
-    REQUIRED_STORED_MAP_TYPE_KEYS,
+    DERIVED_BOUNDARY_SCHEMA,
+    REQUIRED_STORED_RASTER_TYPE_KEYS,
+    derived_boundary_provenance_errors,
     stored_map_type_key,
 )
 from ras2cng.terrain import select_terrain_resolution
@@ -166,15 +168,25 @@ def validate_example_publication(
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "raw-hdf"
     }
+    calculated_boundary_layers = {
+        layer_id: layer
+        for layer_id, layer in layers.items()
+        if _is_derived_boundary_candidate(layer)
+    }
     stored_layers = {
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "stored-map"
+        and layer_id not in calculated_boundary_layers
     }
     terrain_layers = {
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "terrain"
     }
-    for layer_id, layer in {**raw_layers, **stored_layers}.items():
+    for layer_id, layer in {
+        **raw_layers,
+        **stored_layers,
+        **calculated_boundary_layers,
+    }.items():
         missing_titles = [
             key
             for key in ("planTitle", "geometryTitle")
@@ -194,6 +206,66 @@ def validate_example_publication(
                 "Result layers must be disabled by default.",
                 layer_id,
             )
+
+    valid_calculated_boundaries: set[str] = set()
+    for layer_id, layer in calculated_boundary_layers.items():
+        valid = True
+        if layer.get("sourceKind") != "calculated":
+            report.add(
+                "error",
+                "results.boundary-spoof",
+                "Raster-derived inundation boundary is not classified as calculated.",
+                layer_id,
+            )
+            valid = False
+        if layer.get("resultKind") != "calculated_vector":
+            report.add(
+                "error",
+                "results.calculated-boundary-kind",
+                "Calculated inundation boundary must declare resultKind calculated_vector.",
+                layer_id,
+            )
+            valid = False
+        if layer.get("role") != "inundation_boundary":
+            report.add(
+                "error",
+                "results.calculated-boundary-kind",
+                "Calculated inundation boundary must use role inundation_boundary.",
+                layer_id,
+            )
+            valid = False
+        display_resource = resources.get(layer.get("resource")) or {}
+        if display_resource.get("type") != "vector-pmtiles":
+            report.add(
+                "error",
+                "results.calculated-boundary-resource",
+                "Calculated inundation boundary must use a vector PMTiles resource.",
+                layer_id,
+            )
+            valid = False
+        if (layer.get("query") or {}).get("enabled") is not True:
+            report.add(
+                "error",
+                "results.calculated-boundary-query",
+                "Calculated inundation boundary is not queryable.",
+                layer_id,
+            )
+            valid = False
+        provenance_errors = derived_boundary_provenance_errors(
+            layer.get("provenance"),
+            profile=str(layer.get("profile")) if layer.get("profile") is not None else None,
+        )
+        if provenance_errors:
+            report.add(
+                "error",
+                "results.calculated-boundary-provenance",
+                "Invalid calculated inundation boundary provenance: "
+                + "; ".join(provenance_errors),
+                layer_id,
+            )
+            valid = False
+        if valid:
+            valid_calculated_boundaries.add(layer_id)
     if not plan_ids:
         report.add("error", "results.plan", "No result plan is published.")
     admission_plan_ids = sorted(set(plan_ids) | completed_plan_ids)
@@ -211,6 +283,11 @@ def validate_example_publication(
     for plan_id in admission_plan_ids:
         plan_raw = [layer for layer in raw_layers.values() if layer.get("plan") == plan_id]
         plan_stored = [layer for layer in stored_layers.values() if layer.get("plan") == plan_id]
+        plan_calculated_boundaries = [
+            (layer_id, layer)
+            for layer_id, layer in calculated_boundary_layers.items()
+            if layer.get("plan") == plan_id
+        ]
         if not plan_raw:
             report.add(
                 "error",
@@ -238,14 +315,7 @@ def validate_example_publication(
             if plan_geometry
             else bool(geometry_2d_ids)
         )
-        if not plan_stored and stored_maps_applicable:
-            report.add(
-                "error",
-                "results.stored-map",
-                "No RASMapper Stored Map rasters are published.",
-                plan_id,
-            )
-        elif not plan_stored:
+        if not stored_maps_applicable and not plan_stored and not plan_calculated_boundaries:
             stored_map_exempt_plans.add(plan_id)
             report.add(
                 "warning",
@@ -264,14 +334,48 @@ def validate_example_publication(
                 )
             }
             missing_map_types = sorted(
-                REQUIRED_STORED_MAP_TYPE_KEYS - published_map_types
+                REQUIRED_STORED_RASTER_TYPE_KEYS - published_map_types
             )
+            if not published_map_types.intersection(REQUIRED_STORED_RASTER_TYPE_KEYS):
+                report.add(
+                    "error",
+                    "results.stored-map",
+                    "No RASMapper Stored Map rasters are published.",
+                    plan_id,
+                )
             if missing_map_types:
                 report.add(
                     "error",
                     "results.stored-map-type",
-                    "Complete Stored Map set is missing: "
+                    "Complete native Stored Map raster set is missing: "
                     + ", ".join(missing_map_types),
+                    plan_id,
+                )
+            native_boundaries = [
+                layer
+                for layer in plan_stored
+                if _is_inundation_boundary(layer)
+            ]
+            admissible_calculated_boundaries = [
+                layer_id
+                for layer_id, _layer in plan_calculated_boundaries
+                if layer_id in valid_calculated_boundaries
+            ]
+            boundary_count = len(native_boundaries) + len(
+                admissible_calculated_boundaries
+            )
+            if boundary_count == 0:
+                report.add(
+                    "error",
+                    "results.inundation-boundary",
+                    "No admissible native or calculated inundation boundary is published.",
+                    plan_id,
+                )
+            elif boundary_count > 1:
+                report.add(
+                    "error",
+                    "results.inundation-boundary-ambiguity",
+                    "Plan publishes more than one native/calculated inundation boundary alternative.",
                     plan_id,
                 )
 
@@ -392,10 +496,36 @@ def validate_example_publication(
         "completed_plans": len(completed_plan_ids),
         "raw_results": len(raw_layers),
         "stored_maps": len(stored_layers),
+        "calculated_boundaries": len(calculated_boundary_layers),
         "stored_map_exempt_plans": len(stored_map_exempt_plans),
         "terrains": len(terrain_layers),
     }
     return report
+
+
+def _is_inundation_boundary(layer: Mapping[str, Any]) -> bool:
+    provenance = layer.get("provenance") or {}
+    return bool(
+        layer.get("role") == "inundation_boundary"
+        or stored_map_type_key(str(provenance.get("mapType") or ""))
+        == "inundation_boundary"
+    )
+
+
+def _is_derived_boundary_candidate(layer: Mapping[str, Any]) -> bool:
+    provenance = layer.get("provenance") or {}
+    has_derived_identity = bool(
+        provenance.get("schema") == DERIVED_BOUNDARY_SCHEMA
+        or provenance.get("nativeRasMapperStoredPolygon") is False
+        or provenance.get("derivationAuthority") is not None
+    )
+    return has_derived_identity or bool(
+        _is_inundation_boundary(layer)
+        and (
+            layer.get("sourceKind") == "calculated"
+            or layer.get("resultKind") == "calculated_vector"
+        )
+    )
 
 
 def _validate_archive_terrain_policy(

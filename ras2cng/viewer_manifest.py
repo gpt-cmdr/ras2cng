@@ -477,16 +477,21 @@ def _vector_layer_record(
     resource_id: str,
 ) -> dict[str, Any]:
     raw_result = deepcopy(legacy_layer.get("rawResult") or {})
+    legacy_provenance = deepcopy(legacy_layer.get("provenance") or {})
     group_id = str(legacy_layer.get("groupId") or "")
     declared_source_kind = legacy_layer.get("sourceKind")
     source_kind = str(declared_source_kind) if declared_source_kind else (
-        "raw-hdf"
-        if raw_result
-        or tileset.get("resultKind") == "raw_hdf"
-        or tileset.get("id") == "results"
-        or group_id == "ras-results"
-        or group_id.startswith("ras-results-")
-        else "geometry"
+        "calculated"
+        if tileset.get("resultKind") == "calculated_vector"
+        else (
+            "raw-hdf"
+            if raw_result
+            or tileset.get("resultKind") == "raw_hdf"
+            or tileset.get("id") == "results"
+            or group_id == "ras-results"
+            or group_id.startswith("ras-results-")
+            else "geometry"
+        )
     )
     geometry_id = _normalize_id(legacy_layer.get("geometryId")) or _geometry_id(
         legacy_layer.get("groupId")
@@ -498,11 +503,17 @@ def _vector_layer_record(
             "plan": plan_id,
             "variable": legacy_layer.get("kind"),
         }
+    role = str(legacy_layer.get("kind") or "vector-layer")
     query = {
         "enabled": legacy_layer.get("queryable") is not False,
         "sourceKind": source_kind,
-        "valueSemantics": (
-            "raw-computation-element" if source_kind == "raw-hdf" else "feature-attributes"
+        "valueSemantics": legacy_layer.get("valueSemantics")
+        or (
+            "raw-computation-element"
+            if source_kind == "raw-hdf"
+            else "thresholded-depth-raster-cell-coverage"
+            if source_kind == "calculated" and role == "inundation_boundary"
+            else "feature-attributes"
         ),
         "fields": list(legacy_layer.get("queryFields") or []),
     }
@@ -510,13 +521,18 @@ def _vector_layer_record(
         "name": legacy_layer.get("name") or legacy_layer.get("id"),
         "resource": resource_id,
         "sourceLayer": legacy_layer.get("sourceLayer"),
-        "role": str(legacy_layer.get("kind") or "vector-layer"),
+        "role": role,
         "sourceKind": source_kind,
         "visible": bool(legacy_layer.get("visible", False)),
         "sort": legacy_layer.get("sort", 9999),
         "style": deepcopy(legacy_layer.get("style") or {}),
         "query": query,
     }
+    result_kind = legacy_layer.get("resultKind")
+    if not result_kind and tileset.get("resultKind") == "calculated_vector":
+        result_kind = tileset["resultKind"]
+    if result_kind:
+        record["resultKind"] = result_kind
     _copy_present(
         legacy_layer,
         record,
@@ -531,13 +547,15 @@ def _vector_layer_record(
         record["plan"] = plan_id
     if raw_result.get("profile") is not None:
         record["profile"] = raw_result["profile"]
+    elif source_kind == "calculated" and legacy_provenance.get("profile") is not None:
+        record["profile"] = legacy_provenance["profile"]
     if raw_result:
         raw_result["interpolationAuthority"] = "none"
         record["provenance"] = raw_result
     elif legacy_layer.get("extentSource"):
         record["provenance"] = {"source": legacy_layer["extentSource"]}
-    elif legacy_layer.get("provenance"):
-        record["provenance"] = deepcopy(legacy_layer["provenance"])
+    elif legacy_provenance:
+        record["provenance"] = legacy_provenance
     return record
 
 

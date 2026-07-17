@@ -824,6 +824,90 @@ def test_package_stored_vector_adds_rasmapper_result_to_plan(monkeypatch, tmp_pa
     assert published["children"][0]["layerId"] == summary.layer_id
 
 
+def test_package_calculated_vector_preserves_provenance_and_tree(
+    monkeypatch, tmp_path: Path
+) -> None:
+    viewer_dir = tmp_path / "viewer"
+    viewer_dir.mkdir()
+    viewer_dir.joinpath("manifest.json").write_text(
+        json.dumps({"tilesets": [], "groups": []}),
+        encoding="utf-8",
+    )
+    source = tmp_path / "inundation.parquet"
+    gpd.GeoDataFrame(
+        {"profile": ["Max"], "geometry": [box(500000, 500000, 501000, 501000)]},
+        crs="EPSG:2965",
+    ).to_parquet(source)
+    provenance = {
+        "schema": "ras2cng.derived-inundation-boundary/v1",
+        "sourceKind": "calculated",
+        "source": "RASMapper/RasProcess Depth Stored Map",
+        "sourceRaster": "Depth (Max)_cog.tif",
+        "sourceMapType": "Depth",
+        "interpolationAuthority": "RASMapper/RasProcess source raster",
+        "derivationAuthority": "ras2cng",
+        "nativeRasMapperStoredPolygon": False,
+        "threshold": 0.0,
+        "comparison": "depth > threshold",
+        "profile": "Max",
+        "units": "ft",
+        "connectivity": 4,
+        "outputShapefile": "Inundation Boundary (Max).raster-derived.shp",
+        "sourceResolution": {"x": 5.0, "y": 5.0},
+        "outputResolution": {"x": 5.0, "y": 5.0},
+        "resampling": "none",
+        "nodata": {
+            "sourceValue": -9999.0,
+            "datasetMaskApplied": True,
+            "nonFiniteExcluded": True,
+            "maskedPixelCount": 0,
+            "nonFinitePixelCount": 0,
+        },
+        "edgeCount": 400,
+        "edgeLimit": 5_000_000,
+    }
+
+    monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
+
+    def fake_tippecanoe(output, _layers, _min_zoom, _max_zoom, _temporary_directory):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"pmtiles")
+
+    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+
+    summary = maplibre.package_maplibre_calculated_vector(
+        source,
+        viewer_dir,
+        plan="03",
+        map_type="Inundation Boundary",
+        name="Inundation Boundary (Max) - Derived from RASMapper Depth",
+        profile="Max",
+        geometry="g02",
+        layer_id="calculated-p03-inundation-boundary-max",
+        provenance=provenance,
+        scratch_dir=tmp_path / "scratch",
+    )
+
+    manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
+    tileset = next(item for item in manifest["tilesets"] if item["id"] == summary.layer_id)
+    layer = manifest["layers"][summary.layer_id]
+    plan = next(node for node in manifest["tree"][2]["children"] if node["metadata"]["planId"] == "p03")
+    calculated = next(node for node in plan["children"] if node["role"] == "calculated-layers")
+    assert tileset["resultKind"] == "calculated_vector"
+    assert layer["sourceKind"] == "calculated"
+    assert layer["resultKind"] == "calculated_vector"
+    assert layer["role"] == "inundation_boundary"
+    assert layer["name"] == "Inundation Boundary (Max) - Derived from RASMapper Depth"
+    assert layer["query"] == {
+        "enabled": True,
+        "sourceKind": "calculated",
+        "valueSemantics": "thresholded-depth-raster-cell-coverage",
+        "fields": [],
+    }
+    assert layer["provenance"] == provenance
+    assert calculated["children"][0]["layerId"] == summary.layer_id
+
+
 def test_constant_raster_stats_and_calculated_presets_are_supported(tmp_path: Path) -> None:
     assert maplibre._raster_stats({"bands": [{"minimum": 0, "maximum": 0}]}) == {
         "minimum": 0.0,

@@ -161,7 +161,7 @@ class RasterPackageSummary:
 
 @dataclass(frozen=True)
 class VectorResultPackageSummary:
-    """Queryable vector Stored Map packaged for browser delivery."""
+    """Queryable vector result packaged for browser delivery."""
 
     manifest_path: Path
     pmtiles_path: Path
@@ -1030,28 +1030,140 @@ def package_maplibre_stored_vector(
 ) -> VectorResultPackageSummary:
     """Publish a RASMapper vector Stored Map as queryable PMTiles."""
 
-    vector_path = Path(vector_path)
-    viewer_dir = Path(viewer_dir)
-    manifest_path = viewer_dir / "manifest.json"
-    if not vector_path.is_file():
-        raise FileNotFoundError(f"Stored Map vector does not exist: {vector_path}")
-    if not manifest_path.is_file():
-        raise FileNotFoundError(f"MapLibre viewer manifest does not exist: {manifest_path}")
+    provenance: dict[str, Any] = {
+        "source": "RASMapper/RasProcess Stored Map",
+        "interpolationAuthority": "RASMapper/RasProcess",
+    }
+    return _package_maplibre_result_vector(
+        vector_path,
+        viewer_dir,
+        plan=plan,
+        map_type=map_type,
+        name=name,
+        profile=profile,
+        geometry=geometry,
+        layer_id=layer_id,
+        crs=crs,
+        visible=visible,
+        min_zoom=min_zoom,
+        max_zoom=max_zoom,
+        scratch_dir=scratch_dir,
+        overwrite=overwrite,
+        source_kind="stored-map",
+        result_kind="stored_map",
+        provenance=provenance,
+        vector_label="Stored Map vector",
+    )
 
+
+def package_maplibre_calculated_vector(
+    vector_path: Path,
+    viewer_dir: Path,
+    *,
+    plan: str,
+    map_type: str,
+    provenance: Mapping[str, Any],
+    name: str | None = None,
+    profile: str | None = None,
+    geometry: str | None = None,
+    layer_id: str | None = None,
+    crs: str | None = None,
+    visible: bool = False,
+    min_zoom: int = 0,
+    max_zoom: int = 17,
+    scratch_dir: Path | None = None,
+    overwrite: bool = False,
+) -> VectorResultPackageSummary:
+    """Publish a calculated vector result as queryable PMTiles."""
+
+    return _package_maplibre_result_vector(
+        vector_path,
+        viewer_dir,
+        plan=plan,
+        map_type=map_type,
+        name=name,
+        profile=profile,
+        geometry=geometry,
+        layer_id=layer_id,
+        crs=crs,
+        visible=visible,
+        min_zoom=min_zoom,
+        max_zoom=max_zoom,
+        scratch_dir=scratch_dir,
+        overwrite=overwrite,
+        source_kind="calculated",
+        result_kind="calculated_vector",
+        provenance=provenance,
+        value_semantics="thresholded-depth-raster-cell-coverage",
+        vector_label="Calculated vector",
+    )
+
+
+def _result_plan_id(plan: str, vector_label: str) -> str:
     plan_id = _slug(plan)
     if plan_id.isdigit():
         plan_id = f"p{plan_id.zfill(2)}"
     elif plan_id.startswith("p") and plan_id[1:].isdigit():
         plan_id = f"p{plan_id[1:].zfill(2)}"
     if not plan_id:
-        raise ValueError("A plan identifier is required for every Stored Map vector")
+        raise ValueError(f"A plan identifier is required for every {vector_label}")
+    return plan_id
+
+
+def _package_maplibre_result_vector(
+    vector_path: Path,
+    viewer_dir: Path,
+    *,
+    plan: str,
+    map_type: str,
+    name: str | None,
+    profile: str | None,
+    geometry: str | None,
+    layer_id: str | None,
+    crs: str | None,
+    visible: bool,
+    min_zoom: int,
+    max_zoom: int,
+    scratch_dir: Path | None,
+    overwrite: bool,
+    source_kind: str,
+    result_kind: str,
+    provenance: Mapping[str, Any],
+    vector_label: str,
+    value_semantics: str | None = None,
+) -> VectorResultPackageSummary:
+    """Shared queryable vector-result PMTiles implementation."""
+
+    vector_path = Path(vector_path)
+    viewer_dir = Path(viewer_dir)
+    manifest_path = viewer_dir / "manifest.json"
+    if not vector_path.is_file():
+        raise FileNotFoundError(f"{vector_label} does not exist: {vector_path}")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"MapLibre viewer manifest does not exist: {manifest_path}")
+
+    plan_id = _result_plan_id(plan, vector_label)
     map_slug = _slug(map_type)
     profile_slug = _slug(profile or "")
     layer_id = layer_id or "-".join(
         value for value in (plan_id, map_slug, profile_slug) if value
     )
     if not layer_id:
-        raise ValueError("Could not derive a Stored Map vector layer identifier")
+        raise ValueError(f"Could not derive a {vector_label} layer identifier")
+
+    published_provenance = dict(provenance)
+    if source_kind == "stored-map":
+        published_provenance.update(
+            {
+                "mapType": map_type,
+                "plan": plan_id,
+                "sourceVector": vector_path.name,
+            }
+        )
+        if profile:
+            published_provenance["profile"] = profile
+        if geometry:
+            published_provenance["geometry"] = geometry
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     tilesets = manifest.setdefault("tilesets", [])
@@ -1069,7 +1181,7 @@ def package_maplibre_stored_vector(
         frame = gpd.read_file(vector_path)
     frame = _to_wgs84(frame, vector_path, crs)
     if frame.empty:
-        raise ValueError(f"Stored Map vector has no publishable features: {vector_path}")
+        raise ValueError(f"{vector_label} has no publishable features: {vector_path}")
 
     scratch_parent = Path(scratch_dir).resolve() if scratch_dir else None
     if scratch_parent:
@@ -1092,17 +1204,6 @@ def package_maplibre_stored_vector(
             work_dir / "tippecanoe",
         )
 
-    provenance: dict[str, Any] = {
-        "source": "RASMapper/RasProcess Stored Map",
-        "interpolationAuthority": "RASMapper/RasProcess",
-        "mapType": map_type,
-        "plan": plan_id,
-        "sourceVector": vector_path.name,
-    }
-    if profile:
-        provenance["profile"] = profile
-    if geometry:
-        provenance["geometry"] = geometry
     layer = {
         "id": layer_id,
         "name": name or " ".join(value for value in (map_type, profile) if value),
@@ -1111,7 +1212,7 @@ def package_maplibre_stored_vector(
         "geometryId": geometry,
         "visible": visible,
         "kind": map_slug.replace("-", "_"),
-        "sourceKind": "stored-map",
+        "sourceKind": source_kind,
         "style": {
             "fill": "#2563eb",
             "fillOpacity": 0.12,
@@ -1123,8 +1224,12 @@ def package_maplibre_stored_vector(
         "bounds": list(bounds),
         "sort": 90,
         "queryable": True,
-        "provenance": provenance,
+        "provenance": published_provenance,
     }
+    if source_kind == "calculated":
+        layer["resultKind"] = result_kind
+    if value_semantics:
+        layer["valueSemantics"] = value_semantics
     tileset = {
         "id": layer_id,
         "type": "vector",
@@ -1132,7 +1237,7 @@ def package_maplibre_stored_vector(
         "bytes": output.stat().st_size,
         "layers": [layer],
         "groupId": f"ras-results-{plan_id}",
-        "resultKind": "stored_map",
+        "resultKind": result_kind,
     }
     if existing:
         tilesets[tilesets.index(existing)] = tileset
@@ -1146,7 +1251,7 @@ def package_maplibre_stored_vector(
                 "id": group_id,
                 "name": f"Plan {plan_id}",
                 "visible": False,
-                "resultKind": "stored_map",
+                "resultKind": result_kind,
             }
         )
     apply_manifest_v2(manifest, archive=_viewer_archive_metadata(viewer_dir))

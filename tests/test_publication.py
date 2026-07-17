@@ -217,6 +217,81 @@ def _valid_bundle():
     return manifest, archive
 
 
+def _bundle_with_derived_boundary():
+    manifest, archive = _valid_bundle()
+    manifest["tilesets"] = [
+        item
+        for item in manifest["tilesets"]
+        if item["id"] != "p01-inundation-boundary-max"
+    ]
+    manifest["tilesets"].append(
+        {
+            "id": "calculated-p01-inundation-boundary-max",
+            "type": "vector",
+            "href": (
+                "https://rascommander.info/data/example/"
+                "calculated-p01-inundation-boundary-max.pmtiles"
+            ),
+            "groupId": "ras-results-p01",
+            "resultKind": "calculated_vector",
+            "layers": [
+                {
+                    "id": "calculated-p01-inundation-boundary-max",
+                    "name": (
+                        "Inundation Boundary (Max) - Derived from RASMapper Depth"
+                    ),
+                    "sourceLayer": "calculated-p01-inundation-boundary-max",
+                    "groupId": "ras-results-p01",
+                    "geometryId": "g01",
+                    "kind": "inundation_boundary",
+                    "sourceKind": "calculated",
+                    "resultKind": "calculated_vector",
+                    "visible": False,
+                    "queryable": True,
+                    "provenance": {
+                        "schema": "ras2cng.derived-inundation-boundary/v1",
+                        "sourceKind": "calculated",
+                        "source": "RASMapper/RasProcess Depth Stored Map",
+                        "sourceRaster": "Depth (Max)_cog.tif",
+                        "sourceMapType": "Depth",
+                        "interpolationAuthority": (
+                            "RASMapper/RasProcess source raster"
+                        ),
+                        "derivationAuthority": "ras2cng",
+                        "nativeRasMapperStoredPolygon": False,
+                        "threshold": 0.0,
+                        "comparison": "depth > threshold",
+                        "profile": "Max",
+                        "units": "ft",
+                        "connectivity": 4,
+                        "outputShapefile": (
+                            "Inundation Boundary (Max).raster-derived.shp"
+                        ),
+                        "sourceResolution": {"x": 5.0, "y": 5.0},
+                        "outputResolution": {"x": 5.0, "y": 5.0},
+                        "resampling": "none",
+                        "nodata": {
+                            "sourceValue": -9999.0,
+                            "datasetMaskApplied": True,
+                            "nonFiniteExcluded": True,
+                            "maskedPixelCount": 0,
+                            "nonFinitePixelCount": 0,
+                        },
+                        "edgeCount": 400,
+                        "edgeLimit": 5_000_000,
+                    },
+                }
+            ],
+        }
+    )
+    apply_manifest_v2(manifest)
+    for layer in manifest["layers"].values():
+        if layer.get("sourceKind") in {"raw-hdf", "stored-map", "calculated"}:
+            layer["planTitle"] = "Existing Conditions"
+            layer["geometryTitle"] = "Main Channel Geometry"
+    return manifest, archive
+
+
 def test_valid_example_publication_passes_gate():
     manifest, archive = _valid_bundle()
 
@@ -243,6 +318,60 @@ def test_publication_gate_accepts_queryable_vector_stored_map():
     assert report.ok, report.to_dict()
     assert manifest["layers"]["p01-inundation-boundary-max"]["query"]["enabled"] is True
     assert report.counts["stored_maps"] == 11
+
+
+def test_publication_gate_accepts_ten_native_rasters_and_derived_boundary():
+    manifest, archive = _bundle_with_derived_boundary()
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert report.ok, report.to_dict()
+    assert report.counts["stored_maps"] == 10
+    assert report.counts["calculated_boundaries"] == 1
+
+
+def test_publication_gate_rejects_derived_boundary_spoofed_as_native():
+    manifest, archive = _bundle_with_derived_boundary()
+    boundary = manifest["layers"]["calculated-p01-inundation-boundary-max"]
+    boundary["sourceKind"] = "stored-map"
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.boundary-spoof"
+        and issue.context == "calculated-p01-inundation-boundary-max"
+        for issue in report.errors
+    )
+    assert report.counts["stored_maps"] == 10
+    assert report.counts["calculated_boundaries"] == 1
+
+
+def test_publication_gate_rejects_calculated_boundary_without_strict_provenance():
+    manifest, archive = _bundle_with_derived_boundary()
+    boundary = manifest["layers"]["calculated-p01-inundation-boundary-max"]
+    boundary["provenance"].pop("edgeCount")
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.calculated-boundary-provenance"
+        and "edgeCount" in issue.message
+        for issue in report.errors
+    )
+
+
+def test_publication_gate_rejects_calculated_boundary_local_provenance_path():
+    manifest, archive = _bundle_with_derived_boundary()
+    boundary = manifest["layers"]["calculated-p01-inundation-boundary-max"]
+    boundary["provenance"]["sourceRaster"] = "/mnt/scratch/depth.tif"
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.calculated-boundary-provenance"
+        and "processing-host path" in issue.message
+        for issue in report.errors
+    )
 
 
 def test_publication_gate_rejects_missing_result_families():
