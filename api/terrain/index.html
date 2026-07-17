@@ -1852,6 +1852,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ras2cng.terrain.consolidate_terrain_files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        consolidate_terrain_files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ras2cng.terrain.consolidate_project_terrains" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2334,6 +2345,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ras2cng.terrain.consolidate_terrain_files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        consolidate_terrain_files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ras2cng.terrain.consolidate_project_terrains" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2394,6 +2416,7 @@
 <li><strong>Inspecting terrain configuration</strong>: Enumerate all terrain layers, their CRS, resolution, and file locations</li>
 <li><strong>Consolidating terrain</strong>: Merge the TIFF members of each named terrain into its own authoritative file</li>
 <li><strong>Downsampling without upsampling</strong>: Select a whole native-cell multiple with a 5 ft publication floor</li>
+<li><strong>Recovering relocated projects</strong>: Consolidate an explicit, priority-ordered TIFF list when stored RASMapper paths cannot be resolved on the processing host</li>
 <li><strong>Publishing source construction</strong>: Export source TIFF footprints and terrain-modification vectors</li>
 <li><strong>Creating HEC-RAS terrain HDFs</strong>: Generate new terrain HDF files via RasProcess.exe (required for result mapping)</li>
 </ul>
@@ -2446,7 +2469,7 @@
 <ol>
 <li><strong>Discover</strong> terrain TIFs from rasmap (priority ordered)</li>
 <li><strong>Keep terrain names separate</strong>: different named RASMapper terrains are never merged implicitly</li>
-<li><strong>Choose a target grid</strong>: preserve native resolution at or above 5 ft; otherwise use the smallest whole native-cell multiple at or above 5 ft</li>
+<li><strong>Choose a target grid</strong>: preserve native resolution at or above 5 ft; otherwise use the smallest whole native-cell multiple at or above 5 ft. A mixed-resolution mosaic requires an explicit target that is a whole multiple of its coarsest native grid; every source factor is retained in provenance.</li>
 <li><strong>Merge by windows</strong>: reproject each member to the target grid and let the first RASMapper source win in overlaps without allocating the full mosaic in memory</li>
 <li><strong>Optionally create HEC-RAS terrain HDF</strong> via <code>RasTerrain.create_terrain_from_rasters()</code> (requires RasProcess.exe)</li>
 <li><strong>Optionally register</strong> the new terrain in the project's rasmap</li>
@@ -3338,6 +3361,178 @@ enforce the five-foot publication floor.</p>
 <div class="doc doc-object doc-function">
 
 
+<h2 id="ras2cng.terrain.consolidate_terrain_files" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">ras2cng</span><span class="o">.</span><span class="n">terrain</span><span class="o">.</span><span class="n">consolidate_terrain_files</span><span class="p">(</span><span class="n">tif_files</span><span class="p">,</span> <span class="n">output_dir</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">terrain_name</span><span class="o">=</span><span class="s1">&#39;Consolidated&#39;</span><span class="p">,</span> <span class="n">source_terrain_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">downsample_factor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target_resolution</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">horizontal_units</span><span class="o">=</span><span class="s1">&#39;Feet&#39;</span><span class="p">,</span> <span class="n">source_paths</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#ras2cng.terrain.consolidate_terrain_files" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Consolidate an explicit, priority-ordered terrain TIFF mosaic.</p>
+<p>This entry point supports projects whose RAS Mapper paths cannot be resolved
+on the processing host. The first source wins where valid pixels overlap,
+and the normal no-upsample publication policy is always enforced.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>ras2cng/terrain.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-178">178</a></span>
+<span class="normal"><a href="#__codelineno-0-179">179</a></span>
+<span class="normal"><a href="#__codelineno-0-180">180</a></span>
+<span class="normal"><a href="#__codelineno-0-181">181</a></span>
+<span class="normal"><a href="#__codelineno-0-182">182</a></span>
+<span class="normal"><a href="#__codelineno-0-183">183</a></span>
+<span class="normal"><a href="#__codelineno-0-184">184</a></span>
+<span class="normal"><a href="#__codelineno-0-185">185</a></span>
+<span class="normal"><a href="#__codelineno-0-186">186</a></span>
+<span class="normal"><a href="#__codelineno-0-187">187</a></span>
+<span class="normal"><a href="#__codelineno-0-188">188</a></span>
+<span class="normal"><a href="#__codelineno-0-189">189</a></span>
+<span class="normal"><a href="#__codelineno-0-190">190</a></span>
+<span class="normal"><a href="#__codelineno-0-191">191</a></span>
+<span class="normal"><a href="#__codelineno-0-192">192</a></span>
+<span class="normal"><a href="#__codelineno-0-193">193</a></span>
+<span class="normal"><a href="#__codelineno-0-194">194</a></span>
+<span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#__codelineno-0-199">199</a></span>
+<span class="normal"><a href="#__codelineno-0-200">200</a></span>
+<span class="normal"><a href="#__codelineno-0-201">201</a></span>
+<span class="normal"><a href="#__codelineno-0-202">202</a></span>
+<span class="normal"><a href="#__codelineno-0-203">203</a></span>
+<span class="normal"><a href="#__codelineno-0-204">204</a></span>
+<span class="normal"><a href="#__codelineno-0-205">205</a></span>
+<span class="normal"><a href="#__codelineno-0-206">206</a></span>
+<span class="normal"><a href="#__codelineno-0-207">207</a></span>
+<span class="normal"><a href="#__codelineno-0-208">208</a></span>
+<span class="normal"><a href="#__codelineno-0-209">209</a></span>
+<span class="normal"><a href="#__codelineno-0-210">210</a></span>
+<span class="normal"><a href="#__codelineno-0-211">211</a></span>
+<span class="normal"><a href="#__codelineno-0-212">212</a></span>
+<span class="normal"><a href="#__codelineno-0-213">213</a></span>
+<span class="normal"><a href="#__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#__codelineno-0-218">218</a></span>
+<span class="normal"><a href="#__codelineno-0-219">219</a></span>
+<span class="normal"><a href="#__codelineno-0-220">220</a></span>
+<span class="normal"><a href="#__codelineno-0-221">221</a></span>
+<span class="normal"><a href="#__codelineno-0-222">222</a></span>
+<span class="normal"><a href="#__codelineno-0-223">223</a></span>
+<span class="normal"><a href="#__codelineno-0-224">224</a></span>
+<span class="normal"><a href="#__codelineno-0-225">225</a></span>
+<span class="normal"><a href="#__codelineno-0-226">226</a></span>
+<span class="normal"><a href="#__codelineno-0-227">227</a></span>
+<span class="normal"><a href="#__codelineno-0-228">228</a></span>
+<span class="normal"><a href="#__codelineno-0-229">229</a></span>
+<span class="normal"><a href="#__codelineno-0-230">230</a></span>
+<span class="normal"><a href="#__codelineno-0-231">231</a></span>
+<span class="normal"><a href="#__codelineno-0-232">232</a></span>
+<span class="normal"><a href="#__codelineno-0-233">233</a></span>
+<span class="normal"><a href="#__codelineno-0-234">234</a></span>
+<span class="normal"><a href="#__codelineno-0-235">235</a></span>
+<span class="normal"><a href="#__codelineno-0-236">236</a></span>
+<span class="normal"><a href="#__codelineno-0-237">237</a></span>
+<span class="normal"><a href="#__codelineno-0-238">238</a></span>
+<span class="normal"><a href="#__codelineno-0-239">239</a></span>
+<span class="normal"><a href="#__codelineno-0-240">240</a></span>
+<span class="normal"><a href="#__codelineno-0-241">241</a></span>
+<span class="normal"><a href="#__codelineno-0-242">242</a></span>
+<span class="normal"><a href="#__codelineno-0-243">243</a></span>
+<span class="normal"><a href="#__codelineno-0-244">244</a></span>
+<span class="normal"><a href="#__codelineno-0-245">245</a></span>
+<span class="normal"><a href="#__codelineno-0-246">246</a></span>
+<span class="normal"><a href="#__codelineno-0-247">247</a></span>
+<span class="normal"><a href="#__codelineno-0-248">248</a></span>
+<span class="normal"><a href="#__codelineno-0-249">249</a></span>
+<span class="normal"><a href="#__codelineno-0-250">250</a></span>
+<span class="normal"><a href="#__codelineno-0-251">251</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="k">def</span><span class="w"> </span><span class="nf">consolidate_terrain_files</span><span class="p">(</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a>    <span class="n">tif_files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Path</span><span class="p">],</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a>    <span class="n">output_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-182" name="__codelineno-0-182"></a>    <span class="n">terrain_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Consolidated&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-183" name="__codelineno-0-183"></a>    <span class="n">source_terrain_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a>    <span class="n">downsample_factor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a>    <span class="n">target_resolution</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a>    <span class="n">horizontal_units</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Feet&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a>    <span class="n">source_paths</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<a id="__codelineno-0-189" name="__codelineno-0-189"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Consolidate an explicit, priority-ordered terrain TIFF mosaic.</span>
+<a id="__codelineno-0-190" name="__codelineno-0-190"></a>
+<a id="__codelineno-0-191" name="__codelineno-0-191"></a><span class="sd">    This entry point supports projects whose RAS Mapper paths cannot be resolved</span>
+<a id="__codelineno-0-192" name="__codelineno-0-192"></a><span class="sd">    on the processing host. The first source wins where valid pixels overlap,</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a><span class="sd">    and the normal no-upsample publication policy is always enforced.</span>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>    <span class="n">sources</span> <span class="o">=</span> <span class="p">[</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">tif_files</span><span class="p">]</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">sources</span><span class="p">:</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No TIFF files provided for terrain consolidation&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a>    <span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output_dir</span><span class="p">)</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a>    <span class="n">output_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a>    <span class="n">source_inventory</span> <span class="o">=</span> <span class="n">inspect_terrain_sources</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>    <span class="k">if</span> <span class="n">source_paths</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">source_paths</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">source_inventory</span><span class="p">):</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;source_paths must contain one display path per TIFF source&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>        <span class="k">for</span> <span class="n">item</span><span class="p">,</span> <span class="n">display_path</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">source_inventory</span><span class="p">,</span> <span class="n">source_paths</span><span class="p">):</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>            <span class="n">item</span><span class="p">[</span><span class="s2">&quot;path&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">display_path</span><span class="p">)</span><span class="o">.</span><span class="n">as_posix</span><span class="p">()</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>    <span class="n">native_resolutions</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>        <span class="nb">max</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s2">&quot;resolution_x&quot;</span><span class="p">],</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;resolution_y&quot;</span><span class="p">])</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">source_inventory</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>    <span class="p">]</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>    <span class="k">if</span> <span class="n">downsample_factor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">target_resolution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Use either downsample_factor or target_resolution, not both&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a>    <span class="n">requested_resolution</span> <span class="o">=</span> <span class="n">target_resolution</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>    <span class="k">if</span> <span class="n">downsample_factor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a>        <span class="k">if</span> <span class="n">downsample_factor</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;downsample_factor must be at least 1; upsampling is prohibited&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a>        <span class="n">requested_resolution</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">native_resolutions</span><span class="p">)</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">downsample_factor</span><span class="p">)</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a>    <span class="n">decision</span> <span class="o">=</span> <span class="n">select_terrain_resolution</span><span class="p">(</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a>        <span class="n">native_resolutions</span><span class="p">,</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a>        <span class="n">requested</span><span class="o">=</span><span class="n">requested_resolution</span><span class="p">,</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a>        <span class="n">horizontal_units</span><span class="o">=</span><span class="n">horizontal_units</span><span class="p">,</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a>    <span class="p">)</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a>    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[bold]Terrain consolidation:[/bold] </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span><span class="si">}</span><span class="s2"> TIFF(s)&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a>    <span class="n">merged_tif</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">terrain_name</span><span class="si">}</span><span class="s2">_merged.tif&quot;</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a>    <span class="n">_merge_tifs</span><span class="p">(</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>        <span class="n">sources</span><span class="p">,</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a>        <span class="n">merged_tif</span><span class="p">,</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a>        <span class="n">target_resolution</span><span class="o">=</span><span class="n">decision</span><span class="o">.</span><span class="n">target_resolution</span><span class="p">,</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a>    <span class="p">)</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a>    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Merged -&gt; </span><span class="si">{</span><span class="n">merged_tif</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a>    <span class="n">provenance</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a>        <span class="s2">&quot;schema&quot;</span><span class="p">:</span> <span class="s2">&quot;ras2cng.terrain-consolidation/v1&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a>        <span class="s2">&quot;terrain_name&quot;</span><span class="p">:</span> <span class="n">source_terrain_name</span> <span class="ow">or</span> <span class="n">terrain_name</span><span class="p">,</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a>        <span class="s2">&quot;output_name&quot;</span><span class="p">:</span> <span class="n">terrain_name</span><span class="p">,</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a>        <span class="s2">&quot;source_priority&quot;</span><span class="p">:</span> <span class="s2">&quot;first-valid-value-wins&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a>        <span class="s2">&quot;resampling&quot;</span><span class="p">:</span> <span class="s2">&quot;bilinear&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a>        <span class="s2">&quot;resolution&quot;</span><span class="p">:</span> <span class="n">asdict</span><span class="p">(</span><span class="n">decision</span><span class="p">),</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>        <span class="s2">&quot;sources&quot;</span><span class="p">:</span> <span class="n">source_inventory</span><span class="p">,</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a>        <span class="s2">&quot;output&quot;</span><span class="p">:</span> <span class="n">merged_tif</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="p">}</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a>    <span class="n">provenance_path</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">terrain_name</span><span class="si">}</span><span class="s2">_terrain-provenance.json&quot;</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>    <span class="n">provenance_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">provenance</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>    <span class="n">console</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Provenance -&gt; </span><span class="si">{</span><span class="n">provenance_path</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a>    <span class="k">return</span> <span class="n">merged_tif</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h2 id="ras2cng.terrain.consolidate_project_terrains" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">ras2cng</span><span class="o">.</span><span class="n">terrain</span><span class="o">.</span><span class="n">consolidate_project_terrains</span><span class="p">(</span><span class="n">project_path</span><span class="p">,</span> <span class="n">output_dir</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">target_resolutions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">horizontal_units</span><span class="o">=</span><span class="s1">&#39;Feet&#39;</span><span class="p">)</span></code>
 
@@ -3787,7 +3982,7 @@ enforce the five-foot publication floor.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 16, 2026 03:14:30 UTC">July 16, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 17, 2026 09:05:58 UTC">July 17, 2026</span>
   </span>
 
     
