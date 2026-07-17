@@ -270,6 +270,58 @@ def test_consolidate_terrain_tiff_only(mock_discover, mock_merge, tmp_path):
     assert (output_dir / "Consolidated_terrain-provenance.json").is_file()
 
 
+@patch("ras_commander.RasMap.RasMap.add_terrain_layer")
+@patch("ras_commander.terrain.RasTerrain.RasTerrain.create_terrain_from_rasters")
+@patch("ras2cng.terrain.consolidate_terrain_files")
+@patch("ras2cng.terrain.discover_terrains")
+def test_consolidate_terrain_uses_current_ras_commander_hdf_api(
+    mock_discover,
+    mock_consolidate,
+    mock_create,
+    mock_add,
+    tmp_path,
+):
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    project_file = project_dir / "Test.prj"
+    project_file.write_text("Proj Title=Test\n", encoding="ascii")
+    rasmap = project_dir / "Test.rasmap"
+    rasmap.write_text("<RASMapper />\n", encoding="ascii")
+    source = project_dir / "Terrain" / "source.tif"
+    source.parent.mkdir()
+    source.write_bytes(b"source")
+    output_dir = project_dir / "Terrain" / "WebGIS"
+    merged = output_dir / "WebGIS_2m_merged.tif"
+    terrain_hdf = output_dir / "WebGIS_2m.hdf"
+    mock_discover.return_value = [TerrainInfo(name="Terrain", tif_files=[source])]
+    mock_consolidate.return_value = merged
+    mock_create.return_value = terrain_hdf
+
+    result = consolidate_terrain(
+        project_file,
+        output_dir,
+        terrain_name="WebGIS_2m",
+        terrain_names=["Terrain"],
+        target_resolution=6.56168,
+        units="Feet",
+        ras_version="7.0",
+    )
+
+    assert result == terrain_hdf
+    mock_create.assert_called_once_with(
+        input_rasters=[merged],
+        output_folder=output_dir,
+        terrain_name="WebGIS_2m",
+        units="Feet",
+        hecras_version="7.0",
+    )
+    mock_add.assert_called_once_with(
+        terrain_hdf=terrain_hdf,
+        rasmap_path=rasmap,
+        layer_name="WebGIS_2m",
+    )
+
+
 @patch("ras2cng.terrain.discover_terrains")
 def test_consolidate_terrain_no_terrains_raises(mock_discover, tmp_path):
     """consolidate_terrain should raise if no terrains found."""

@@ -458,11 +458,11 @@ def consolidate_terrain(
         project_dir, prj_file = resolve_project_path(Path(project_path))
 
         terrain_hdf = RasTerrain.create_terrain_from_rasters(
-            raster_files=[str(final_tif)],
+            input_rasters=[final_tif],
+            output_folder=output_dir,
             terrain_name=terrain_name,
-            project_folder=str(project_dir),
             units=units,
-            ras_version=ras_version,
+            hecras_version=ras_version,
         )
         terrain_hdf = Path(terrain_hdf)
         console.print(f"  HEC-RAS terrain HDF -> {terrain_hdf.name}")
@@ -482,9 +482,9 @@ def consolidate_terrain(
             rasmap_path = project_dir / f"{prj_file.stem}.rasmap"
             if rasmap_path.exists():
                 RasMap.add_terrain_layer(
-                    rasmap_path=str(rasmap_path),
-                    terrain_name=terrain_name,
-                    terrain_hdf_path=str(terrain_hdf),
+                    terrain_hdf=terrain_hdf,
+                    rasmap_path=rasmap_path,
+                    layer_name=terrain_name,
                 )
                 console.print(f"  Registered in rasmap: {rasmap_path.name}")
         except Exception as e:
