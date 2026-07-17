@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
@@ -17,6 +18,13 @@ app = typer.Typer(
     )
 )
 console = Console()
+
+
+class BoundaryMethod(str, Enum):
+    """Explicit inundation-boundary generation authority."""
+
+    rasmapper = "rasmapper"
+    depth_raster = "depth-raster"
 
 
 @app.command("inspect")
@@ -1079,6 +1087,59 @@ def terrain_command(
         raise typer.Exit(1)
 
 
+@app.command("boundary-from-depth")
+def boundary_from_depth_command(
+    depth_cog: Path = typer.Argument(
+        ..., help="Complete RASMapper/RasProcess Depth COG"
+    ),
+    output_shp: Path = typer.Argument(
+        ..., help="Output inundation-boundary shapefile"
+    ),
+    threshold: float = typer.Option(
+        0.0, "--threshold", help="Strict depth threshold (depth > threshold)"
+    ),
+    resolution: Optional[float] = typer.Option(
+        None, "--resolution", help="Optional coarser output cell size"
+    ),
+    max_edges: int = typer.Option(
+        5_000_000,
+        "--max-edges",
+        help="Maximum wet/dry edges allowed before polygonization",
+    ),
+    profile: Optional[str] = typer.Option(
+        None, "--profile", help="Profile recorded in provenance"
+    ),
+    units: Optional[str] = typer.Option(
+        None, "--units", help="Depth units recorded in provenance"
+    ),
+    source_id: Optional[str] = typer.Option(
+        None,
+        "--source-id",
+        help="Portable relative source identifier (default: raster basename)",
+    ),
+):
+    """Derive a bounded 4-connected inundation polygon from a Depth COG."""
+
+    from ras2cng.boundary import derive_inundation_boundary
+
+    try:
+        result = derive_inundation_boundary(
+            depth_cog,
+            output_shp,
+            threshold=threshold,
+            resolution=resolution,
+            max_edges=max_edges,
+            profile=profile,
+            units=units,
+            source_identifier=source_id,
+        )
+        console.print(f"[green]OK[/green] Boundary: {result.output_path}")
+        console.print(f"  Provenance: {result.provenance_path}")
+    except Exception as e:
+        Console().print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+
 @app.command("map")
 def map_command(
     project: Path = typer.Argument(
@@ -1101,6 +1162,26 @@ def map_command(
     dv: bool = typer.Option(False, "--dv", help="Depth x Velocity"),
     dv_sq: bool = typer.Option(False, "--dv-sq", help="Depth x Velocity²"),
     inundation_boundary: bool = typer.Option(False, "--inundation-boundary", help="Inundation boundary polygon"),
+    boundary_method: BoundaryMethod = typer.Option(
+        BoundaryMethod.rasmapper,
+        "--boundary-method",
+        help="Boundary authority: rasmapper or depth-raster",
+    ),
+    boundary_threshold: float = typer.Option(
+        0.0,
+        "--boundary-threshold",
+        help="Strict threshold for a depth-raster boundary",
+    ),
+    boundary_resolution: Optional[float] = typer.Option(
+        None,
+        "--boundary-resolution",
+        help="Optional coarser depth-raster boundary cell size",
+    ),
+    boundary_max_edges: int = typer.Option(
+        5_000_000,
+        "--boundary-max-edges",
+        help="Maximum edges before depth-raster polygonization",
+    ),
     arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time (hours, whole-simulation)"),
     duration: bool = typer.Option(False, "--duration", help="Inundation duration (hours)"),
     recession: bool = typer.Option(False, "--recession", help="Not supported (no RasMapperLib map type); ignored with a warning"),
@@ -1147,6 +1228,17 @@ def map_command(
 
     plans_list = [p.strip() for p in plans.split(",")] if plans else None
 
+    if (
+        inundation_boundary
+        and boundary_method is BoundaryMethod.depth_raster
+        and not depth
+    ):
+        Console().print(
+            "[red]ERROR:[/red] Depth must be enabled with "
+            "--boundary-method depth-raster"
+        )
+        raise typer.Exit(1)
+
     try:
         generate_result_maps(
             project,
@@ -1161,6 +1253,10 @@ def map_command(
             depth_x_velocity=dv,
             depth_x_velocity_sq=dv_sq,
             inundation_boundary=inundation_boundary,
+            boundary_method=boundary_method.value,
+            boundary_threshold=boundary_threshold,
+            boundary_resolution=boundary_resolution,
+            boundary_max_edges=boundary_max_edges,
             arrival_time=arrival_time,
             duration=duration,
             recession=recession,
@@ -1219,6 +1315,26 @@ def map_hdf_command(
     dv: bool = typer.Option(False, "--dv", help="Depth x Velocity"),
     dv_sq: bool = typer.Option(False, "--dv-sq", help="Depth x Velocity²"),
     inundation_boundary: bool = typer.Option(False, "--inundation-boundary", help="Inundation boundary polygon"),
+    boundary_method: BoundaryMethod = typer.Option(
+        BoundaryMethod.rasmapper,
+        "--boundary-method",
+        help="Boundary authority: rasmapper or depth-raster",
+    ),
+    boundary_threshold: float = typer.Option(
+        0.0,
+        "--boundary-threshold",
+        help="Strict threshold for a depth-raster boundary",
+    ),
+    boundary_resolution: Optional[float] = typer.Option(
+        None,
+        "--boundary-resolution",
+        help="Optional coarser depth-raster boundary cell size",
+    ),
+    boundary_max_edges: int = typer.Option(
+        5_000_000,
+        "--boundary-max-edges",
+        help="Maximum edges before depth-raster polygonization",
+    ),
     arrival_time: bool = typer.Option(False, "--arrival-time", help="Arrival time (hours, whole-simulation)"),
     duration: bool = typer.Option(False, "--duration", help="Inundation duration (hours)"),
     recession: bool = typer.Option(False, "--recession", help="Not supported (no RasMapperLib map type); ignored with a warning"),
@@ -1273,6 +1389,17 @@ def map_hdf_command(
         console.print("[red]ERROR:[/red] Provide exactly one of --terrain or --terrain-hdf")
         raise typer.Exit(1)
 
+    if (
+        inundation_boundary
+        and boundary_method is BoundaryMethod.depth_raster
+        and not depth
+    ):
+        console.print(
+            "[red]ERROR:[/red] Depth must be enabled with "
+            "--boundary-method depth-raster"
+        )
+        raise typer.Exit(1)
+
     if rasprocess and terrain:
         console.print(
             "[yellow]Warning:[/yellow] the terrain build locates HEC-RAS by "
@@ -1310,6 +1437,10 @@ def map_hdf_command(
             depth_x_velocity=dv,
             depth_x_velocity_sq=dv_sq,
             inundation_boundary=inundation_boundary,
+            boundary_method=boundary_method.value,
+            boundary_threshold=boundary_threshold,
+            boundary_resolution=boundary_resolution,
+            boundary_max_edges=boundary_max_edges,
             arrival_time=arrival_time,
             duration=duration,
             recession=recession,

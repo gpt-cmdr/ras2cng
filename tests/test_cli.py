@@ -24,6 +24,7 @@ COMMANDS = [
     "pmtiles",
     "sync",
     "terrain",
+    "boundary-from-depth",
     "map",
     "terrain-mod",
     "mannings",
@@ -209,6 +210,7 @@ def test_command_missing_required_arguments_returns_usage_error(command):
         (["terrain", "model.prj", "terrain-out", "--downsample", "bad"], "bad"),
         (["map", "model.prj", "map-out", "--timeout", "bad"], "bad"),
         (["map", "model.prj", "map-out", "--min-depth", "bad"], "bad"),
+        (["map", "model.prj", "map-out", "--boundary-method", "bad"], "bad"),
     ],
 )
 def test_invalid_typed_options_return_usage_error(argv, bad_value):
@@ -606,6 +608,10 @@ def test_map_defaults(monkeypatch, tmp_path: Path):
                 "depth_x_velocity": False,
                 "depth_x_velocity_sq": False,
                 "inundation_boundary": False,
+                "boundary_method": "rasmapper",
+                "boundary_threshold": 0.0,
+                "boundary_resolution": None,
+                "boundary_max_edges": 5_000_000,
                 "arrival_time": False,
                 "duration": False,
                 "recession": False,
@@ -685,6 +691,10 @@ def test_map_options_and_flag_pairs(monkeypatch, tmp_path: Path):
                 "depth_x_velocity": True,
                 "depth_x_velocity_sq": True,
                 "inundation_boundary": True,
+                "boundary_method": "rasmapper",
+                "boundary_threshold": 0.0,
+                "boundary_resolution": None,
+                "boundary_max_edges": 5_000_000,
                 "arrival_time": True,
                 "duration": True,
                 "recession": True,
@@ -805,6 +815,109 @@ def test_raster_calculate_parses_controlled_inputs(monkeypatch, tmp_path: Path):
             },
         }
     ]
+
+
+def test_boundary_from_depth_passes_bounded_options(monkeypatch, tmp_path: Path):
+    calls = []
+    output = tmp_path / "boundary.shp"
+    provenance = tmp_path / "boundary.raster-derived.provenance.json"
+    install_fake_module(
+        monkeypatch,
+        "ras2cng.boundary",
+        derive_inundation_boundary=call_recorder(
+            calls,
+            "derive_inundation_boundary",
+            SimpleNamespace(output_path=output, provenance_path=provenance),
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "boundary-from-depth",
+            str(tmp_path / "Depth (Max)_cog.tif"),
+            str(output),
+            "--threshold",
+            "0.25",
+            "--resolution",
+            "10",
+            "--max-edges",
+            "1234",
+            "--profile",
+            "Max",
+            "--units",
+            "ft",
+            "--source-id",
+            "plans/p01/Depth.tif",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        {
+            "name": "derive_inundation_boundary",
+            "args": (tmp_path / "Depth (Max)_cog.tif", output),
+            "kwargs": {
+                "threshold": 0.25,
+                "resolution": 10.0,
+                "max_edges": 1234,
+                "profile": "Max",
+                "units": "ft",
+                "source_identifier": "plans/p01/Depth.tif",
+            },
+        }
+    ]
+
+
+def test_map_depth_raster_boundary_options(monkeypatch, tmp_path: Path):
+    calls = []
+    install_command_backend(monkeypatch, "map", calls)
+
+    result = runner.invoke(
+        app,
+        [
+            "map",
+            "model.prj",
+            str(tmp_path),
+            "--inundation-boundary",
+            "--boundary-method",
+            "depth-raster",
+            "--boundary-threshold",
+            "0.2",
+            "--boundary-resolution",
+            "10",
+            "--boundary-max-edges",
+            "4321",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls[0]["kwargs"]["boundary_method"] == "depth-raster"
+    assert calls[0]["kwargs"]["boundary_threshold"] == 0.2
+    assert calls[0]["kwargs"]["boundary_resolution"] == 10.0
+    assert calls[0]["kwargs"]["boundary_max_edges"] == 4321
+
+
+def test_map_depth_raster_boundary_requires_depth(monkeypatch, tmp_path: Path):
+    calls = []
+    install_command_backend(monkeypatch, "map", calls)
+
+    result = runner.invoke(
+        app,
+        [
+            "map",
+            "model.prj",
+            str(tmp_path),
+            "--inundation-boundary",
+            "--boundary-method",
+            "depth-raster",
+            "--no-depth",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Depth must be enabled" in result.output
+    assert calls == []
 
 
 def test_raster_calculate_rejects_duplicate_roles(tmp_path: Path):
@@ -1015,6 +1128,9 @@ def test_map_hdf_scaffolds_then_generates(monkeypatch, tmp_path: Path):
         "map-hdf", str(hdf), str(outdir),
         "--terrain", str(dem),
         "--profile", "Max", "--froude", "--ras-version", "6.6",
+        "--inundation-boundary", "--boundary-method", "depth-raster",
+        "--boundary-threshold", "0.3", "--boundary-resolution", "20",
+        "--boundary-max-edges", "999",
     ])
     assert result.exit_code == 0, result.output
 
@@ -1029,7 +1145,36 @@ def test_map_hdf_scaffolds_then_generates(monkeypatch, tmp_path: Path):
     assert maps_calls["prj_file"].name == "Model.prj"
     assert maps_calls["plans"] == ["p01"]
     assert maps_calls["froude"] is True
+    assert maps_calls["boundary_method"] == "depth-raster"
+    assert maps_calls["boundary_threshold"] == 0.3
+    assert maps_calls["boundary_resolution"] == 20.0
+    assert maps_calls["boundary_max_edges"] == 999
     assert maps_calls["skip_errors"] is False
+
+
+def test_map_hdf_depth_raster_boundary_requires_depth(tmp_path: Path):
+    hdf = tmp_path / "model.p01.hdf"
+    hdf.touch()
+    dem = tmp_path / "dem.tif"
+    dem.touch()
+
+    result = runner.invoke(
+        app,
+        [
+            "map-hdf",
+            str(hdf),
+            str(tmp_path / "out"),
+            "--terrain",
+            str(dem),
+            "--inundation-boundary",
+            "--boundary-method",
+            "depth-raster",
+            "--no-depth",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Depth must be enabled" in result.output
 
 
 def test_map_hdf_rm_scaffold_cleans_up(monkeypatch, tmp_path: Path):

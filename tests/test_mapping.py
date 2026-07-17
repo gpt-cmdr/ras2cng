@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from ras2cng.boundary import DerivedBoundaryResult
 from ras2cng.mapping import (
     MapResult,
     MAP_TYPE_VARIABLES,
@@ -606,6 +607,243 @@ def test_generate_result_maps_empty_project(mock_init, mock_config, mock_gen, tm
 
     results = generate_result_maps(project_dir, tmp_path / "maps", depth=True)
     assert results == []
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+def test_depth_raster_boundary_bypasses_native_and_uses_complete_raw_depth(
+    mock_init,
+    mock_config,
+    mock_gen,
+    tmp_path,
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path, plan_count=1)
+    mock_init.return_value = ras
+    output_dir = tmp_path / "maps"
+    plan_output = output_dir / "p01"
+    plan_output.mkdir(parents=True)
+    depth_a = plan_output / "Depth (Max).Terrain.a.tif"
+    depth_b = plan_output / "Depth (Max).Terrain.b.tif"
+    depth_vrt = plan_output / "Depth (Max).Terrain.vrt"
+    for path in (depth_a, depth_b, depth_vrt):
+        path.write_text("raw")
+    mock_gen.return_value = {"depth": [depth_a, depth_b]}
+
+    expected_boundary = plan_output / "Inundation Boundary (Max).raster-derived.shp"
+    expected_provenance = plan_output / (
+        "Inundation Boundary (Max).raster-derived.provenance.json"
+    )
+    derived = DerivedBoundaryResult(
+        output_path=expected_boundary,
+        provenance_path=expected_provenance,
+        feature_count=3,
+        wet_pixel_count=20,
+        edge_count=30,
+        edge_limit=1234,
+        source_resolution=(5.0, 5.0),
+        output_resolution=(10.0, 10.0),
+        resampling="max",
+    )
+    events = []
+
+    def fake_derive(source, output, **kwargs):
+        events.append(("derive", source, output, kwargs))
+        return derived
+
+    def fake_reproject(paths, target):
+        events.append(("reproject", list(paths), target))
+        return list(paths)
+
+    with patch(
+        "ras2cng.boundary.derive_inundation_boundary",
+        side_effect=fake_derive,
+    ), patch("ras2cng.mapping._reproject_tifs", side_effect=fake_reproject):
+        [result] = generate_result_maps(
+            project_dir,
+            output_dir,
+            wse=False,
+            depth=True,
+            velocity=False,
+            inundation_boundary=True,
+            boundary_method="depth-raster",
+            boundary_threshold=0.25,
+            boundary_resolution=10.0,
+            boundary_max_edges=1234,
+            reproject_wgs84=True,
+        )
+
+    generated_kwargs = mock_gen.call_args.kwargs
+    assert generated_kwargs["depth"] is True
+    assert generated_kwargs["inundation_boundary"] is False
+    assert events[0] == (
+        "derive",
+        depth_vrt,
+        expected_boundary,
+        {
+            "threshold": 0.25,
+            "resolution": 10.0,
+            "max_edges": 1234,
+            "profile": "Max",
+            "units": "ft",
+            "source_identifier": depth_vrt.name,
+        },
+    )
+    assert events[1][0] == "reproject"
+    assert result.derived_boundary is derived
+    assert "inundation_boundary" not in result.map_types
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+def test_native_boundary_remains_default_without_derived_fallback(
+    mock_init,
+    mock_config,
+    mock_gen,
+    tmp_path,
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path, plan_count=1)
+    mock_init.return_value = ras
+    mock_gen.return_value = {}
+
+    with patch("ras2cng.boundary.derive_inundation_boundary") as mock_derive:
+        [result] = generate_result_maps(
+            project_dir,
+            tmp_path / "maps",
+            wse=False,
+            depth=False,
+            velocity=False,
+            inundation_boundary=True,
+        )
+
+    assert mock_gen.call_args.kwargs["inundation_boundary"] is True
+    mock_derive.assert_not_called()
+    assert result.derived_boundary is None
+    assert "inundation_boundary" not in result.map_types
+
+
+def test_depth_raster_boundary_requires_depth(tmp_path):
+    with pytest.raises(ValueError, match="Depth must be enabled"):
+        generate_result_maps(
+            tmp_path / "project",
+            tmp_path / "maps",
+            wse=False,
+            depth=False,
+            velocity=False,
+            inundation_boundary=True,
+            boundary_method="depth-raster",
+        )
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+def test_mapping_derived_boundary_provenance_is_importable(
+    mock_init,
+    mock_config,
+    mock_gen,
+    tmp_path,
+):
+    import json
+
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    from ras2cng.catalog import Manifest, ManifestPlanEntry
+    from ras2cng.stored_maps import (
+        derived_boundary_provenance_errors,
+        import_rasprocess_stored_maps,
+    )
+
+    ras, project_dir, _ = _make_fake_ras(tmp_path, plan_count=1)
+    mock_init.return_value = ras
+    maps_dir = tmp_path / "maps"
+    plan_dir = maps_dir / "p01"
+    plan_dir.mkdir(parents=True)
+    depth = plan_dir / "Depth (Max)_cog.tif"
+    with rasterio.open(
+        depth,
+        "w",
+        driver="GTiff",
+        width=3,
+        height=2,
+        count=1,
+        dtype="float32",
+        crs="EPSG:26915",
+        transform=from_origin(100, 200, 5, 5),
+        nodata=-9999.0,
+    ) as destination:
+        destination.write(
+            np.array([[0, 1, 0], [1, 1, 0]], dtype="float32"),
+            1,
+        )
+    mock_gen.return_value = {"depth": [depth]}
+
+    [mapping_result] = generate_result_maps(
+        project_dir,
+        maps_dir,
+        wse=False,
+        depth=True,
+        velocity=False,
+        inundation_boundary=True,
+        boundary_method="depth-raster",
+    )
+    assert mapping_result.derived_boundary is not None
+    provenance = json.loads(
+        mapping_result.derived_boundary.provenance_path.read_text(encoding="utf-8")
+    )
+    assert provenance["units"] == "ft"
+    assert derived_boundary_provenance_errors(provenance, profile="Max") == []
+
+    archive = tmp_path / "archive"
+    viewer = tmp_path / "viewer"
+    archive.mkdir()
+    viewer.mkdir()
+    (viewer / "manifest.json").write_text(
+        json.dumps({"tilesets": [], "groups": []}),
+        encoding="utf-8",
+    )
+    manifest = Manifest.create(
+        "TestModel",
+        project_dir / "TestModel.prj",
+        project_dir,
+        archive,
+        crs="EPSG:26915",
+    )
+    manifest.add_plan_entry(
+        ManifestPlanEntry(
+            plan_id="p01",
+            plan_title="Plan 1",
+            geom_id="g01",
+            flow_id="u01",
+            hdf_exists=True,
+            completed=True,
+            layout="variable",
+            geometry_mode="none",
+        )
+    )
+    manifest.write(archive / "manifest.json")
+    calculated_calls = []
+    with patch(
+        "ras2cng.stored_maps.package_maplibre_stored_map",
+        return_value=None,
+    ), patch(
+        "ras2cng.stored_maps.package_maplibre_calculated_vector",
+        side_effect=lambda source, target_viewer, **kwargs: calculated_calls.append(
+            (source, target_viewer, kwargs)
+        ),
+    ):
+        summary = import_rasprocess_stored_maps(
+            maps_dir,
+            archive,
+            viewer,
+            require_all=False,
+        )
+
+    assert summary.vector_count == 1
+    assert calculated_calls[0][2]["provenance"] == provenance
 
 
 # ---------------------------------------------------------------------------

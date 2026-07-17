@@ -9,17 +9,21 @@ Provides:
 from __future__ import annotations
 
 import inspect
+import math
 import platform
 import shutil
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from rich.console import Console
 
 from ras_commander import init_ras_project, RasProcess
+
+if TYPE_CHECKING:
+    from ras2cng.boundary import DerivedBoundaryResult
 
 console = Console()
 
@@ -30,6 +34,7 @@ class MapResult:
     plan_id: str
     plan_number: str
     map_types: dict[str, list[Path]] = field(default_factory=dict)  # {"depth": [Path(...)]}
+    derived_boundary: Optional["DerivedBoundaryResult"] = None
     output_dir: Path = field(default_factory=lambda: Path("."))
     errors: list[str] = field(default_factory=list)
 
@@ -98,6 +103,10 @@ def generate_result_maps(
     depth_x_velocity: bool = False,
     depth_x_velocity_sq: bool = False,
     inundation_boundary: bool = False,
+    boundary_method: str = "rasmapper",
+    boundary_threshold: float = 0.0,
+    boundary_resolution: Optional[float] = None,
+    boundary_max_edges: int = 5_000_000,
     arrival_time: bool = False,
     duration: bool = False,
     recession: bool = False,
@@ -132,6 +141,11 @@ def generate_result_maps(
         depth_x_velocity: Generate Depth x Velocity rasters
         depth_x_velocity_sq: Generate Depth x Velocity² rasters
         inundation_boundary: Generate Inundation Boundary polygon (shapefile)
+        boundary_method: ``rasmapper`` for the native stored polygon or
+            ``depth-raster`` for explicit derivation from the raw Depth map
+        boundary_threshold: Strict depth threshold for ``depth-raster``
+        boundary_resolution: Optional coarser polygonization resolution
+        boundary_max_edges: Complexity cap checked before polygonization
         arrival_time: Generate Arrival Time rasters (hours; whole-simulation,
             ignores `profile`)
         duration: Generate Duration rasters (hours; whole-simulation)
@@ -157,13 +171,40 @@ def generate_result_maps(
     Returns:
         List of MapResult, one per processed plan
     """
-    from ras2cng.project import resolve_project_path
+    from ras2cng.project import _detect_units, resolve_project_path
 
     project_path = Path(project_path)
     output_dir = Path(output_dir)
+    if boundary_method not in {"rasmapper", "depth-raster"}:
+        raise ValueError(
+            "Boundary method must be 'rasmapper' or 'depth-raster': "
+            f"{boundary_method!r}"
+        )
+    if inundation_boundary and boundary_method == "depth-raster" and not depth:
+        raise ValueError(
+            "Depth must be enabled when --boundary-method depth-raster is used"
+        )
+    if inundation_boundary and boundary_method == "depth-raster":
+        if not math.isfinite(float(boundary_threshold)):
+            raise ValueError("Boundary threshold must be finite")
+        if boundary_resolution is not None and (
+            not math.isfinite(float(boundary_resolution))
+            or float(boundary_resolution) <= 0
+        ):
+            raise ValueError("Boundary resolution must be a positive finite value")
+        if (
+            not isinstance(boundary_max_edges, int)
+            or isinstance(boundary_max_edges, bool)
+            or boundary_max_edges <= 0
+        ):
+            raise ValueError("Boundary max edges must be a positive integer")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     project_dir, prj_file = resolve_project_path(project_path)
+    project_units = _boundary_project_units(
+        prj_file,
+        _detect_units(project_dir, prj_file),
+    )
 
     console.print(f"\n[bold cyan]ras2cng map[/bold cyan] -> {output_dir}")
     console.print(f"  Project : {prj_file.name}")
@@ -252,8 +293,11 @@ def generate_result_maps(
         console.print(f"  [{plan_id}] Generating maps...")
 
         try:
-            # Build boolean flags for RasProcess.store_maps()
+            # Build boolean flags for RasProcess.store_maps(). Raster-derived
+            # boundaries must never ask RasMapper to execute MergePolygon.
             type_flags = {t: (t in requested_types) for t in MAP_TYPE_VARIABLES}
+            if boundary_method == "depth-raster":
+                type_flags["inundation_boundary"] = False
 
             plan_run_started = time.time() - 2  # filesystem mtime slack
 
@@ -272,7 +316,11 @@ def generate_result_maps(
             # Shapefile outputs (inundation boundary) are moved by store_maps
             # but not included in its TIF-oriented return dict — glob them,
             # restricted to files produced by this run.
-            if "inundation_boundary" in requested_types and not result_dict.get("inundation_boundary"):
+            if (
+                "inundation_boundary" in requested_types
+                and boundary_method == "rasmapper"
+                and not result_dict.get("inundation_boundary")
+            ):
                 shp_paths = sorted(
                     p for p in plan_output.glob("*.shp")
                     if p.stat().st_mtime >= plan_run_started
@@ -280,7 +328,39 @@ def generate_result_maps(
                 if shp_paths:
                     result_dict["inundation_boundary"] = shp_paths
 
+            if (
+                "inundation_boundary" in requested_types
+                and boundary_method == "depth-raster"
+            ):
+                from ras2cng.boundary import derive_inundation_boundary
+
+                raw_depth = _complete_depth_raster_source(
+                    result_dict.get("depth", [])
+                )
+                boundary_path = plan_output / (
+                    f"Inundation Boundary ({profile}).raster-derived.shp"
+                )
+                map_result.derived_boundary = derive_inundation_boundary(
+                    raw_depth,
+                    boundary_path,
+                    threshold=boundary_threshold,
+                    resolution=boundary_resolution,
+                    max_edges=boundary_max_edges,
+                    profile=profile,
+                    units=project_units,
+                    source_identifier=raw_depth.name,
+                )
+                console.print(
+                    "    derived_inundation_boundary: "
+                    f"{map_result.derived_boundary.feature_count} polygon(s)"
+                )
+
             for map_type in requested_types:
+                if (
+                    map_type == "inundation_boundary"
+                    and boundary_method == "depth-raster"
+                ):
+                    continue
                 tif_paths = result_dict.get(map_type, [])
 
                 # Raster post-processing does not apply to shapefile outputs
@@ -318,6 +398,7 @@ def generate_result_maps(
 
     total_maps = sum(
         sum(len(paths) for paths in r.map_types.values())
+        + int(r.derived_boundary is not None)
         for r in results
     )
     total_errors = sum(len(r.errors) for r in results)
@@ -331,6 +412,29 @@ def generate_result_maps(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _boundary_project_units(prj_file: Path, detected_units: str) -> str | None:
+    """Resolve project/scaffold unit labels to the boundary JSON contract."""
+
+    from ras2cng.boundary import normalize_depth_units
+
+    candidates = [detected_units]
+    try:
+        project_text = prj_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        project_text = ""
+    if "English Units" in project_text:
+        candidates.append("English Units")
+    if "Metric Units" in project_text or "SI Units" in project_text:
+        candidates.append("SI Units")
+
+    for candidate in candidates:
+        try:
+            return normalize_depth_units(str(candidate))
+        except ValueError:
+            continue
+    return None
+
 
 def _configure_rasprocess(
     rasprocess_path: Optional[Path] = None,
@@ -853,6 +957,29 @@ def _matching_vrt_source(tif_paths: list[Path]) -> Path | None:
         ):
             candidates.append(vrt_path)
     return max(candidates, key=lambda path: len(path.stem)) if candidates else None
+
+
+def _complete_depth_raster_source(tif_paths: list[Path]) -> Path:
+    """Select the complete raw Depth map before any ras2cng post-processing."""
+
+    sources = [Path(path) for path in tif_paths]
+    if not sources:
+        raise RuntimeError(
+            "Depth raster output is required for a raster-derived boundary"
+        )
+    for source in sources:
+        if not source.is_file():
+            raise FileNotFoundError(f"Depth raster output does not exist: {source}")
+
+    vrt_source = _matching_vrt_source(sources)
+    if vrt_source is not None:
+        return vrt_source
+    if len(sources) == 1:
+        return sources[0]
+    raise RuntimeError(
+        "Multiple raw Depth raster fragments were generated, but their "
+        "complete RASMapper VRT mosaic could not be identified"
+    )
 
 
 def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
