@@ -22,6 +22,8 @@ DERIVED_BOUNDARY_COMPARISON = "depth > threshold"
 DEFAULT_BOUNDARY_MAX_EDGES = 5_000_000
 REQUIRED_SHAPEFILE_SUFFIXES = (".shp", ".shx", ".dbf", ".prj", ".cpg")
 _OPTIONAL_SHAPEFILE_SUFFIXES = (".qix", ".sbn", ".sbx", ".fix")
+_STAGED_SHAPEFILE_NAME = "b.shp"
+_TEMPORARY_DIRECTORY_PREFIX = ".rb-"
 
 
 @dataclass(frozen=True)
@@ -139,7 +141,7 @@ def derive_inundation_boundary(
 
         with tempfile.TemporaryDirectory(
             dir=output_shp.parent,
-            prefix=f".{output_shp.stem}.raster-derived-",
+            prefix=_TEMPORARY_DIRECTORY_PREFIX,
         ) as temporary_name:
             temporary_dir = Path(temporary_name)
             native_mask_path = temporary_dir / "native-mask.tif"
@@ -236,7 +238,7 @@ def derive_inundation_boundary(
                     block_size=block_size,
                 )
 
-            staged_shp = temporary_dir / output_shp.name
+            staged_shp = temporary_dir / _STAGED_SHAPEFILE_NAME
             feature_count = _polygonize_mask(
                 final_mask_path,
                 staged_shp,
@@ -452,21 +454,19 @@ def _publish_family(
 ) -> None:
     """Replace a shapefile family with rollback; place provenance last."""
 
-    backup_dir = staged_shp.parent / "previous-family"
+    backup_dir = staged_shp.parent / "prev"
     backup_dir.mkdir()
     suffixes = REQUIRED_SHAPEFILE_SUFFIXES + _OPTIONAL_SHAPEFILE_SUFFIXES
     targets = [output_shp.with_suffix(suffix) for suffix in suffixes]
     targets.append(provenance_path)
     published: list[Path] = []
     backed_up: list[tuple[Path, Path]] = []
-    provenance_temp = staged_shp.parent / (
-        f".{provenance_path.name}.{uuid.uuid4().hex}.tmp"
-    )
+    provenance_temp = staged_shp.parent / f".p-{uuid.uuid4().hex}.tmp"
 
     try:
         for target in targets:
             if target.exists():
-                backup = backup_dir / target.name
+                backup = backup_dir / f"{len(backed_up):02d}.bak"
                 target.replace(backup)
                 backed_up.append((target, backup))
 

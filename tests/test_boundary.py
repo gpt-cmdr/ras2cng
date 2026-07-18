@@ -10,6 +10,7 @@ import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
 
+from ras2cng import boundary as boundary_module
 from ras2cng.boundary import (
     DERIVED_BOUNDARY_SCHEMA,
     REQUIRED_SHAPEFILE_SUFFIXES,
@@ -327,6 +328,42 @@ def test_publish_failure_leaves_no_partial_destination(monkeypatch, tmp_path: Pa
 
     assert not any(output.with_suffix(suffix).exists() for suffix in REQUIRED_SHAPEFILE_SUFFIXES)
     assert not (tmp_path / "atomic.raster-derived.provenance.json").exists()
+
+
+def test_boundary_staging_names_do_not_repeat_long_output_name(
+    monkeypatch,
+    tmp_path: Path,
+):
+    depth = _write_depth(
+        tmp_path / "depth.tif",
+        np.ones((2, 2), dtype="float32"),
+    )
+    output = tmp_path / "Inundation Boundary (Max).raster-derived.shp"
+    expected_provenance = output.with_suffix(".provenance.json")
+    polygonize = boundary_module._polygonize_mask
+    replace = Path.replace
+    observed: dict[str, str] = {}
+
+    def recording_polygonize(mask_path: Path, staged_shp: Path, *, batch_size: int):
+        observed["staged_name"] = staged_shp.name
+        observed["temporary_dir"] = staged_shp.parent.name
+        return polygonize(mask_path, staged_shp, batch_size=batch_size)
+
+    def recording_replace(self: Path, target: Path):
+        if Path(target) == expected_provenance:
+            observed["provenance_temp"] = self.name
+        return replace(self, target)
+
+    monkeypatch.setattr("ras2cng.boundary._polygonize_mask", recording_polygonize)
+    monkeypatch.setattr(Path, "replace", recording_replace)
+
+    derive_inundation_boundary(depth, output)
+
+    assert observed["staged_name"] == "b.shp"
+    assert observed["temporary_dir"].startswith(".rb-")
+    assert observed["provenance_temp"].startswith(".p-")
+    assert output.is_file()
+    assert expected_provenance.is_file()
 
 
 def test_derived_family_is_discovered_and_imported_as_calculated_vector(
