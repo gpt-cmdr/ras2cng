@@ -195,6 +195,51 @@ def test_catalog_builder_attaches_service_asset_to_manifest(tmp_path: Path):
     assert regenerated["serviceRevision"] == resource["serviceRevision"]
 
 
+@pytest.mark.parametrize("recovery_directory", [".project.previous", ".project.failed"])
+def test_catalog_builder_auto_discovery_skips_hidden_recovery_directories(
+    tmp_path: Path,
+    recovery_directory: str,
+) -> None:
+    root = tmp_path / "data"
+    viewer = root / "project" / "viewer"
+    archive = root / "project" / "archive"
+    viewer.mkdir(parents=True)
+    archive.mkdir(parents=True)
+    (archive / "depth.tif").write_bytes(b"cog")
+    (viewer / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "rascommander.maplibre/v2",
+                "resources": {
+                    "depth-numeric": {"type": "cog", "href": "../archive/depth.tif"}
+                },
+                "layers": {
+                    "depth": {
+                        "query": {"numericResource": "depth-numeric"},
+                        "style": {"legendRef": "legend-depth"},
+                    }
+                },
+                "legends": {
+                    "legend-depth": {
+                        "preset": "rasmapper.depth",
+                        "domain": {"minimum": 0, "maximum": 20},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    hidden_manifest = root / recovery_directory / "viewer" / "manifest.json"
+    hidden_manifest.parent.mkdir(parents=True)
+    hidden_manifest.write_text("not valid json", encoding="utf-8")
+
+    output = root / "raster-assets.json"
+    build_raster_asset_catalog(root, output)
+
+    catalog = json.loads(output.read_text(encoding="utf-8"))
+    assert list(catalog["assets"]) == ["project/depth"]
+
+
 def test_view_statistics_are_pixel_bounded_and_robust(tmp_path: Path):
     asset = _asset(_write_cog(tmp_path / "depth.tif"))
     result = compute_view_statistics(

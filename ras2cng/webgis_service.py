@@ -221,7 +221,7 @@ def build_raster_asset_catalog(
     root = Path(data_root).resolve()
     if not root.is_dir():
         raise NotADirectoryError(f"WebGIS data root does not exist: {root}")
-    paths = [Path(path).resolve() for path in manifest_paths] if manifest_paths else sorted(root.glob("**/viewer/manifest.json"))
+    paths = [Path(path).resolve() for path in manifest_paths] if manifest_paths else _discover_manifest_paths(root)
     assets: dict[str, dict[str, Any]] = {}
     for manifest_path in paths:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -287,6 +287,17 @@ def build_raster_asset_catalog(
     }
     _atomic_json_write(Path(output_path), document)
     return Path(output_path)
+
+
+def _discover_manifest_paths(root: Path) -> list[Path]:
+    """Find viewer manifests without entering hidden transaction directories."""
+
+    manifests: list[Path] = []
+    for directory, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(name for name in dirnames if not name.startswith("."))
+        if Path(directory).name == "viewer" and "manifest.json" in filenames:
+            manifests.append(Path(directory) / "manifest.json")
+    return sorted(manifests)
 
 
 def compute_view_statistics(
