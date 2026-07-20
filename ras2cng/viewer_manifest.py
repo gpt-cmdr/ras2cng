@@ -10,6 +10,8 @@ from typing import Any, Mapping
 
 MAPLIBRE_SCHEMA = "rascommander.maplibre/v2"
 LEGACY_MAPLIBRE_SCHEMA = "rascommander.maplibre.project/1"
+# Top-level ``viewerTemplate`` revision for the project-agnostic viewer contract.
+EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION = "rascommander.example-project-viewer/1"
 
 ROOT_DEFINITIONS = (
     ("features", "Features"),
@@ -204,6 +206,7 @@ def apply_manifest_v2(
     )
 
     manifest["schema"] = MAPLIBRE_SCHEMA
+    manifest["viewerTemplate"] = EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION
     manifest["resources"] = resources
     manifest["layers"] = layers
     manifest["tree"] = tree
@@ -336,6 +339,12 @@ def validate_manifest_v2(manifest: Mapping[str, Any]) -> None:
 
     if manifest.get("schema") != MAPLIBRE_SCHEMA:
         raise ValueError(f"Viewer manifest schema must be {MAPLIBRE_SCHEMA!r}.")
+    if manifest.get("viewerTemplate") != EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION:
+        raise ValueError(
+            "Viewer manifest viewerTemplate must be "
+            f"{EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION!r}; "
+            f"got {manifest.get('viewerTemplate')!r}."
+        )
     resources = manifest.get("resources")
     layers = manifest.get("layers")
     tree = manifest.get("tree")

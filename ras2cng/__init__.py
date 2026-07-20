@@ -47,6 +47,7 @@ from ras2cng.maplibre import (
 )
 from ras2cng.stored_maps import StoredMapImportSummary, import_rasprocess_stored_maps
 from ras2cng.viewer_manifest import (
+    EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION,
     LEGACY_MAPLIBRE_SCHEMA,
     MAPLIBRE_SCHEMA,
     apply_manifest_v2,
@@ -181,6 +182,7 @@ __all__ = [
     "PackageSummary",
     "TerrainPackageSummary",
     "RasterPackageSummary",
+    "EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION",
     "LEGACY_MAPLIBRE_SCHEMA",
     "MAPLIBRE_SCHEMA",
     "apply_manifest_v2",

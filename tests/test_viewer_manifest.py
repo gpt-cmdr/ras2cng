@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 
 from ras2cng.viewer_manifest import (
+    EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION,
     LEGACY_MAPLIBRE_SCHEMA,
     MAPLIBRE_SCHEMA,
     apply_manifest_v2,
@@ -158,6 +159,14 @@ def _tree_layer_ids(node: dict) -> set[str]:
     for child in node.get("children", []):
         ids.update(_tree_layer_ids(child))
     return ids
+
+
+def test_apply_manifest_v2_stamps_viewer_template_revision() -> None:
+    manifest = _legacy_manifest()
+
+    apply_manifest_v2(manifest, archive=_archive_manifest())
+
+    assert manifest["viewerTemplate"] == EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION
 
 
 def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() -> None:
@@ -314,6 +323,38 @@ def test_apply_manifest_v2_is_idempotent() -> None:
     apply_manifest_v2(manifest, archive=_archive_manifest())
 
     assert manifest == expected
+
+
+def test_apply_manifest_v2_upgrades_existing_v2_viewer_template_revision() -> None:
+    manifest = _legacy_manifest()
+    apply_manifest_v2(manifest, archive=_archive_manifest())
+    manifest["viewerTemplate"] = "rascommander.example-project-viewer/0"
+
+    apply_manifest_v2(manifest, archive=_archive_manifest())
+
+    assert manifest["viewerTemplate"] == EXAMPLE_PROJECT_VIEWER_TEMPLATE_REVISION
+
+
+@pytest.mark.parametrize(
+    "revision",
+    [
+        pytest.param(None, id="absent"),
+        pytest.param("rascommander.example-project-viewer/0", id="older"),
+        pytest.param("rascommander.example-project-viewer/unknown", id="unknown"),
+    ],
+)
+def test_validate_manifest_v2_rejects_wrong_viewer_template_revision(
+    revision: str | None,
+) -> None:
+    manifest = _legacy_manifest()
+    apply_manifest_v2(manifest, archive=_archive_manifest())
+    if revision is None:
+        manifest.pop("viewerTemplate")
+    else:
+        manifest["viewerTemplate"] = revision
+
+    with pytest.raises(ValueError, match="viewerTemplate must be"):
+        validate_manifest_v2(manifest)
 
 
 def test_current_view_requires_cataloged_numeric_service() -> None:
