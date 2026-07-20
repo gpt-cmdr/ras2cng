@@ -73,6 +73,13 @@ _GEOMETRY_BRANCHES = (
         },
     ),
     (
+        "storage-areas",
+        "Storage Areas (1D)",
+        {
+            "storage_areas",
+        },
+    ),
+    (
         "structures",
         "Structures",
         {
@@ -80,7 +87,6 @@ _GEOMETRY_BRANCHES = (
             "pipe_inlets",
             "pipe_nodes",
             "pump_stations",
-            "storage_areas",
             "structures",
         },
     ),
@@ -524,8 +530,11 @@ def _vector_layer_record(
         ),
         "fields": list(legacy_layer.get("queryFields") or []),
     }
+    layer_name = legacy_layer.get("name") or legacy_layer.get("id")
+    if role == "storage_areas":
+        layer_name = "Storage Areas (1D)"
     record: dict[str, Any] = {
-        "name": legacy_layer.get("name") or legacy_layer.get("id"),
+        "name": layer_name,
         "resource": resource_id,
         "sourceLayer": legacy_layer.get("sourceLayer"),
         "role": role,

@@ -439,3 +439,62 @@ def test_terrain_source_footprints_are_nested_under_terrains() -> None:
     terrain_root = next(root for root in manifest["tree"] if root["id"] == "terrains")
     sources = next(node for node in terrain_root["children"] if node["role"] == "terrain-sources")
     assert sources["children"][0]["layerId"] == "existing-source-footprints"
+
+
+def test_storage_areas_are_a_named_sibling_of_structures() -> None:
+    manifest = {
+        "groups": [{"id": "ras-geometry-g01", "name": "Geometry g01"}],
+        "tilesets": [
+            {
+                "id": "geometry",
+                "type": "vector",
+                "href": "tiles/geometry.pmtiles",
+                "layers": [
+                    {
+                        "id": "ras-geometry-g01-storage-areas",
+                        "name": "Storage Areas",
+                        "sourceLayer": "ras-geometry-g01-storage-areas",
+                        "groupId": "ras-geometry-g01",
+                        "kind": "storage_areas",
+                        "visible": False,
+                    },
+                    {
+                        "id": "ras-geometry-g01-structures",
+                        "name": "Hydraulic Structures",
+                        "sourceLayer": "ras-geometry-g01-structures",
+                        "groupId": "ras-geometry-g01",
+                        "kind": "structures",
+                        "visible": False,
+                    },
+                ],
+            }
+        ],
+    }
+
+    apply_manifest_v2(manifest)
+    validate_manifest_v2(manifest)
+
+    geometries = next(root for root in manifest["tree"] if root["id"] == "geometries")
+    geometry = geometries["children"][0]
+    storage = next(
+        branch for branch in geometry["children"] if branch["role"] == "storage-areas"
+    )
+    structures = next(
+        branch for branch in geometry["children"] if branch["role"] == "structures"
+    )
+
+    assert storage["name"] == "Storage Areas (1D)"
+    assert storage["children"] == [
+        {
+            "id": "layer-ras-geometry-g01-storage-areas",
+            "name": "Storage Areas (1D)",
+            "role": "storage_areas",
+            "layerId": "ras-geometry-g01-storage-areas",
+        }
+    ]
+    assert _tree_layer_ids(storage) == {"ras-geometry-g01-storage-areas"}
+    assert _tree_layer_ids(structures) == {"ras-geometry-g01-structures"}
+    assert [branch["role"] for branch in geometry["children"]] == [
+        "storage-areas",
+        "structures",
+    ]

@@ -80,7 +80,7 @@ _GEOMETRY_LABELS = {
     "refinement_regions": "Refinement Regions",
     "reference_lines": "Reference Lines",
     "reference_points": "Reference Points",
-    "storage_areas": "Storage Areas",
+    "storage_areas": "Storage Areas (1D)",
     "pump_stations": "Pump Stations",
     "mannings_n_regions": "Manning's n Regions",
     "infiltration_regions": "Infiltration Regions",
