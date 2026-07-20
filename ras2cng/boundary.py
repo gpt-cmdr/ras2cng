@@ -139,7 +139,7 @@ def derive_inundation_boundary(
 
         with tempfile.TemporaryDirectory(
             dir=output_shp.parent,
-            prefix=f".{output_shp.stem}.raster-derived-",
+            prefix=".ras2cng-boundary-",
         ) as temporary_name:
             temporary_dir = Path(temporary_name)
             native_mask_path = temporary_dir / "native-mask.tif"
@@ -460,7 +460,7 @@ def _publish_family(
     published: list[Path] = []
     backed_up: list[tuple[Path, Path]] = []
     provenance_temp = staged_shp.parent / (
-        f".{provenance_path.name}.{uuid.uuid4().hex}.tmp"
+        f".ras2cng-provenance-{uuid.uuid4().hex}.tmp"
     )
 
     try:

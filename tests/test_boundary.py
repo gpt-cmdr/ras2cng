@@ -165,6 +165,53 @@ def test_native_mask_semantics_scale_offset_and_portable_provenance(tmp_path: Pa
     assert str(tmp_path.resolve()) not in provenance_text
 
 
+def test_long_public_name_uses_compact_private_staging_paths(
+    monkeypatch,
+    tmp_path: Path,
+):
+    plan_dir = tmp_path / (
+        "upper-guadalupe-ras-model-upgu2-upgu2-prj-917be43b"
+    ) / "p01"
+    plan_dir.mkdir(parents=True)
+    depth = _write_depth(
+        plan_dir / "Depth (Max)_cog.tif",
+        np.ones((2, 2), dtype="float32"),
+    )
+    output = plan_dir / "Inundation Boundary (Max).raster-derived.shp"
+
+    temporary_prefixes: list[str] = []
+    provenance_temps: list[Path] = []
+    temporary_directory = __import__("tempfile").TemporaryDirectory
+    write_text = Path.write_text
+
+    def recording_temporary_directory(*args, **kwargs):
+        temporary_prefixes.append(kwargs.get("prefix", ""))
+        return temporary_directory(*args, **kwargs)
+
+    def recording_write_text(self: Path, *args, **kwargs):
+        if self.suffix == ".tmp":
+            provenance_temps.append(self)
+        return write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "ras2cng.boundary.tempfile.TemporaryDirectory",
+        recording_temporary_directory,
+    )
+    monkeypatch.setattr(Path, "write_text", recording_write_text)
+
+    result = derive_inundation_boundary(depth, output)
+
+    assert result.output_path == output
+    assert temporary_prefixes == [".ras2cng-boundary-"]
+    assert len(provenance_temps) == 1
+    assert provenance_temps[0].name.startswith(".ras2cng-provenance-")
+    assert output.stem not in provenance_temps[0].name
+    assert not any(
+        path.name.startswith(".ras2cng-boundary-")
+        for path in plan_dir.iterdir()
+    )
+
+
 def test_holes_disconnected_cells_and_four_connectivity_are_exact(
     monkeypatch,
     tmp_path: Path,
