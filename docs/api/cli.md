@@ -346,6 +346,10 @@ Options:
   --timeout INTEGER             Per-plan timeout in seconds  [default: 10800]
   --skip-errors / --fail-fast   Skip errors vs abort
   --keep-postprocessing         Keep the (large) PostProcessing.hdf cache in the output directory
+  --map-workers INTEGER         Map helper ceiling; 1=serial (default: memory-aware auto)
+  --map-reserve-memory-mb INTEGER
+                                Minimum physical-memory reserve in MiB [default: 8192]
+  --map-gdal-cache-mb INTEGER   Optional GDAL cache cap per map helper in MiB [default: 64]
 ```
 
 Notes on whole-simulation types: `--arrival-time`, `--duration`, and
@@ -355,6 +359,12 @@ threshold, e.g. `Arrival Time (0.1ft hrs).tif`. Works with any ras-commander
 version: newer versions generate these natively; older versions are handled by
 a rasmap pre-injection shim inside ras2cng. `--recession` is accepted but
 ignored with a warning — RasMapperLib has no recession map type.
+
+With ras-commander 0.99.0 or newer, omitted performance options use
+memory-aware local auto selection. Independent WSE, Depth, and Velocity maps
+may run in separate helpers when the terrain-based estimate fits available
+physical and committed memory. Unsupported combinations automatically retain
+the ordered serial path.
 
 ## ras2cng map-hdf
 
@@ -403,6 +413,10 @@ Options:
   --cog                         Convert output to Cloud Optimized GeoTIFF
   --timeout INTEGER             Timeout in seconds  [default: 10800]
   --keep-postprocessing         Keep the (large) PostProcessing.hdf cache in the output directory
+  --map-workers INTEGER         Map helper ceiling; 1=serial (default: memory-aware auto)
+  --map-reserve-memory-mb INTEGER
+                                Minimum physical-memory reserve in MiB [default: 8192]
+  --map-gdal-cache-mb INTEGER   Optional GDAL cache cap per map helper in MiB [default: 64]
 ```
 
 Examples:

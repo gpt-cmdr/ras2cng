@@ -1079,6 +1079,38 @@ def terrain_command(
         raise typer.Exit(1)
 
 
+def _map_performance_from_cli(
+    map_workers: Optional[int],
+    map_reserve_memory_mb: Optional[int],
+    map_gdal_cache_mb: Optional[int],
+):
+    """Build a typed StoreMap policy only when a CLI override was supplied."""
+    values = (
+        map_workers,
+        map_reserve_memory_mb,
+        map_gdal_cache_mb,
+    )
+    if all(value is None for value in values):
+        return None
+
+    from dataclasses import replace
+
+    from ras2cng.mapping import DEFAULT_LOCAL_MAP_PERFORMANCE
+
+    if DEFAULT_LOCAL_MAP_PERFORMANCE is None:
+        raise RuntimeError(
+            "Map performance controls require ras-commander>=0.99.0"
+        )
+    kwargs = {}
+    if map_workers is not None:
+        kwargs["max_workers"] = map_workers
+    if map_reserve_memory_mb is not None:
+        kwargs["reserve_memory_mb"] = map_reserve_memory_mb
+    if map_gdal_cache_mb is not None:
+        kwargs["gdal_cachemax_mb"] = map_gdal_cache_mb
+    return replace(DEFAULT_LOCAL_MAP_PERFORMANCE, **kwargs)
+
+
 @app.command("map")
 def map_command(
     project: Path = typer.Argument(
@@ -1136,6 +1168,18 @@ def map_command(
         False, "--keep-postprocessing",
         help="Keep the (large) PostProcessing.hdf cache in the output directory",
     ),
+    map_workers: Optional[int] = typer.Option(
+        None, "--map-workers", min=1,
+        help="Map helper ceiling; 1=serial (default: memory-aware auto)",
+    ),
+    map_reserve_memory_mb: Optional[int] = typer.Option(
+        None, "--map-reserve-memory-mb", min=0,
+        help="Minimum physical-memory reserve in MiB (default: 8192)",
+    ),
+    map_gdal_cache_mb: Optional[int] = typer.Option(
+        None, "--map-gdal-cache-mb", min=1,
+        help="GDAL cache cap per map helper in MiB (default: 64)",
+    ),
 ):
     """Generate result rasters (WSE, Depth, Velocity, etc.) via RasStoreMapHelper.
 
@@ -1148,6 +1192,11 @@ def map_command(
     plans_list = [p.strip() for p in plans.split(",")] if plans else None
 
     try:
+        performance = _map_performance_from_cli(
+            map_workers,
+            map_reserve_memory_mb,
+            map_gdal_cache_mb,
+        )
         generate_result_maps(
             project,
             output,
@@ -1176,6 +1225,7 @@ def map_command(
             timeout=timeout,
             skip_errors=skip_errors,
             keep_postprocessing=keep_postprocessing,
+            performance=performance,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -1248,6 +1298,18 @@ def map_hdf_command(
         False, "--keep-postprocessing",
         help="Keep the (large) PostProcessing.hdf cache in the output directory",
     ),
+    map_workers: Optional[int] = typer.Option(
+        None, "--map-workers", min=1,
+        help="Map helper ceiling; 1=serial (default: memory-aware auto)",
+    ),
+    map_reserve_memory_mb: Optional[int] = typer.Option(
+        None, "--map-reserve-memory-mb", min=0,
+        help="Minimum physical-memory reserve in MiB (default: 8192)",
+    ),
+    map_gdal_cache_mb: Optional[int] = typer.Option(
+        None, "--map-gdal-cache-mb", min=1,
+        help="GDAL cache cap per map helper in MiB (default: 64)",
+    ),
 ):
     """Generate result rasters from just a plan HDF + terrain (no project needed).
 
@@ -1283,6 +1345,11 @@ def map_hdf_command(
     scaffold_dir = workdir if workdir is not None else output / "_scaffold"
 
     try:
+        performance = _map_performance_from_cli(
+            map_workers,
+            map_reserve_memory_mb,
+            map_gdal_cache_mb,
+        )
         info = build_scaffold(
             plan_hdf,
             scaffold_dir,
@@ -1324,6 +1391,7 @@ def map_hdf_command(
             timeout=timeout,
             skip_errors=False,
             keep_postprocessing=keep_postprocessing,
+            performance=performance,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")

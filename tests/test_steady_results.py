@@ -49,7 +49,12 @@ def test_extract_unsteady_cross_section_results_uses_bounded_summary_api(monkeyp
         received.update(path=path, chunk_rows=chunk_rows)
         return expected
 
-    monkeypatch.setattr(results.HdfResultsXsec, "get_xsec_summary", fake_summary)
+    monkeypatch.setattr(
+        results.HdfResultsXsec,
+        "get_xsec_summary",
+        fake_summary,
+        raising=False,
+    )
 
     actual = results.extract_unsteady_cross_section_results(
         Path("model.p01.hdf"),
@@ -77,7 +82,11 @@ def test_extract_unsteady_cross_section_results_supports_older_ras_commander(mon
             "Name": ("cross_section", ["XS 1000"]),
         },
     )
-    monkeypatch.delattr(results.HdfResultsXsec, "get_xsec_summary")
+    monkeypatch.delattr(
+        results.HdfResultsXsec,
+        "get_xsec_summary",
+        raising=False,
+    )
     monkeypatch.setattr(
         results.HdfResultsXsec,
         "get_xsec_timeseries",

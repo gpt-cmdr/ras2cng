@@ -621,6 +621,7 @@ def test_map_defaults(monkeypatch, tmp_path: Path):
                 "timeout": 10800,
                 "skip_errors": True,
                 "keep_postprocessing": False,
+                "performance": None,
             },
         }
     ]
@@ -700,9 +701,21 @@ def test_map_options_and_flag_pairs(monkeypatch, tmp_path: Path):
                 "timeout": 45,
                 "skip_errors": False,
                 "keep_postprocessing": False,
+                "performance": None,
             },
         }
     ]
+
+
+def test_map_performance_overrides_are_typed():
+    from ras2cng.cli import _map_performance_from_cli
+
+    performance = _map_performance_from_cli(2, 6144, 128)
+    assert performance.max_workers == 2
+    assert performance.reserve_memory_mb == 6144
+    assert performance.gdal_cachemax_mb == 128
+    assert performance.memory_policy == "enforce"
+    assert performance.gdal_num_threads_per_helper == 1
 
 
 def test_terrain_mod_passes_geometry_and_terrain(monkeypatch, tmp_path: Path):
@@ -1015,6 +1028,9 @@ def test_map_hdf_scaffolds_then_generates(monkeypatch, tmp_path: Path):
         "map-hdf", str(hdf), str(outdir),
         "--terrain", str(dem),
         "--profile", "Max", "--froude", "--ras-version", "6.6",
+        "--map-workers", "1",
+        "--map-reserve-memory-mb", "4096",
+        "--map-gdal-cache-mb", "96",
     ])
     assert result.exit_code == 0, result.output
 
@@ -1030,6 +1046,9 @@ def test_map_hdf_scaffolds_then_generates(monkeypatch, tmp_path: Path):
     assert maps_calls["plans"] == ["p01"]
     assert maps_calls["froude"] is True
     assert maps_calls["skip_errors"] is False
+    assert maps_calls["performance"].max_workers == 1
+    assert maps_calls["performance"].reserve_memory_mb == 4096
+    assert maps_calls["performance"].gdal_cachemax_mb == 96
 
 
 def test_map_hdf_rm_scaffold_cleans_up(monkeypatch, tmp_path: Path):
