@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from ras2cng.mapping import (
+    DEFAULT_LOCAL_MAP_PERFORMANCE,
     MapResult,
     MAP_TYPE_VARIABLES,
     generate_result_maps,
@@ -101,6 +102,23 @@ def test_build_requested_types_none_enabled():
 # MAP_TYPE_VARIABLES
 # ---------------------------------------------------------------------------
 
+
+def test_default_local_map_performance_is_memory_aware_and_bounded():
+    import ras2cng
+
+    performance = DEFAULT_LOCAL_MAP_PERFORMANCE
+
+    assert ras2cng.DEFAULT_LOCAL_MAP_PERFORMANCE is performance
+    assert "DEFAULT_LOCAL_MAP_PERFORMANCE" in ras2cng.__all__
+    assert performance is not None
+    assert performance.max_workers is None
+    assert performance.memory_policy == "enforce"
+    assert performance.reserve_memory_mb == 8192
+    assert performance.reserve_memory_fraction == 0.25
+    assert performance.gdal_num_threads_per_helper == 1
+    assert performance.gdal_cachemax_mb == 64
+
+
 def test_map_type_variables_keys():
     expected = {
         "wse", "depth", "velocity", "froude", "shear_stress",
@@ -123,7 +141,9 @@ def test_store_maps_native_adr_detection():
     def legacy_signature(plan_number, wse=True, depth=True, **kw):
         pass
 
-    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=False
+    ), patch("ras2cng.mapping.RasProcess") as mock_rp:
         mock_rp.store_maps = native_signature
         assert _store_maps_supports_native_adr() is True
         mock_rp.store_maps = legacy_signature
@@ -204,7 +224,9 @@ def test_generate_plan_maps_shim_injects_and_restores(tmp_path):
         (output_dir / "Duration (0.5ft hrs).TileA.tif").write_text("d")
         return {"wse": []}
 
-    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=False
+    ), patch("ras2cng.mapping.RasProcess") as mock_rp:
         mock_rp.store_maps = legacy_store_maps
         mock_rp._remove_stored_maps_from_rasmap = MagicMock(return_value=0)
         result = _generate_plan_maps(
@@ -264,7 +286,9 @@ def test_generate_plan_maps_binds_every_requested_map_to_named_terrain(tmp_path)
         )
         return {}
 
-    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=False
+    ), patch("ras2cng.mapping.RasProcess") as mock_rp:
         mock_rp.store_maps = legacy_store_maps
         mock_rp._remove_stored_maps_from_rasmap = MagicMock(return_value=0)
         result = _generate_plan_maps(
@@ -319,7 +343,9 @@ def test_generate_plan_maps_stale_adrbak_never_restored(tmp_path):
     output_dir = tmp_path / "out"
     output_dir.mkdir()
 
-    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=False
+    ), patch("ras2cng.mapping.RasProcess") as mock_rp:
         mock_rp.store_maps = lambda **kwargs: {"wse": []}
         _generate_plan_maps(
             ras=ras, plan_number="01", profile="Max", output_dir=output_dir,
@@ -354,7 +380,9 @@ def test_generate_plan_maps_shim_ignores_stale_adr_outputs(tmp_path):
         (output_dir / "Arrival Time (0.5ft hrs).TileA.tif").write_text("new")
         return {}
 
-    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=False
+    ), patch("ras2cng.mapping.RasProcess") as mock_rp:
         mock_rp.store_maps = legacy_store_maps
         mock_rp._remove_stored_maps_from_rasmap = MagicMock(return_value=0)
         result = _generate_plan_maps(
@@ -366,6 +394,77 @@ def test_generate_plan_maps_shim_ignores_stale_adr_outputs(tmp_path):
     assert [p.name for p in result["arrival_time"]] == [
         "Arrival Time (0.5ft hrs).TileA.tif"
     ]
+
+
+def test_generate_plan_maps_uses_canonical_store_all_maps(tmp_path):
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, _, _ = _make_fake_ras(tmp_path)
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    depth = output_dir / "Depth (Max).Terrain.tif"
+    wse = output_dir / "WSE (Max).Terrain.tif"
+    depth.write_text("depth", encoding="utf-8")
+    wse.write_text("wse", encoding="utf-8")
+    summary = {
+        "success": True,
+        "plans": {
+            "01": {
+                "success": True,
+                "files_by_type": {
+                    "depth": [str(depth)],
+                    "wse": [str(wse)],
+                },
+            }
+        },
+    }
+
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=True
+    ), patch("ras2cng.mapping.RasMap.store_all_maps", return_value=summary) as store:
+        result = _generate_plan_maps(
+            ras=ras,
+            plan_number="01",
+            profile="Max",
+            output_dir=output_dir,
+            terrain_name=None,
+            render_mode="sloping",
+            timeout=1200,
+            ras_version="7.0",
+            wse=True,
+            depth=True,
+            velocity=False,
+        )
+
+    kwargs = store.call_args.kwargs
+    assert kwargs["mode"] == "selected"
+    assert kwargs["map_types"] == ["wse", "depth"]
+    assert kwargs["performance"] is DEFAULT_LOCAL_MAP_PERFORMANCE
+    assert kwargs["output_path"] == output_dir
+    assert kwargs["raise_on_error"] is True
+    assert kwargs["ras_version"] == "7.0"
+    assert result == {"depth": [depth], "wse": [wse]}
+
+
+def test_generate_plan_maps_requires_plan_summary(tmp_path):
+    from ras2cng.mapping import _generate_plan_maps
+
+    ras, _, _ = _make_fake_ras(tmp_path)
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=True
+    ), patch(
+        "ras2cng.mapping.RasMap.store_all_maps",
+        return_value={"success": False, "plans": {}},
+    ), pytest.raises(RuntimeError, match="did not contain plan 01"):
+        _generate_plan_maps(
+            ras=ras,
+            plan_number="01",
+            profile="Max",
+            output_dir=tmp_path,
+            wse=False,
+            depth=True,
+            velocity=False,
+        )
 
 
 def test_generate_plan_maps_native_passthrough(tmp_path):
@@ -394,7 +493,9 @@ def test_generate_plan_maps_native_passthrough(tmp_path):
 
     (output_dir / "Arrival Time (0.5ft hrs).TileA.tif").write_text("a")
 
-    with patch("ras2cng.mapping.RasProcess") as mock_rp:
+    with patch(
+        "ras2cng.mapping._supports_optimized_store_maps", return_value=False
+    ), patch("ras2cng.mapping.RasProcess") as mock_rp:
         mock_rp.store_maps = native_store_maps
         result = _generate_plan_maps(
             ras=ras,
@@ -587,6 +688,35 @@ def test_generate_result_maps_passes_render_mode(mock_init, mock_config, mock_ge
 
     _, kwargs = mock_gen.call_args
     assert kwargs.get("render_mode") == "slopingPretty"
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+def test_generate_result_maps_threads_one_default_performance_policy(
+    mock_init,
+    mock_config,
+    mock_gen,
+    tmp_path,
+):
+    ras, project_dir, _ = _make_fake_ras(tmp_path, plan_count=2)
+    mock_init.return_value = ras
+    mock_gen.return_value = {}
+
+    generate_result_maps(
+        project_dir,
+        tmp_path / "maps",
+        wse=True,
+        depth=True,
+        velocity=True,
+    )
+
+    assert mock_gen.call_count == 2
+    policies = [call.kwargs["performance"] for call in mock_gen.call_args_list]
+    assert policies == [
+        DEFAULT_LOCAL_MAP_PERFORMANCE,
+        DEFAULT_LOCAL_MAP_PERFORMANCE,
+    ]
 
 
 @patch("ras2cng.mapping._generate_plan_maps")

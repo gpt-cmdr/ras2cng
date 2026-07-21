@@ -92,7 +92,11 @@ from ras2cng.catalog import (
     ManifestTerrainModificationEntry,
     ManifestTerrainSourceEntry,
 )
-from ras2cng.mapping import generate_result_maps, MapResult
+from ras2cng.mapping import (
+    DEFAULT_LOCAL_MAP_PERFORMANCE,
+    MapResult,
+    generate_result_maps,
+)
 from ras2cng.scaffold import (
     build_scaffold,
     read_plan_hdf_metadata,
@@ -223,6 +227,7 @@ __all__ = [
     # Mapping
     "generate_result_maps",
     "MapResult",
+    "DEFAULT_LOCAL_MAP_PERFORMANCE",
     # Scaffold (map-hdf)
     "build_scaffold",
     "read_plan_hdf_metadata",
