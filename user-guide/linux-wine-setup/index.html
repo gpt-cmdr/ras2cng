@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/ras2cng_logo.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -33,7 +33,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1176,10 +1176,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-verify-rasprocessexe" class="md-nav__link">
+  <a href="#step-5-reject-unsafe-cpu-topology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Verify RasProcess.exe
+        Step 5: Reject Unsafe CPU Topology
       
     </span>
   </a>
@@ -1187,10 +1187,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-install-ras2cng" class="md-nav__link">
+  <a href="#step-6-verify-the-wine-runtime" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 6: Install ras2cng
+        Step 6: Verify the Wine Runtime
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-provision-tcu-state-safely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7: Provision TCU State Safely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-install-ras2cng" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8: Install ras2cng
       
     </span>
   </a>
@@ -1255,6 +1277,28 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prefix-and-project-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix and Project Isolation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qualification-before-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qualification Before Production
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2428,10 +2472,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-verify-rasprocessexe" class="md-nav__link">
+  <a href="#step-5-reject-unsafe-cpu-topology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5: Verify RasProcess.exe
+        Step 5: Reject Unsafe CPU Topology
       
     </span>
   </a>
@@ -2439,10 +2483,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-install-ras2cng" class="md-nav__link">
+  <a href="#step-6-verify-the-wine-runtime" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 6: Install ras2cng
+        Step 6: Verify the Wine Runtime
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-provision-tcu-state-safely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7: Provision TCU State Safely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-install-ras2cng" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8: Install ras2cng
       
     </span>
   </a>
@@ -2511,6 +2577,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#prefix-and-project-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prefix and Project Isolation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qualification-before-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qualification Before Production
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timeout-considerations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2553,7 +2641,13 @@
 
 
 <h1 id="linuxwine-setup-for-result-mapping">Linux/Wine Setup for Result Mapping<a class="headerlink" href="#linuxwine-setup-for-result-mapping" title="Permanent link">&para;</a></h1>
-<p>The <code>ras2cng map</code> and <code>ras2cng terrain</code> commands use <strong>RasStoreMapHelper.exe</strong> (bundled with ras-commander) to generate result rasters, and <strong>RasProcess.exe</strong> from HEC-RAS for terrain HDFs. Both run under <a href="https://www.winehq.org/">Wine</a> on Linux. The helper sets the correct water surface render mode via .NET reflection before generating maps, producing pixel-perfect output.</p>
+<p>The <code>ras2cng map</code> command uses <strong>RasStoreMapHelper.exe</strong> (bundled with
+ras-commander) to generate result rasters. Terrain HDF creation uses
+<strong>RasProcess.exe</strong> from HEC-RAS. Both Windows components run under
+<a href="https://www.winehq.org/">Wine</a> on Linux.</p>
+<p>Do not substitute <code>RasProcess.exe StoreAllMaps</code> for the bundled map helper.
+RasProcess does not preserve the required stored-map interpolation/render mode.
+The helper sets that mode through RASMapper before generating maps.</p>
 <p>This guide covers setting up Wine + RasProcess.exe on Ubuntu Linux.</p>
 <h2 id="tested-configuration">Tested Configuration<a class="headerlink" href="#tested-configuration" title="Permanent link">&para;</a></h2>
 <table>
@@ -2565,8 +2659,8 @@
 </thead>
 <tbody>
 <tr>
-<td>Ubuntu</td>
-<td>24.04 LTS (Noble Numbat)</td>
+<td>Linux</td>
+<td>Debian 13 (Trixie), isolated Proxmox LXC</td>
 </tr>
 <tr>
 <td>Wine</td>
@@ -2581,16 +2675,25 @@
 <td>3.12</td>
 </tr>
 <tr>
-<td>RasProcess.exe</td>
-<td>HEC-RAS 6.6</td>
+<td>Windows HEC-RAS payload</td>
+<td>7.0.1</td>
+</tr>
+<tr>
+<td>Qualification fixture</td>
+<td>Muncie p03, EPSG:2965</td>
 </tr>
 </tbody>
 </table>
+<p>The qualified Muncie WSE, depth, and velocity rasters matched the Windows
+HEC-RAS 7.0.1 golden pixel-for-pixel, including dimensions, CRS, transform,
+nodata, and source pixel hashes.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Ubuntu 22.04+ or Debian 12+</li>
 <li>x86_64 architecture</li>
-<li>Access to a Windows HEC-RAS 6.x installation (for RasProcess.exe and its dependencies)</li>
+<li>Access to the complete Windows HEC-RAS installation for the exact version
+  being qualified</li>
+<li>One writable Wine prefix and one writable project copy per task</li>
 </ul>
 <h2 id="step-1-install-wine">Step 1: Install Wine<a class="headerlink" href="#step-1-install-wine" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Enable 32-bit architecture (required for Wine)</span>
@@ -2613,7 +2716,10 @@
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># wine-11.0 (or newer)</span>
 </code></pre></div></p>
 <h2 id="step-2-initialize-wine-prefix">Step 2: Initialize Wine Prefix<a class="headerlink" href="#step-2-initialize-wine-prefix" title="Permanent link">&para;</a></h2>
-<p>Wine needs a one-time initialization to create its <code>~/.wine/</code> directory. On headless servers, suppress GUI dialogs:</p>
+<p>Build a read-only template prefix once, then copy it to node-local storage for
+every task. Never initialize or share one writable prefix concurrently.</p>
+<p>Wine needs a one-time initialization to create its prefix. On headless servers,
+suppress GUI dialogs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nv">DISPLAY</span><span class="o">=</span><span class="w"> </span><span class="nv">WINEDEBUG</span><span class="o">=</span>-all<span class="w"> </span><span class="nv">WINEDLLOVERRIDES</span><span class="o">=</span><span class="s2">&quot;mscoree,mshtml=&quot;</span><span class="w"> </span>wineboot<span class="w"> </span>--init
 </code></pre></div>
 <p>On a desktop Ubuntu installation with a display server, you can simply run:
@@ -2636,8 +2742,10 @@
 </code></pre></div>
 <p>This downloads and installs .NET Framework 4.8 inside the Wine prefix. It takes several minutes and may produce warning messages — these are generally safe to ignore as long as the process completes.</p>
 <h2 id="step-4-copy-hec-ras-files">Step 4: Copy HEC-RAS Files<a class="headerlink" href="#step-4-copy-hec-ras-files" title="Permanent link">&para;</a></h2>
-<p>From a Windows machine with HEC-RAS installed, copy the contents of the HEC-RAS installation directory to your Linux machine. For HEC-RAS 6.6, the source directory is:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>C:\Program Files (x86)\HEC\HEC-RAS\6.6\
+<p>From a Windows machine with HEC-RAS installed, copy the <strong>complete</strong> installation
+directory. Do not mix DLLs or executables from different versions. For HEC-RAS
+7.0.1, the source is normally:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>C:\Program Files (x86)\HEC\HEC-RAS\7.0.1\
 </code></pre></div>
 <h3 id="required-files-and-directories">Required files and directories<a class="headerlink" href="#required-files-and-directories" title="Permanent link">&para;</a></h3>
 <table>
@@ -2690,20 +2798,15 @@
 </div>
 <h3 id="copying-via-scp">Copying via SCP<a class="headerlink" href="#copying-via-scp" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Create destination directory</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/ras2cng-data/ras66
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/ras2cng-data/ras701
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Copy root-level files</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>scp<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/6.6/*.dll&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras66/
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>scp<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/6.6/*.exe&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras66/
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="c1"># Copy required subdirectories</span>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>scp<span class="w"> </span>-r<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/6.6/GDAL&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras66/
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>scp<span class="w"> </span>-r<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/6.6/bin32&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras66/
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>scp<span class="w"> </span>-r<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/6.6/bin64&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras66/
-<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>scp<span class="w"> </span>-r<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/6.6/x64&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras66/
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Copy the contents, not a nested 7.0.1 directory</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>scp<span class="w"> </span>-r<span class="w"> </span>user@windows-host:<span class="s2">&quot;C:/Program Files (x86)/HEC/HEC-RAS/7.0.1/.&quot;</span><span class="w"> </span>/opt/ras2cng-data/ras701/
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="c1"># Verify that GDAL, x64, bin64, and bin32 were preserved when present.</span>
 </code></pre></div>
 <h3 id="expected-directory-layout">Expected directory layout<a class="headerlink" href="#expected-directory-layout" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>/opt/ras2cng-data/ras66/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>/opt/ras2cng-data/ras701/
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>├── RasProcess.exe
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>├── Ras.exe
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>├── RasMapperLib.dll
@@ -2714,113 +2817,172 @@
 <a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>├── bin64/
 <a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>└── x64/
 </code></pre></div>
-<h2 id="step-5-verify-rasprocessexe">Step 5: Verify RasProcess.exe<a class="headerlink" href="#step-5-verify-rasprocessexe" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Basic test — should print a usage message:</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nv">DISPLAY</span><span class="o">=</span><span class="w"> </span><span class="nv">WINEDEBUG</span><span class="o">=</span>-all<span class="w"> </span>wine<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Expected: &quot;We really need a usage dialogue once this gets to be more solid.&quot;</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1"># CreateTerrain — shows usage for terrain HDF creation:</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nv">DISPLAY</span><span class="o">=</span><span class="w"> </span><span class="nv">WINEDEBUG</span><span class="o">=</span>-all<span class="w"> </span>wine<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span>CreateTerrain
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># Expected: Usage text showing CreateTerrain arguments</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="c1"># StoreAllMaps — confirms the mapping command is recognized:</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="nv">DISPLAY</span><span class="o">=</span><span class="w"> </span><span class="nv">WINEDEBUG</span><span class="o">=</span>-all<span class="w"> </span>wine<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span>StoreAllMaps
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="c1"># Expected: &quot;RasMapFilename &#39;&#39; does not exist.&quot; (normal — no project provided)</span>
+<h2 id="step-5-reject-unsafe-cpu-topology">Step 5: Reject Unsafe CPU Topology<a class="headerlink" href="#step-5-reject-unsafe-cpu-topology" title="Permanent link">&para;</a></h2>
+<p>Run this check inside the scheduler/container namespace that will launch Wine:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">reported</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sysconf</span><span class="p">(</span><span class="s2">&quot;SC_NPROCESSORS_ONLN&quot;</span><span class="p">))</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">allowed</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sched_getaffinity</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">invalid</span> <span class="o">=</span> <span class="p">[</span><span class="n">cpu</span> <span class="k">for</span> <span class="n">cpu</span> <span class="ow">in</span> <span class="n">allowed</span> <span class="k">if</span> <span class="n">cpu</span> <span class="o">&gt;=</span> <span class="n">reported</span><span class="p">]</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="k">if</span> <span class="n">invalid</span><span class="p">:</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="sa">f</span><span class="s2">&quot;Unsafe Wine CPU namespace: reported=</span><span class="si">{</span><span class="n">reported</span><span class="si">}</span><span class="s2">, &quot;</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>        <span class="sa">f</span><span class="s2">&quot;allowed=</span><span class="si">{</span><span class="n">allowed</span><span class="si">}</span><span class="s2">, invalid=</span><span class="si">{</span><span class="n">invalid</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="p">)</span>
 </code></pre></div>
-<h2 id="step-6-install-ras2cng">Step 6: Install ras2cng<a class="headerlink" href="#step-6-install-ras2cng" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Install uv (Python package manager)</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Clone and install ras2cng</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/gpt-cmdr/ras2cng.git
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nb">cd</span><span class="w"> </span>ras2cng
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-extras
+<p>Wine can report a processor count while returning raw Linux CPU IDs. A sparse
+cpuset such as <code>2,5-7</code> with a reported count of four can therefore produce CLR
+<code>0x80131506</code>, access violations, or non-returning RASMapper calls.</p>
+<p>Prefer a coherent zero-based visible CPU namespace and apply a CPU-time quota.
+If the scheduler cannot provide that topology, pin the complete Wine process
+tree to one allowed CPU whose ID is lower than <code>reported</code>. <code>taskset</code> cannot
+renumber CPU IDs. Do not widen the scheduler allocation.</p>
+<p>The ras-commander source distribution includes the full JSON preflight at
+<code>.claude/skills/hecras-setup-linux-wine-ras2cng/scripts/headless_wine_preflight.py</code>.</p>
+<h2 id="step-6-verify-the-wine-runtime">Step 6: Verify the Wine Runtime<a class="headerlink" href="#step-6-verify-the-wine-runtime" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Basic test — should print a usage message:</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nv">DISPLAY</span><span class="o">=</span><span class="w"> </span><span class="nv">WINEDEBUG</span><span class="o">=</span>-all<span class="w"> </span>wine<span class="w"> </span>/opt/ras2cng-data/ras701/RasProcess.exe
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># Expected: &quot;We really need a usage dialogue once this gets to be more solid.&quot;</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># CreateTerrain — shows usage for terrain HDF creation:</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nv">DISPLAY</span><span class="o">=</span><span class="w"> </span><span class="nv">WINEDEBUG</span><span class="o">=</span>-all<span class="w"> </span>wine<span class="w"> </span>/opt/ras2cng-data/ras701/RasProcess.exe<span class="w"> </span>CreateTerrain
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="c1"># Expected: Usage text showing CreateTerrain arguments</span>
 <a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># Verify</span>
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>uv<span class="w"> </span>run<span class="w"> </span>ras2cng<span class="w"> </span>--help
-<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/<span class="w"> </span>-v
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># Verify ras-commander sees the prefix, .NET, RasProcess, and HDF libraries:</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;&#39;PY&#39;</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="s">from ras_commander import RasProcess</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="s">RasProcess.configure_wine(</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="s">    wine_prefix=&quot;/opt/hecras-prefix-template&quot;,</span>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="s">    ras_install_dir=&quot;/opt/ras2cng-data/ras701&quot;,</span>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="s">)</span>
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="s">print(RasProcess.check_wine_environment())</span>
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="s">PY</span>
+</code></pre></div>
+<h2 id="step-7-provision-tcu-state-safely">Step 7: Provision TCU State Safely<a class="headerlink" href="#step-7-provision-tcu-state-safely" title="Permanent link">&para;</a></h2>
+<p>Never let a generic dialog watchdog click the first button on an unknown modal.
+<code>RasTcu.status()</code> is read-only. If the operator already accepted the same
+installed HEC-RAS version and authorizes reuse, run Windows Python inside the
+target Wine prefix and use the donor-based <code>RasTcu.accept()</code> flow, or initialize
+with <code>accept_tcu=True</code>. If no accepted donor state exists, stop and report it.</p>
+<h2 id="step-8-install-ras2cng">Step 8: Install ras2cng<a class="headerlink" href="#step-8-install-ras2cng" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Install uv (Python package manager)</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Clone and install ras2cng</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/gpt-cmdr/ras2cng.git
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nb">cd</span><span class="w"> </span>ras2cng
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-extras
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="c1"># Verify</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>uv<span class="w"> </span>run<span class="w"> </span>ras2cng<span class="w"> </span>--help
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/<span class="w"> </span>-v
 </code></pre></div>
 <h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
 <h3 id="generate-result-rasters">Generate result rasters<a class="headerlink" href="#generate-result-rasters" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Generate depth, WSE, and velocity rasters for all plans</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>--depth<span class="w"> </span>--wse<span class="w"> </span>--velocity
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="c1"># Generate only depth rasters for a specific plan</span>
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span>--depth<span class="w"> </span>--no-wse<span class="w"> </span>--no-velocity<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">  </span>--plans<span class="w"> </span>p01
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="c1"># Specify render mode (horizontal, sloping, or slopingPretty)</span>
-<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span>--render-mode<span class="w"> </span>sloping
-<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>
-<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="c1"># Custom timeout (default: 3 hours)</span>
-<a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="w">  </span>--timeout<span class="w"> </span><span class="m">7200</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Generate depth, WSE, and velocity rasters for all plans</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras701<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span>--map-workers<span class="w"> </span><span class="m">1</span><span class="w"> </span>--depth<span class="w"> </span>--wse<span class="w"> </span>--velocity<span class="w"> </span>--fail-fast
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># Generate only depth rasters for a specific plan</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras701<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">  </span>--map-workers<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">  </span>--depth<span class="w"> </span>--no-wse<span class="w"> </span>--no-velocity<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">  </span>--plans<span class="w"> </span>p01
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="c1"># Specify render mode (horizontal, sloping, or slopingPretty)</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras701<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">  </span>--map-workers<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">  </span>--render-mode<span class="w"> </span>sloping
+<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a>
+<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="c1"># Custom timeout (default: 3 hours)</span>
+<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras701<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="w">  </span>--map-workers<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a><span class="w">  </span>--timeout<span class="w"> </span><span class="m">7200</span>
 </code></pre></div>
 <h3 id="consolidate-terrain">Consolidate terrain<a class="headerlink" href="#consolidate-terrain" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Merge all terrain TIFFs into a single file</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>ras2cng<span class="w"> </span>terrain<span class="w"> </span>/path/to/project<span class="w"> </span>/output/terrain<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>--ras-version<span class="w"> </span><span class="m">6</span>.6<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span>--tiff-only
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># With downsampling (half resolution)</span>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>ras2cng<span class="w"> </span>terrain<span class="w"> </span>/path/to/project<span class="w"> </span>/output/terrain<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">  </span>--ras-version<span class="w"> </span><span class="m">6</span>.6<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">  </span>--downsample<span class="w"> </span><span class="m">2</span>.0<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">  </span>--tiff-only
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Merge all terrain TIFFs into a single file</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>ras2cng<span class="w"> </span>terrain<span class="w"> </span>/path/to/project<span class="w"> </span>/output/terrain<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>--ras-version<span class="w"> </span><span class="m">6</span>.6<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span>--tiff-only
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="c1"># With downsampling (half resolution)</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>ras2cng<span class="w"> </span>terrain<span class="w"> </span>/path/to/project<span class="w"> </span>/output/terrain<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">  </span>--ras-version<span class="w"> </span><span class="m">6</span>.6<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">  </span>--downsample<span class="w"> </span><span class="m">2</span>.0<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">  </span>--tiff-only
 </code></pre></div>
 <h3 id="full-project-archive-with-mapping">Full-project archive with mapping<a class="headerlink" href="#full-project-archive-with-mapping" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>/path/to/project<span class="w"> </span>/output/archive<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span>--results<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>--terrain<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span>--map<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span>--consolidate-terrain<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras66/RasProcess.exe<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span>--render-mode<span class="w"> </span>horizontal
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>/path/to/project<span class="w"> </span>/output/archive<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span>--results<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span>--terrain<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span>--map<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span>--consolidate-terrain<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span>--rasprocess<span class="w"> </span>/opt/ras2cng-data/ras701<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span>--render-mode<span class="w"> </span>horizontal
 </code></pre></div>
 <h3 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_result_maps</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.terrain</span><span class="w"> </span><span class="kn">import</span> <span class="n">consolidate_terrain</span><span class="p">,</span> <span class="n">discover_terrains</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Generate result rasters</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">results</span> <span class="o">=</span> <span class="n">generate_result_maps</span><span class="p">(</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    <span class="s2">&quot;/path/to/project&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    <span class="s2">&quot;/output/maps&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>    <span class="n">rasprocess_path</span><span class="o">=</span><span class="s2">&quot;/opt/ras2cng-data/ras66/RasProcess.exe&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    <span class="n">depth</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">wse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>    <span class="n">render_mode</span><span class="o">=</span><span class="s2">&quot;horizontal&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;sloping&quot;, &quot;slopingPretty&quot;</span>
-<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="p">)</span>
-<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>
-<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="c1"># Discover terrains in a project</span>
-<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="n">terrains</span> <span class="o">=</span> <span class="n">discover_terrains</span><span class="p">(</span><span class="s2">&quot;/path/to/project&quot;</span><span class="p">)</span>
-<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terrains</span><span class="p">:</span>
-<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">tif_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> TIFs, HDF exists: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">hdf_exists</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>
-<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="c1"># Consolidate terrain TIFFs</span>
-<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="n">merged</span> <span class="o">=</span> <span class="n">consolidate_terrain</span><span class="p">(</span>
-<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>    <span class="s2">&quot;/path/to/project&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>    <span class="s2">&quot;/output/terrain&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>    <span class="n">terrain_name</span><span class="o">=</span><span class="s2">&quot;Consolidated&quot;</span><span class="p">,</span>
-<a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a>    <span class="n">create_hdf</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_result_maps</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.terrain</span><span class="w"> </span><span class="kn">import</span> <span class="n">consolidate_terrain</span><span class="p">,</span> <span class="n">discover_terrains</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Generate result rasters</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="n">results</span> <span class="o">=</span> <span class="n">generate_result_maps</span><span class="p">(</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>    <span class="s2">&quot;/path/to/project&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    <span class="s2">&quot;/output/maps&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>    <span class="n">rasprocess_path</span><span class="o">=</span><span class="s2">&quot;/opt/ras2cng-data/ras701&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>    <span class="n">depth</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">wse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">velocity</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>    <span class="n">render_mode</span><span class="o">=</span><span class="s2">&quot;horizontal&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;sloping&quot;, &quot;slopingPretty&quot;</span>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="p">)</span>
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="c1"># Discover terrains in a project</span>
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="n">terrains</span> <span class="o">=</span> <span class="n">discover_terrains</span><span class="p">(</span><span class="s2">&quot;/path/to/project&quot;</span><span class="p">)</span>
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terrains</span><span class="p">:</span>
+<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">tif_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> TIFs, HDF exists: </span><span class="si">{</span><span class="n">t</span><span class="o">.</span><span class="n">hdf_exists</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a>
+<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="c1"># Consolidate terrain TIFFs</span>
+<a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="n">merged</span> <span class="o">=</span> <span class="n">consolidate_terrain</span><span class="p">(</span>
+<a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a>    <span class="s2">&quot;/path/to/project&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a>    <span class="s2">&quot;/output/terrain&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-22" name="__codelineno-16-22" href="#__codelineno-16-22"></a>    <span class="n">terrain_name</span><span class="o">=</span><span class="s2">&quot;Consolidated&quot;</span><span class="p">,</span>
+<a id="__codelineno-16-23" name="__codelineno-16-23" href="#__codelineno-16-23"></a>    <span class="n">create_hdf</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-16-24" name="__codelineno-16-24" href="#__codelineno-16-24"></a><span class="p">)</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">configure_wine expects a directory</p>
 <p>When using the Python API directly, <code>RasProcess.configure_wine()</code> takes <code>ras_install_dir=</code> (the directory containing <code>RasProcess.exe</code>), not the full path to the executable. The CLI <code>--rasprocess</code> flag accepts either and extracts the parent directory automatically.</p>
 </div>
+<h2 id="prefix-and-project-isolation">Prefix and Project Isolation<a class="headerlink" href="#prefix-and-project-isolation" title="Permanent link">&para;</a></h2>
+<p>Keep one active RASMapper helper per Wine prefix. A controlled same-prefix
+parallel test stalled, while separate prefixes completed concurrently with
+exact golden raster hashes. <code>ras2cng</code> therefore uses <code>--map-workers 1</code> under
+Wine. Scale with scheduler arrays that each receive:</p>
+<ul>
+<li>one copied writable prefix;</li>
+<li>one node-local writable project copy;</li>
+<li>one output directory;</li>
+<li>no shared active HDF files.</li>
+</ul>
+<h2 id="qualification-before-production">Qualification Before Production<a class="headerlink" href="#qualification-before-production" title="Permanent link">&para;</a></h2>
+<p>Do not qualify a runner from process exit codes alone. Compare a representative
+fixture to the same HEC-RAS version on Windows and record raster CRS,
+transform, dimensions, nodata, overlap, values, and pixel hashes. For geometry
+work, also record exact cell/face counts, boundary assignments, property-table
+completeness, and geometry/terrain fingerprints. Critical integration tests may
+not be skipped.</p>
+<p>See ras-commander notebook
+<code>examples/511_headless_linux_wine_ras2cng.ipynb</code> for the complete operational
+workflow.</p>
 <h2 id="timeout-considerations">Timeout Considerations<a class="headerlink" href="#timeout-considerations" title="Permanent link">&para;</a></h2>
 <p>RasProcess.exe mapping operations can be slow under Wine, especially for large models. The default timeout is <strong>3 hours (10800 seconds)</strong> per plan. Adjust with <code>--timeout</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># 6 hours for very large models</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output<span class="w"> </span>--timeout<span class="w"> </span><span class="m">21600</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># 30 minutes for quick test runs</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output<span class="w"> </span>--timeout<span class="w"> </span><span class="m">1800</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># 6 hours for very large models</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output<span class="w"> </span>--timeout<span class="w"> </span><span class="m">21600</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># 30 minutes for quick test runs</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output<span class="w"> </span>--timeout<span class="w"> </span><span class="m">1800</span>
 </code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <table>
@@ -2852,8 +3014,20 @@
 <td>Ensure both <code>wine-stable-i386</code> and <code>wine-stable-amd64</code> packages are installed</td>
 </tr>
 <tr>
-<td>StoreAllMaps times out</td>
-<td>Increase <code>--timeout</code> (default: 10800s). Verify the plan HDF has valid results</td>
+<td>CLR <code>0x80131506</code>, <code>0xc0000005</code>, or nondeterministic hang</td>
+<td>Run the CPU-topology preflight; repair the visible CPU namespace or use the safe single-CPU fallback</td>
+</tr>
+<tr>
+<td>One of two helpers stalls</td>
+<td>They share a writable prefix; use one prefix and project copy per task</td>
+</tr>
+<tr>
+<td>Map command exits but raster differs</td>
+<td>Use RasStoreMapHelper, not <code>RasProcess.exe StoreAllMaps</code>; match HEC-RAS version and render mode</td>
+</tr>
+<tr>
+<td>Mapping times out</td>
+<td>Keep <code>--map-workers 1</code>, verify the plan HDF, then increase <code>--timeout</code></td>
 </tr>
 <tr>
 <td>CRS mismatch in terrain merge</td>
@@ -2887,7 +3061,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="April 7, 2026 20:16:45 UTC">April 7, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 21, 2026 14:15:39 UTC">July 21, 2026</span>
   </span>
 
     
@@ -2999,7 +3173,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
