@@ -1,6 +1,13 @@
 # Linux/Wine Setup for Result Mapping
 
-The `ras2cng map` and `ras2cng terrain` commands use **RasStoreMapHelper.exe** (bundled with ras-commander) to generate result rasters, and **RasProcess.exe** from HEC-RAS for terrain HDFs. Both run under [Wine](https://www.winehq.org/) on Linux. The helper sets the correct water surface render mode via .NET reflection before generating maps, producing pixel-perfect output.
+The `ras2cng map` command uses **RasStoreMapHelper.exe** (bundled with
+ras-commander) to generate result rasters. Terrain HDF creation uses
+**RasProcess.exe** from HEC-RAS. Both Windows components run under
+[Wine](https://www.winehq.org/) on Linux.
+
+Do not substitute `RasProcess.exe StoreAllMaps` for the bundled map helper.
+RasProcess does not preserve the required stored-map interpolation/render mode.
+The helper sets that mode through RASMapper before generating maps.
 
 This guide covers setting up Wine + RasProcess.exe on Ubuntu Linux.
 
@@ -8,17 +15,24 @@ This guide covers setting up Wine + RasProcess.exe on Ubuntu Linux.
 
 | Component | Version |
 |-----------|---------|
-| Ubuntu | 24.04 LTS (Noble Numbat) |
+| Linux | Debian 13 (Trixie), isolated Proxmox LXC |
 | Wine | 11.0 (winehq-stable) |
 | .NET Framework | 4.8 (via winetricks) |
 | Python | 3.12 |
-| RasProcess.exe | HEC-RAS 6.6 |
+| Windows HEC-RAS payload | 7.0.1 |
+| Qualification fixture | Muncie p03, EPSG:2965 |
+
+The qualified Muncie WSE, depth, and velocity rasters matched the Windows
+HEC-RAS 7.0.1 golden pixel-for-pixel, including dimensions, CRS, transform,
+nodata, and source pixel hashes.
 
 ## Prerequisites
 
 - Ubuntu 22.04+ or Debian 12+
 - x86_64 architecture
-- Access to a Windows HEC-RAS 6.x installation (for RasProcess.exe and its dependencies)
+- Access to the complete Windows HEC-RAS installation for the exact version
+  being qualified
+- One writable Wine prefix and one writable project copy per task
 
 ## Step 1: Install Wine
 
@@ -47,7 +61,11 @@ wine --version
 
 ## Step 2: Initialize Wine Prefix
 
-Wine needs a one-time initialization to create its `~/.wine/` directory. On headless servers, suppress GUI dialogs:
+Build a read-only template prefix once, then copy it to node-local storage for
+every task. Never initialize or share one writable prefix concurrently.
+
+Wine needs a one-time initialization to create its prefix. On headless servers,
+suppress GUI dialogs:
 
 ```bash
 DISPLAY= WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" wineboot --init
@@ -80,10 +98,12 @@ This downloads and installs .NET Framework 4.8 inside the Wine prefix. It takes 
 
 ## Step 4: Copy HEC-RAS Files
 
-From a Windows machine with HEC-RAS installed, copy the contents of the HEC-RAS installation directory to your Linux machine. For HEC-RAS 6.6, the source directory is:
+From a Windows machine with HEC-RAS installed, copy the **complete** installation
+directory. Do not mix DLLs or executables from different versions. For HEC-RAS
+7.0.1, the source is normally:
 
 ```
-C:\Program Files (x86)\HEC\HEC-RAS\6.6\
+C:\Program Files (x86)\HEC\HEC-RAS\7.0.1\
 ```
 
 ### Required files and directories
@@ -110,23 +130,18 @@ C:\Program Files (x86)\HEC\HEC-RAS\6.6\
 
 ```bash
 # Create destination directory
-sudo mkdir -p /opt/ras2cng-data/ras66
+sudo mkdir -p /opt/ras2cng-data/ras701
 
-# Copy root-level files
-scp user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/*.dll" /opt/ras2cng-data/ras66/
-scp user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/*.exe" /opt/ras2cng-data/ras66/
+# Copy the contents, not a nested 7.0.1 directory
+scp -r user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/7.0.1/." /opt/ras2cng-data/ras701/
 
-# Copy required subdirectories
-scp -r user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/GDAL" /opt/ras2cng-data/ras66/
-scp -r user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/bin32" /opt/ras2cng-data/ras66/
-scp -r user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/bin64" /opt/ras2cng-data/ras66/
-scp -r user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/x64" /opt/ras2cng-data/ras66/
+# Verify that GDAL, x64, bin64, and bin32 were preserved when present.
 ```
 
 ### Expected directory layout
 
 ```
-/opt/ras2cng-data/ras66/
+/opt/ras2cng-data/ras701/
 ├── RasProcess.exe
 ├── Ras.exe
 ├── RasMapperLib.dll
@@ -138,23 +153,67 @@ scp -r user@windows-host:"C:/Program Files (x86)/HEC/HEC-RAS/6.6/x64" /opt/ras2c
 └── x64/
 ```
 
-## Step 5: Verify RasProcess.exe
+## Step 5: Reject Unsafe CPU Topology
+
+Run this check inside the scheduler/container namespace that will launch Wine:
+
+```python
+import os
+
+reported = int(os.sysconf("SC_NPROCESSORS_ONLN"))
+allowed = sorted(os.sched_getaffinity(0))
+invalid = [cpu for cpu in allowed if cpu >= reported]
+if invalid:
+    raise SystemExit(
+        f"Unsafe Wine CPU namespace: reported={reported}, "
+        f"allowed={allowed}, invalid={invalid}"
+    )
+```
+
+Wine can report a processor count while returning raw Linux CPU IDs. A sparse
+cpuset such as `2,5-7` with a reported count of four can therefore produce CLR
+`0x80131506`, access violations, or non-returning RASMapper calls.
+
+Prefer a coherent zero-based visible CPU namespace and apply a CPU-time quota.
+If the scheduler cannot provide that topology, pin the complete Wine process
+tree to one allowed CPU whose ID is lower than `reported`. `taskset` cannot
+renumber CPU IDs. Do not widen the scheduler allocation.
+
+The ras-commander source distribution includes the full JSON preflight at
+`.claude/skills/hecras-setup-linux-wine-ras2cng/scripts/headless_wine_preflight.py`.
+
+## Step 6: Verify the Wine Runtime
 
 ```bash
 # Basic test — should print a usage message:
-DISPLAY= WINEDEBUG=-all wine /opt/ras2cng-data/ras66/RasProcess.exe
+DISPLAY= WINEDEBUG=-all wine /opt/ras2cng-data/ras701/RasProcess.exe
 # Expected: "We really need a usage dialogue once this gets to be more solid."
 
 # CreateTerrain — shows usage for terrain HDF creation:
-DISPLAY= WINEDEBUG=-all wine /opt/ras2cng-data/ras66/RasProcess.exe CreateTerrain
+DISPLAY= WINEDEBUG=-all wine /opt/ras2cng-data/ras701/RasProcess.exe CreateTerrain
 # Expected: Usage text showing CreateTerrain arguments
 
-# StoreAllMaps — confirms the mapping command is recognized:
-DISPLAY= WINEDEBUG=-all wine /opt/ras2cng-data/ras66/RasProcess.exe StoreAllMaps
-# Expected: "RasMapFilename '' does not exist." (normal — no project provided)
+# Verify ras-commander sees the prefix, .NET, RasProcess, and HDF libraries:
+python - <<'PY'
+from ras_commander import RasProcess
+
+RasProcess.configure_wine(
+    wine_prefix="/opt/hecras-prefix-template",
+    ras_install_dir="/opt/ras2cng-data/ras701",
+)
+print(RasProcess.check_wine_environment())
+PY
 ```
 
-## Step 6: Install ras2cng
+## Step 7: Provision TCU State Safely
+
+Never let a generic dialog watchdog click the first button on an unknown modal.
+`RasTcu.status()` is read-only. If the operator already accepted the same
+installed HEC-RAS version and authorizes reuse, run Windows Python inside the
+target Wine prefix and use the donor-based `RasTcu.accept()` flow, or initialize
+with `accept_tcu=True`. If no accepted donor state exists, stop and report it.
+
+## Step 8: Install ras2cng
 
 ```bash
 # Install uv (Python package manager)
@@ -177,23 +236,26 @@ uv run pytest tests/ -v
 ```bash
 # Generate depth, WSE, and velocity rasters for all plans
 ras2cng map /path/to/project /output/maps \
-  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
-  --depth --wse --velocity
+  --rasprocess /opt/ras2cng-data/ras701 \
+  --map-workers 1 --depth --wse --velocity --fail-fast
 
 # Generate only depth rasters for a specific plan
 ras2cng map /path/to/project /output/maps \
-  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
+  --rasprocess /opt/ras2cng-data/ras701 \
+  --map-workers 1 \
   --depth --no-wse --no-velocity \
   --plans p01
 
 # Specify render mode (horizontal, sloping, or slopingPretty)
 ras2cng map /path/to/project /output/maps \
-  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
+  --rasprocess /opt/ras2cng-data/ras701 \
+  --map-workers 1 \
   --render-mode sloping
 
 # Custom timeout (default: 3 hours)
 ras2cng map /path/to/project /output/maps \
-  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
+  --rasprocess /opt/ras2cng-data/ras701 \
+  --map-workers 1 \
   --timeout 7200
 ```
 
@@ -220,7 +282,7 @@ ras2cng archive /path/to/project /output/archive \
   --terrain \
   --map \
   --consolidate-terrain \
-  --rasprocess /opt/ras2cng-data/ras66/RasProcess.exe \
+  --rasprocess /opt/ras2cng-data/ras701 \
   --render-mode horizontal
 ```
 
@@ -234,7 +296,7 @@ from ras2cng.terrain import consolidate_terrain, discover_terrains
 results = generate_result_maps(
     "/path/to/project",
     "/output/maps",
-    rasprocess_path="/opt/ras2cng-data/ras66/RasProcess.exe",
+    rasprocess_path="/opt/ras2cng-data/ras701",
     depth=True, wse=True, velocity=True,
     render_mode="horizontal",  # or "sloping", "slopingPretty"
 )
@@ -255,6 +317,31 @@ merged = consolidate_terrain(
 
 !!! note "configure_wine expects a directory"
     When using the Python API directly, `RasProcess.configure_wine()` takes `ras_install_dir=` (the directory containing `RasProcess.exe`), not the full path to the executable. The CLI `--rasprocess` flag accepts either and extracts the parent directory automatically.
+
+## Prefix and Project Isolation
+
+Keep one active RASMapper helper per Wine prefix. A controlled same-prefix
+parallel test stalled, while separate prefixes completed concurrently with
+exact golden raster hashes. `ras2cng` therefore uses `--map-workers 1` under
+Wine. Scale with scheduler arrays that each receive:
+
+- one copied writable prefix;
+- one node-local writable project copy;
+- one output directory;
+- no shared active HDF files.
+
+## Qualification Before Production
+
+Do not qualify a runner from process exit codes alone. Compare a representative
+fixture to the same HEC-RAS version on Windows and record raster CRS,
+transform, dimensions, nodata, overlap, values, and pixel hashes. For geometry
+work, also record exact cell/face counts, boundary assignments, property-table
+completeness, and geometry/terrain fingerprints. Critical integration tests may
+not be skipped.
+
+See ras-commander notebook
+`examples/511_headless_linux_wine_ras2cng.ipynb` for the complete operational
+workflow.
 
 ## Timeout Considerations
 
@@ -277,6 +364,9 @@ ras2cng map /path/to/project /output --timeout 1800
 | "HDF.PInvoke.H5F threw an exception" | Copy `bin32/`, `bin64/`, and `x64/` directories from HEC-RAS install |
 | Wine crashes with mmap error in LXC | Set `vm.mmap_min_addr=0` on the container host |
 | .NET install fails | Ensure both `wine-stable-i386` and `wine-stable-amd64` packages are installed |
-| StoreAllMaps times out | Increase `--timeout` (default: 10800s). Verify the plan HDF has valid results |
+| CLR `0x80131506`, `0xc0000005`, or nondeterministic hang | Run the CPU-topology preflight; repair the visible CPU namespace or use the safe single-CPU fallback |
+| One of two helpers stalls | They share a writable prefix; use one prefix and project copy per task |
+| Map command exits but raster differs | Use RasStoreMapHelper, not `RasProcess.exe StoreAllMaps`; match HEC-RAS version and render mode |
+| Mapping times out | Keep `--map-workers 1`, verify the plan HDF, then increase `--timeout` |
 | CRS mismatch in terrain merge | ras2cng auto-reprojects mismatched TIFs. Install `pyproj` for best CRS comparison |
 | HEC-RAS version warnings | Non-fatal warnings from ras-commander version detection. The pipeline works if `--rasprocess` points to a valid RasProcess.exe |
