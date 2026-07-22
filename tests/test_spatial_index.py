@@ -6,6 +6,7 @@ import pyarrow.parquet as pq
 import pytest
 from shapely.geometry import Point
 
+import ras2cng.spatial_index as spatial_index
 from ras2cng.catalog import (
     Manifest,
     ManifestGeomEntry,
@@ -14,6 +15,47 @@ from ras2cng.catalog import (
     ManifestResultVariable,
 )
 from ras2cng.spatial_index import HILBERT_COLUMN, JOIN_INDEX_COLUMN, postprocess_archive
+
+
+def test_postprocess_archive_records_portable_error_paths(tmp_path: Path, monkeypatch):
+    archive = tmp_path / "archive"
+    result_path = archive / "results" / "p01" / "value.parquet"
+    result_path.parent.mkdir(parents=True)
+    pd.DataFrame({"cell_id": [1], "value": [2.0]}).to_parquet(result_path, index=False)
+
+    manifest = Manifest.create("M", tmp_path / "M.prj", tmp_path, archive)
+    plan = ManifestPlanEntry(
+        plan_id="p01",
+        plan_title="Plan 01",
+        geom_id="g01",
+        flow_id=None,
+        hdf_exists=True,
+        completed=True,
+        layout="variable",
+        geometry_mode="none",
+    )
+    plan.add_variable(
+        ManifestResultVariable(
+            variable="value",
+            filter_value="value",
+            rows=1,
+            parquet="results/p01/value.parquet",
+            geometry_mode="none",
+            index_column="cell_id",
+        )
+    )
+    manifest.add_plan_entry(plan)
+    manifest.write(archive / "manifest.json")
+
+    def fail_index(*args, **kwargs):
+        raise RuntimeError("expected test failure")
+
+    monkeypatch.setattr(spatial_index, "postprocess_result_table", fail_index)
+    summary = postprocess_archive(archive)
+
+    assert summary["error_count"] == 1
+    assert summary["errors"][0]["path"] == "results/p01/value.parquet"
+    assert not Path(summary["errors"][0]["path"]).is_absolute()
 
 
 def test_postprocess_archive_indexes_geometryless_result_tables(tmp_path: Path):
