@@ -170,7 +170,8 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
         "map-layers",
     ]
     assert manifest["resources"]["geometry"]["type"] == "vector-pmtiles"
-    assert manifest["resources"]["results"]["type"] == "vector-pmtiles"
+    assert manifest["resources"]["ras-results-p01-maximum-depth"]["type"] == "vector-pmtiles"
+    assert "results" not in manifest["resources"]
     assert manifest["layers"]["ras-results-p01-maximum-depth"]["sourceKind"] == "raw-hdf"
     assert manifest["associations"][0]["type"] == "plan-geometry"
     geometry_tiles = [tileset for tileset in manifest["tilesets"] if tileset["id"].startswith("geometry")]
@@ -184,15 +185,21 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     assert manifest["groups"][1]["resultKind"] == "raw_hdf"
     detail_tiles = next(tileset for tileset in geometry_tiles if tileset["id"] == "geometry-detail")
     assert detail_tiles["minzoom"] == 13
-    result_tiles = next(tileset for tileset in manifest["tilesets"] if tileset["id"] == "results")
+    result_tiles = next(
+        tileset
+        for tileset in manifest["tilesets"]
+        if tileset["id"] == "ras-results-p01-maximum-depth"
+    )
     assert result_tiles["resultKind"] == "raw_hdf"
     result_layer = result_tiles["layers"][0]
     assert result_layer["rawResult"]["source"] == "Raw HEC-RAS HDF summary result values"
     assert summary.geometry_layer_count == 3
     assert summary.result_layer_count == 1
     assert len(calls) == 3
+    assert len(calls[-1][1]) == 1
     assert all(call[2].is_relative_to(tmp_path / "scratch") for call in calls)
     assert summary.result_pmtiles and summary.result_pmtiles.is_file()
+    assert not summary.result_pmtiles.with_name("results.pmtiles").exists()
 
 
 def test_package_reads_plan_layout_raw_results(monkeypatch, tmp_path: Path):
@@ -1263,13 +1270,21 @@ def test_package_splits_steady_cross_section_results_by_profile(monkeypatch, tmp
     )
 
     viewer_manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
-    result_tiles = next(tileset for tileset in viewer_manifest["tilesets"] if tileset["id"] == "results")
+    result_tiles = [
+        tileset
+        for tileset in viewer_manifest["tilesets"]
+        if tileset["id"].startswith("ras-results-")
+    ]
     assert summary.result_layer_count == 2
-    assert [layer["rawResult"]["profile"] for layer in result_tiles["layers"]] == [
+    assert all(len(tileset["layers"]) == 1 for tileset in result_tiles)
+    assert [tileset["layers"][0]["rawResult"]["profile"] for tileset in result_tiles] == [
         "10-percent AEP",
         "1-percent AEP",
     ]
-    assert all(layer["rawResult"]["joinColumns"]["RS"] == "node_id" for layer in result_tiles["layers"])
+    assert all(
+        tileset["layers"][0]["rawResult"]["joinColumns"]["RS"] == "node_id"
+        for tileset in result_tiles
+    )
     result_sources = [source for name, source in sources.items() if "steady-cross-sections" in name]
     assert len(result_sources) == 2
     assert all(len([json.loads(line) for line in source.splitlines()]) == 2 for source in result_sources)

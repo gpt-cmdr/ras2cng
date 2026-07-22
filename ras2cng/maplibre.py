@@ -1982,8 +1982,9 @@ def package_maplibre_viewer(
                 work_dir / "tippecanoe-detail",
             )
 
-        result_sources: list[tuple[str, Path]] = []
         result_layers: list[dict[str, Any]] = []
+        result_pmtiles: Path | None = None
+        result_tilesets: list[dict[str, Any]] = []
         if include_vector_results:
             for plan in archive.get("results", []):
                 plan_id = str(plan.get("plan_id", "plan")).lower()
@@ -2039,7 +2040,6 @@ def package_maplibre_viewer(
                         source_layer = f"{result_group_id}-{_slug(variable_name)}{profile_suffix}"
                         source_path = work_dir / "results" / f"{source_layer}.ndgeojson"
                         count, geometry_types, bounds = _write_ndgeojson(joined, source_path)
-                        result_sources.append((source_layer, source_path))
                         all_bounds.append(bounds)
                         layer_name = _display_name(variable_name)
                         if profile is not None:
@@ -2062,21 +2062,41 @@ def package_maplibre_viewer(
                             }
                         if profile is not None:
                             raw_result["profile"] = profile
-                        plan_layers.append(
+                        viewer_layer = {
+                            "id": source_layer,
+                            "name": layer_name,
+                            "sourceLayer": source_layer,
+                            "groupId": result_group_id,
+                            "visible": False,
+                            "kind": f"{plan_id}_{variable_name}{profile_suffix}",
+                            "style": _result_style(variable_name),
+                            "featureCount": count,
+                            "geometryTypes": geometry_types,
+                            "bounds": bounds,
+                            "sort": 100 + profile_index,
+                            "queryable": True,
+                            "rawResult": raw_result,
+                        }
+                        plan_layers.append(viewer_layer)
+                        layer_pmtiles = tiles_dir / f"{source_layer}.pmtiles"
+                        _run_tippecanoe(
+                            layer_pmtiles,
+                            [(source_layer, source_path)],
+                            min_zoom,
+                            max_zoom,
+                            work_dir / f"tippecanoe-{source_layer}",
+                        )
+                        source_path.unlink()
+                        if result_pmtiles is None:
+                            result_pmtiles = layer_pmtiles
+                        result_tilesets.append(
                             {
                                 "id": source_layer,
-                                "name": layer_name,
-                                "sourceLayer": source_layer,
-                                "groupId": result_group_id,
-                                "visible": False,
-                                "kind": f"{plan_id}_{variable_name}{profile_suffix}",
-                                "style": _result_style(variable_name),
-                                "featureCount": count,
-                                "geometryTypes": geometry_types,
-                                "bounds": bounds,
-                                "sort": 100 + profile_index,
-                                "queryable": True,
-                                "rawResult": raw_result,
+                                "type": "vector",
+                                "href": f"tiles/{layer_pmtiles.name}",
+                                "bytes": layer_pmtiles.stat().st_size,
+                                "layers": [viewer_layer],
+                                "resultKind": "raw_hdf",
                             }
                         )
                 if plan_layers:
@@ -2089,17 +2109,6 @@ def package_maplibre_viewer(
                         }
                     )
                     result_layers.extend(plan_layers)
-
-        result_pmtiles: Path | None = None
-        if result_sources:
-            result_pmtiles = tiles_dir / "results.pmtiles"
-            _run_tippecanoe(
-                result_pmtiles,
-                result_sources,
-                min_zoom,
-                max_zoom,
-                work_dir / "tippecanoe-results",
-            )
 
     final_bounds = _merge_bounds(all_bounds)
     center = [
@@ -2159,17 +2168,7 @@ def package_maplibre_viewer(
         ),
         show_all_primary_geometry=show_all_primary_geometry,
     )
-    if result_pmtiles:
-        manifest["tilesets"].append(
-            {
-                "id": "results",
-                "type": "vector",
-                "href": "tiles/results.pmtiles",
-                "bytes": result_pmtiles.stat().st_size,
-                "layers": result_layers,
-                "resultKind": "raw_hdf",
-            }
-        )
+    manifest["tilesets"].extend(result_tilesets)
     apply_manifest_v2(manifest, archive=archive)
 
     (output_dir / "model_extent.geojson").write_text(
