@@ -92,6 +92,20 @@ def _legacy_manifest() -> dict:
                             "plan": "p01",
                             "variable": "maximum_depth",
                             "geometryJoin": "mesh_cells",
+                            "queryFields": [
+                                {
+                                    "field": "maximum_depth",
+                                    "name": "Maximum Depth",
+                                    "units": "ft",
+                                }
+                            ],
+                            "renderer": {
+                                "type": "graduated",
+                                "valueField": "maximum_depth",
+                                "units": "ft",
+                                "domain": [0.0, 12.0],
+                                "colors": ["#eff6ff", "#2563eb"],
+                            },
                         },
                     }
                 ],
@@ -201,7 +215,18 @@ def test_apply_manifest_v2_builds_semantic_contract_and_keeps_legacy_fields() ->
         "proj4": "+proj=utm +zone=16 +datum=NAD83 +units=m +no_defs",
         "statistics": {"minimum": 0.0, "maximum": 18.5},
     }
-    assert manifest["layers"]["ras-results-p01-maximum-depth"]["sourceKind"] == "raw-hdf"
+    raw_layer = manifest["layers"]["ras-results-p01-maximum-depth"]
+    assert raw_layer["sourceKind"] == "raw-hdf"
+    assert raw_layer["renderer"]["valueField"] == "maximum_depth"
+    assert raw_layer["query"]["valueField"] == "maximum_depth"
+    assert raw_layer["query"]["units"] == "ft"
+    assert raw_layer["query"]["fields"] == [
+        {
+            "field": "maximum_depth",
+            "name": "Maximum Depth",
+            "units": "ft",
+        }
+    ]
     assert manifest["layers"]["result-p01-depth-max"]["sourceKind"] == "stored-map"
     assert manifest["layers"]["terrain"]["sourceKind"] == "terrain"
     assert manifest["layers"]["result-p01-depth-max"]["query"]["numericResource"] == (

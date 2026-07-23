@@ -54,6 +54,7 @@ def test_raw_sa2d_results_join_prefixed_hdf_names_to_geometry_connections(
         "Highway 150 Lowe",
     ]
     assert joined["maximum_total_flow"].tolist() == [100.0, 200.0, 300.0]
+    assert joined.attrs["raw_result_value_fields"] == ["maximum_total_flow"]
 
 
 def test_raster_source_metadata_includes_browser_projection_definition(tmp_path: Path) -> None:
@@ -193,6 +194,35 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     assert result_tiles["resultKind"] == "raw_hdf"
     result_layer = result_tiles["layers"][0]
     assert result_layer["rawResult"]["source"] == "Raw HEC-RAS HDF summary result values"
+    renderer = manifest["layers"]["ras-results-p01-maximum-depth"]["renderer"]
+    assert renderer["type"] == "graduated"
+    assert renderer["valueField"] == "maximum_depth"
+    assert renderer["units"] == "ft"
+    assert renderer["geometryMode"] == "cell-fill"
+    assert renderer["statistics"] == {
+        "count": 1,
+        "minimum": 4.25,
+        "maximum": 4.25,
+        "mean": 4.25,
+        "p02": 4.25,
+        "p50": 4.25,
+        "p98": 4.25,
+    }
+    assert renderer["domain"] == [4.25, 5.25]
+    assert manifest["layers"]["ras-results-p01-maximum-depth"]["query"] == {
+        "enabled": True,
+        "sourceKind": "raw-hdf",
+        "valueSemantics": "raw-computation-element",
+        "fields": [
+            {
+                "field": "maximum_depth",
+                "name": "Maximum Depth",
+                "units": "ft",
+            }
+        ],
+        "valueField": "maximum_depth",
+        "units": "ft",
+    }
     assert summary.geometry_layer_count == 3
     assert summary.result_layer_count == 1
     assert len(calls) == 3
@@ -249,6 +279,8 @@ def test_package_reads_plan_layout_raw_results(monkeypatch, tmp_path: Path):
     assert summary.result_layer_count == 1
     assert len(emitted_results) == 1
     assert emitted_results[0]["properties"]["value"] == 4.25
+    assert layer["renderer"]["valueField"] == "value"
+    assert layer["renderer"]["statistics"]["maximum"] == 4.25
     assert layer["provenance"]["archiveFilter"] == {
         "column": "layer",
         "value": "maximum_depth",

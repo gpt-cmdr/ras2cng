@@ -10,6 +10,7 @@ COGs are a separate, explicit publication step.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import json
 import os
 from pathlib import Path
@@ -121,6 +122,16 @@ _RESULT_STYLES = {
     "depth": {"fill": "#2563eb", "fillOpacity": 0.42, "line": "#1d4ed8", "lineWidth": 0.35},
     "water_surface": {"fill": "#0f766e", "fillOpacity": 0.40, "line": "#0f766e", "lineWidth": 0.35},
     "velocity": {"fill": "#ea580c", "fillOpacity": 0.42, "line": "#c2410c", "lineWidth": 0.35},
+}
+
+_RESULT_RAMP_COLORS = {
+    "depth": ["#eff6ff", "#93c5fd", "#2563eb", "#1e3a8a"],
+    "water-surface": ["#ecfeff", "#5eead4", "#0f766e", "#134e4a"],
+    "velocity": ["#fff7ed", "#fdba74", "#ea580c", "#7c2d12"],
+    "flow": ["#1d4ed8", "#dbeafe", "#f8fafc", "#ffedd5", "#c2410c"],
+    "error": ["#1d4ed8", "#dbeafe", "#f8fafc", "#fee2e2", "#b91c1c"],
+    "iteration": ["#f8fafc", "#cbd5e1", "#64748b", "#0f172a"],
+    "default": ["#f0fdfa", "#5eead4", "#0f766e", "#134e4a"],
 }
 
 
@@ -1549,6 +1560,155 @@ def _result_style(variable: str) -> dict[str, float | str]:
     return {"fill": "#64748b", "fillOpacity": 0.42, "line": "#475569", "lineWidth": 0.35}
 
 
+def _result_units(field: str, project_units: str | None) -> str:
+    lowered = field.lower()
+    unit_text = str(project_units or "").lower()
+    metric = any(token in unit_text for token in ("meter", "metric", "si unit"))
+    if "iteration" in lowered or "count" in lowered:
+        return "count"
+    if "time_index" in lowered or lowered.endswith("_index"):
+        return "index"
+    if "froude" in lowered or "fraction" in lowered or "percent" in lowered:
+        return "unitless"
+    if "velocity" in lowered:
+        return "m/s" if metric else "ft/s"
+    if "flow" in lowered or "discharge" in lowered:
+        return "m3/s" if metric else "cfs"
+    if any(
+        token in lowered
+        for token in (
+            "depth",
+            "elevation",
+            "stage",
+            "water_surface",
+            "headwater",
+            "tailwater",
+            "invert",
+            "error",
+        )
+    ):
+        return "m" if metric else "ft"
+    if "time" in lowered or "duration" in lowered or "arrival" in lowered:
+        return "hr"
+    return ""
+
+
+def _result_ramp(field: str) -> tuple[str, list[str]]:
+    lowered = field.lower()
+    if "error" in lowered:
+        key = "error"
+    elif "iteration" in lowered:
+        key = "iteration"
+    elif "depth" in lowered:
+        key = "depth"
+    elif "water_surface" in lowered or "stage" in lowered:
+        key = "water-surface"
+    elif "velocity" in lowered:
+        key = "velocity"
+    elif "flow" in lowered or "discharge" in lowered:
+        key = "flow"
+    else:
+        key = "default"
+    return f"rasmapper.raw-{key}", list(_RESULT_RAMP_COLORS[key])
+
+
+def _numeric_statistics(values: pd.Series) -> dict[str, float | int] | None:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    numeric = numeric[numeric.map(math.isfinite)]
+    if numeric.empty:
+        return None
+    quantiles = numeric.quantile([0.02, 0.5, 0.98])
+    return {
+        "count": int(numeric.size),
+        "minimum": float(numeric.min()),
+        "maximum": float(numeric.max()),
+        "mean": float(numeric.mean()),
+        "p02": float(quantiles.loc[0.02]),
+        "p50": float(quantiles.loc[0.5]),
+        "p98": float(quantiles.loc[0.98]),
+    }
+
+
+def _raw_result_renderer(
+    frame: gpd.GeoDataFrame,
+    variable: str,
+    geometry_kind: str,
+    project_units: str | None,
+) -> dict[str, Any] | None:
+    fields: list[dict[str, Any]] = []
+    for field in frame.attrs.get("raw_result_value_fields", []):
+        statistics = _numeric_statistics(frame[field])
+        if statistics is None:
+            continue
+        ramp, colors = _result_ramp(field)
+        fields.append(
+            {
+                "field": field,
+                "name": _display_name(field),
+                "units": _result_units(field, project_units),
+                "statistics": statistics,
+                "ramp": ramp,
+                "colors": colors,
+            }
+        )
+    if not fields:
+        return None
+
+    preferred = next(
+        (
+            field
+            for field in fields
+            if field["field"] == variable
+            or field["field"] == "value"
+            or variable in field["field"]
+        ),
+        fields[0],
+    )
+    statistics = preferred["statistics"]
+    lower = float(statistics["p02"])
+    upper = float(statistics["p98"])
+    if math.isclose(lower, upper):
+        lower = float(statistics["minimum"])
+        upper = float(statistics["maximum"])
+    if math.isclose(lower, upper):
+        upper = lower + 1.0
+
+    mode = {
+        "mesh_cells": "cell-fill",
+        "mesh_faces": "face-line",
+        "cross_sections": "element-line",
+        "structures": "element-line",
+        "pipe_conduits": "element-line",
+        "pipe_nodes": "element-point",
+        "pump_stations": "element-point",
+        "storage_areas": "area-fill",
+    }.get(geometry_kind, "feature")
+    return {
+        "type": "graduated",
+        "valueField": preferred["field"],
+        "availableFields": fields,
+        "units": preferred["units"],
+        "statistics": statistics,
+        "domain": [lower, upper],
+        "domainPolicy": "dataset",
+        "ramp": preferred["ramp"],
+        "colors": preferred["colors"],
+        "nullColor": "transparent",
+        "geometryMode": mode,
+    }
+
+
+def build_raw_result_renderer(
+    frame: pd.DataFrame,
+    variable: str,
+    geometry_kind: str,
+    project_units: str | None = None,
+) -> dict[str, Any] | None:
+    """Build the browser renderer contract for an existing raw-result table."""
+
+    return _raw_result_renderer(frame, variable, geometry_kind, project_units)
+
+
 def _normalize_text_join_key(value: Any) -> str:
     if pd.isna(value):
         return ""
@@ -1609,6 +1769,19 @@ def _join_raw_result(
                 raise ValueError(f"Cannot filter raw results from {result_path}: '{column}' is absent.")
             result = result.loc[result[column] == value]
     attributes = result.drop(columns=["geometry"], errors="ignore")
+    excluded_value_fields = (
+        set(_INTERNAL_COLUMNS)
+        | {index_column}
+        | set((join_columns or {}).values())
+        | set((filters or {}).keys())
+    )
+    value_fields = [
+        column
+        for column in attributes.columns
+        if column not in excluded_value_fields
+        and pd.api.types.is_numeric_dtype(attributes[column])
+        and not pd.api.types.is_bool_dtype(attributes[column])
+    ]
     if index_column:
         if index_column not in attributes.columns or index_column not in geometry.columns:
             raise ValueError(
@@ -1660,7 +1833,9 @@ def _join_raw_result(
         joined = joined.drop(columns=result_columns, errors="ignore")
     else:
         raise ValueError(f"Cannot join raw results from {result_path}: no join key was declared.")
-    return gpd.GeoDataFrame(joined, geometry="geometry", crs=geometry.crs)
+    delivery = gpd.GeoDataFrame(joined, geometry="geometry", crs=geometry.crs)
+    delivery.attrs["raw_result_value_fields"] = value_fields
+    return delivery
 
 
 def _project_metadata(archive_dir: Path) -> dict[str, Any]:
@@ -1718,6 +1893,11 @@ def package_maplibre_viewer(
 
     metadata = _project_metadata(archive_dir)
     project_crs = crs or metadata.get("crs") or archive.get("project", {}).get("crs")
+    project_units = (
+        archive.get("project", {}).get("units")
+        or metadata.get("units")
+        or metadata.get("horizontal_units")
+    )
     _require_cli(_tippecanoe_command())
     _require_cli(_pmtiles_command())
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2051,6 +2231,22 @@ def package_maplibre_viewer(
                             "geometryJoin": geometry_kind,
                             "archiveParquet": variable_path,
                         }
+                        renderer = build_raw_result_renderer(
+                            joined,
+                            str(variable_name),
+                            str(geometry_kind),
+                            project_units,
+                        )
+                        if renderer:
+                            raw_result["renderer"] = renderer
+                            raw_result["queryFields"] = [
+                                {
+                                    "field": field["field"],
+                                    "name": field["name"],
+                                    "units": field["units"],
+                                }
+                                for field in renderer["availableFields"]
+                            ]
                         if index_column:
                             raw_result["indexColumn"] = index_column
                         if join_columns:
