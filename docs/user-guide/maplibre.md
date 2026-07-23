@@ -32,6 +32,19 @@ Use `ras2cng.apply_manifest_v2()` to upgrade an in-memory v1 manifest and
 `ras2cng.validate_manifest_v2()` to reject missing resources, invalid tree references,
 or invalid active/pinned layer state.
 
+Existing releases that already contain raw-result GeoParquet can receive the current
+renderer contract without rebuilding PMTiles:
+
+```bash
+python -m ras2cng.release \
+  --release-root /releases/hec-ras-7.0 \
+  --output-root /publication-delta/hec-ras-7.0 \
+  --project-units English
+```
+
+The command writes only changed manifests into the output release structure. It reads the
+archived values declared by each layer's provenance and does not recompute HEC-RAS results.
+
 ## Required Inputs
 
 The archive must have a valid CRS. Supply an original geometry HDF for every geometry
@@ -87,7 +100,11 @@ remains a hard error.
   cell layer into the initial overview request.
 - `--vector-results` creates a separate source, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
-  record identifies its raw HDF source and geometry join key.
+  record identifies its raw HDF source and geometry join key. It also carries a `graduated`
+  renderer with the active value field, units, available numeric fields, transparent null
+  color, variable-specific color ramp, and robust 2nd-98th percentile display range.
+  Browser clients can use filled mesh cells, thickened face/cross-section/structure lines,
+  or enlarged element points while Identify continues to report raw source-element values.
 - Steady 1D cross-section results are split into one layer per HDF profile. Each layer joins
   to its source cross section on `River`, `Reach`, and `RS`, so a profile selection does not
   create duplicate coincident features. The records remain raw HDF element values, not an

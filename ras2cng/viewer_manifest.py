@@ -525,6 +525,12 @@ def _vector_layer_record(
             "plan": plan_id,
             "variable": legacy_layer.get("kind"),
         }
+    renderer = deepcopy(raw_result.get("renderer") or legacy_layer.get("renderer") or {})
+    query_fields = deepcopy(
+        raw_result.get("queryFields")
+        or legacy_layer.get("queryFields")
+        or []
+    )
     role = str(legacy_layer.get("kind") or "vector-layer")
     query = {
         "enabled": legacy_layer.get("queryable") is not False,
@@ -537,8 +543,12 @@ def _vector_layer_record(
             if source_kind == "calculated" and role == "inundation_boundary"
             else "feature-attributes"
         ),
-        "fields": list(legacy_layer.get("queryFields") or []),
+        "fields": query_fields,
     }
+    if renderer.get("valueField"):
+        query["valueField"] = renderer["valueField"]
+    if renderer.get("units"):
+        query["units"] = renderer["units"]
     layer_name = legacy_layer.get("name") or legacy_layer.get("id")
     if role == "storage_areas":
         layer_name = "Storage Areas (1D)"
@@ -581,6 +591,8 @@ def _vector_layer_record(
         record["provenance"] = {"source": legacy_layer["extentSource"]}
     elif legacy_provenance:
         record["provenance"] = legacy_provenance
+    if renderer:
+        record["renderer"] = renderer
     return record
 
 
