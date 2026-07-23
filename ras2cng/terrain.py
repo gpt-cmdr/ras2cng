@@ -625,10 +625,16 @@ def extract_terrain_modification_layers(
                     )
 
     return {
-        "terrain_modification_lines": gpd.GeoDataFrame(lines, geometry="geometry", crs=source_crs),
-        "terrain_modification_polygons": gpd.GeoDataFrame(polygons, geometry="geometry", crs=source_crs),
+        "terrain_modification_lines": gpd.GeoDataFrame(
+            lines if lines else {"geometry": []}, geometry="geometry", crs=source_crs
+        ),
+        "terrain_modification_polygons": gpd.GeoDataFrame(
+            polygons if polygons else {"geometry": []}, geometry="geometry", crs=source_crs
+        ),
         "terrain_modification_control_points": gpd.GeoDataFrame(
-            control_points, geometry="geometry", crs=source_crs
+            control_points if control_points else {"geometry": []},
+            geometry="geometry",
+            crs=source_crs,
         ),
     }
 
