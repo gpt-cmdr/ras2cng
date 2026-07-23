@@ -510,12 +510,22 @@ def maplibre_terrain_command(
     cog_path: Path = typer.Argument(..., help="Archived HEC-RAS terrain Cloud Optimized GeoTIFF"),
     viewer_dir: Path = typer.Argument(..., help="Existing MapLibre viewer directory containing manifest.json"),
     name: str = typer.Option("Terrain", "--name", help="Terrain layer display name"),
+    layer_id: Optional[str] = typer.Option(
+        None,
+        "--layer-id",
+        help="Stable manifest layer identifier; permits multiple terrain variants",
+    ),
     source_cog: Optional[str] = typer.Option(
         None,
         "--source-cog",
         help="Source COG href relative to the viewer manifest (for exact identify values)",
     ),
     units: str = typer.Option("ft", "--units", help="Elevation units shown in identify results"),
+    visible: bool = typer.Option(
+        True,
+        "--visible/--hidden",
+        help="Initial layer visibility",
+    ),
     max_zoom: Optional[int] = typer.Option(
         None,
         "--max-zoom",
@@ -537,8 +547,10 @@ def maplibre_terrain_command(
             cog_path,
             viewer_dir,
             name=name,
+            layer_id=layer_id,
             source_cog=source_cog,
             units=units,
+            visible=visible,
             max_zoom=max_zoom,
             scratch_dir=scratch_dir,
             overwrite=overwrite,

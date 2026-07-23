@@ -499,15 +499,12 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
         "bands": [{"minimum": 466.0, "maximum": 2542.0, "mean": 1436.0, "stdDev": 200.0}],
     }
     projected_info = {"geoTransform": [0.0, 1.5, 0.0, 0.0, 0.0, -1.5]}
-    gdalinfo_calls = 0
     commands: list[list[str]] = []
 
     def fake_run(command, **_kwargs):
-        nonlocal gdalinfo_calls
         commands.append(command)
         if command[0] == "gdalinfo":
-            gdalinfo_calls += 1
-            info = source_info if gdalinfo_calls == 1 else projected_info
+            info = source_info if "-stats" in command else projected_info
             return type("Completed", (), {"stdout": json.dumps(info)})()
         if command[0] == "gdaldem":
             Path(command[-2]).write_bytes(b"raster")
@@ -571,6 +568,31 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
     assert "-dstalpha" in warp
     translate = next(command for command in commands if command[0] == "gdal_translate")
     assert "ZOOM_LEVEL_STRATEGY=LOWER" in translate
+
+    alternate_cog = archive_dir / "terrain-alternate.cog.tif"
+    alternate_cog.write_bytes(b"alternate-cog")
+    maplibre.package_maplibre_terrain(
+        alternate_cog,
+        viewer_dir,
+        name="Terrain Without Detention",
+        layer_id="terrain-without-detention",
+        visible=False,
+        scratch_dir=tmp_path / "scratch-alternate",
+    )
+
+    manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
+    terrain_ids = {
+        item["id"] for item in manifest["tilesets"] if item.get("sourceKind") == "terrain"
+    }
+    assert terrain_ids == {"terrain", "terrain-without-detention"}
+    assert manifest["layers"]["terrain"]["visible"] is True
+    assert manifest["layers"]["terrain-without-detention"]["visible"] is False
+    assert manifest["resources"]["terrain-without-detention-display"]["href"] == (
+        "tiles/terrain-without-detention.pmtiles"
+    )
+    assert manifest["resources"]["terrain-without-detention-numeric"]["href"] == (
+        "../archive/terrain/terrain-alternate.cog.tif"
+    )
 
 
 def test_terrain_color_ramp_makes_nodata_transparent(tmp_path: Path) -> None:

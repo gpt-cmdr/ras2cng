@@ -575,6 +575,29 @@ def test_terrain_modifications_export_lines_polygons_and_controls(tmp_path):
     assert all(path.is_file() for path in outputs.values())
 
 
+def test_terrain_modifications_return_geometry_aware_empty_layers(tmp_path):
+    import h5py
+    import numpy as np
+
+    terrain_hdf = tmp_path / "Terrain.hdf"
+    with h5py.File(terrain_hdf, "w") as hdf:
+        line = hdf.create_group("Modifications/Channel Cut")
+        line.attrs["Type"] = np.bytes_("Channel")
+        line.attrs["Subtype"] = np.bytes_("GroundLine")
+        line.create_dataset("Polyline Points", data=np.array([[0.0, 0.0], [10.0, 5.0]]))
+
+    layers = extract_terrain_modification_layers(terrain_hdf, crs="EPSG:2271")
+
+    assert len(layers["terrain_modification_lines"]) == 1
+    for name in (
+        "terrain_modification_polygons",
+        "terrain_modification_control_points",
+    ):
+        assert layers[name].empty
+        assert layers[name].geometry.name == "geometry"
+        assert layers[name].crs.to_epsg() == 2271
+
+
 def test_terrain_source_footprints_preserve_priority_and_native_metadata(tmp_path):
     import numpy as np
     import rasterio
