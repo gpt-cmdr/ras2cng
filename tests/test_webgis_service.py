@@ -19,6 +19,7 @@ from ras2cng.webgis_service import (
     build_raster_asset_catalog,
     compute_view_statistics,
     create_raster_app,
+    parse_byte_range,
     render_styled_tile,
     sample_raster_at_point,
     STYLE_PRESETS,
@@ -186,6 +187,11 @@ def test_catalog_builder_attaches_service_asset_to_manifest(tmp_path: Path):
     assert resource["serviceRevision"]
     assert manifest["services"]["numericRaster"]["baseUrl"].endswith("/ras-raster")
     assert manifest["services"]["numericRaster"]["samplePath"] == "/sample"
+    assert manifest["services"]["numericRaster"]["cogPath"] == "/cog"
+    assert (
+        manifest["services"]["numericRaster"]["cogRangeTransport"] == "header-or-query"
+    )
+    assert manifest["services"]["numericRaster"]["cogRangeParameter"] == "range"
     tileset = manifest["tilesets"][0]
     assert tileset["serviceAsset"] == resource["serviceAsset"]
 
@@ -209,7 +215,9 @@ def test_view_statistics_are_pixel_bounded_and_robust(tmp_path: Path):
     assert result["statistics"]["minimum"] <= result["domain"]["minimum"]
     assert result["domain"]["maximum"] <= result["statistics"]["maximum"]
     assert result["statistics"]["validPixels"] > 0
-    assert bounded_view_dimensions(4000, 3000, max_pixels=1_000_000, max_dimension=4096) == (1154, 866)
+    assert bounded_view_dimensions(
+        4000, 3000, max_pixels=1_000_000, max_dimension=4096
+    ) == (1154, 866)
 
 
 def test_point_sample_reads_zstd_cog_and_reports_nodata(tmp_path: Path):
@@ -224,6 +232,34 @@ def test_point_sample_reads_zstd_cog_and_reports_nodata(tmp_path: Path):
     assert value["units"] == "ft"
     assert nodata["state"] == "nodata"
     assert outside["state"] == "outside"
+
+
+@pytest.mark.parametrize(
+    ("value", "size", "expected"),
+    [
+        ("bytes=0-0", 100, (0, 0)),
+        ("bytes=10-19", 100, (10, 19)),
+        ("bytes=90-", 100, (90, 99)),
+        ("bytes=-10", 100, (90, 99)),
+        ("bytes=-200", 100, (0, 99)),
+    ],
+)
+def test_parse_byte_range(value: str, size: int, expected: tuple[int, int]):
+    assert parse_byte_range(value, size, max_bytes=256) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, "", "items=0-1", "bytes=0-1,4-5", "bytes=100-101", "bytes=10-9"],
+)
+def test_parse_byte_range_rejects_invalid_or_multiple_ranges(value: str | None):
+    with pytest.raises(ValueError):
+        parse_byte_range(value, 100, max_bytes=256)
+
+
+def test_parse_byte_range_enforces_response_size_limit():
+    with pytest.raises(ValueError, match="service limit"):
+        parse_byte_range("bytes=0-16", 100, max_bytes=16)
 
 
 def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
@@ -265,7 +301,10 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
     app = create_raster_app(
         catalog_path,
         root,
-        settings=RasterServiceSettings(allowed_origins=("https://rascommander.info",)),
+        settings=RasterServiceSettings(
+            allowed_origins=("https://rascommander.info",),
+            max_cog_range_bytes=16,
+        ),
     )
     client = TestClient(app)
 
@@ -301,6 +340,102 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
     assert sample.json()["units"] == "ft"
     assert sample.headers["cache-control"].endswith("immutable")
 
+    cog_head = client.head(
+        "/ras-raster/cog",
+        params={"asset": asset.asset_id, "revision": asset.revision},
+    )
+    assert cog_head.status_code == 200
+    assert int(cog_head.headers["content-length"]) == cog.stat().st_size
+    assert cog_head.headers["accept-ranges"] == "bytes"
+    assert cog_head.content == b""
+
+    cog_range = client.get(
+        "/ras-raster/cog",
+        params={"asset": asset.asset_id, "revision": asset.revision},
+        headers={"Range": "bytes=8-15"},
+    )
+    assert cog_range.status_code == 206
+    assert cog_range.content == cog.read_bytes()[8:16]
+    assert cog_range.headers["content-range"] == f"bytes 8-15/{cog.stat().st_size}"
+    assert cog_range.headers["content-length"] == "8"
+    assert cog_range.headers["accept-ranges"] == "bytes"
+    assert cog_range.headers["cache-control"].endswith("immutable, no-transform")
+
+    query_range = client.get(
+        "/ras-raster/cog",
+        params={
+            "asset": asset.asset_id,
+            "revision": asset.revision,
+            "range": "bytes=16-23",
+        },
+    )
+    assert query_range.status_code == 206
+    assert query_range.content == cog.read_bytes()[16:24]
+    assert query_range.headers["content-range"] == (f"bytes 16-23/{cog.stat().st_size}")
+
+    suffix_query_range = client.get(
+        "/ras-raster/cog",
+        params={
+            "asset": asset.asset_id,
+            "revision": asset.revision,
+            "range": "bytes=-9",
+        },
+    )
+    assert suffix_query_range.status_code == 206
+    assert suffix_query_range.content == cog.read_bytes()[-9:]
+
+    open_ended_query_range = client.get(
+        "/ras-raster/cog",
+        params={
+            "asset": asset.asset_id,
+            "revision": asset.revision,
+            "range": "bytes=0-",
+        },
+    )
+    assert open_ended_query_range.status_code == 416
+    assert "service limit" in open_ended_query_range.json()["detail"]
+    assert open_ended_query_range.headers["cache-control"] == "no-store"
+
+    conflicting_range = client.get(
+        "/ras-raster/cog",
+        params={
+            "asset": asset.asset_id,
+            "revision": asset.revision,
+            "range": "bytes=16-23",
+        },
+        headers={"Range": "bytes=8-15"},
+    )
+    assert conflicting_range.status_code == 416
+
+    missing_range = client.get(
+        "/ras-raster/cog",
+        params={"asset": asset.asset_id, "revision": asset.revision},
+    )
+    assert missing_range.status_code == 416
+    assert missing_range.headers["content-range"] == f"bytes */{cog.stat().st_size}"
+
+    oversized_range = client.get(
+        "/ras-raster/cog",
+        params={"asset": asset.asset_id, "revision": asset.revision},
+        headers={"Range": "bytes=0-16"},
+    )
+    assert oversized_range.status_code == 416
+
+    stale_range = client.get(
+        "/ras-raster/cog",
+        params={"asset": asset.asset_id, "revision": "stale"},
+        headers={"Range": "bytes=0-0"},
+    )
+    assert stale_range.status_code == 422
+    assert stale_range.headers["cache-control"] == "no-store"
+
+    missing_asset = client.get(
+        "/ras-raster/cog",
+        params={"asset": "missing", "range": "bytes=0-0"},
+    )
+    assert missing_asset.status_code == 404
+    assert missing_asset.headers["cache-control"] == "no-store"
+
     image = client.get(
         f"/ras-raster/tiles/{tile.z}/{tile.x}/{tile.y}.png",
         params={
@@ -317,6 +452,12 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
 
     rejected = client.get(
         f"/ras-raster/tiles/{tile.z}/{tile.x}/{tile.y}.png",
-        params={"asset": asset.asset_id, "preset": "viridis", "minimum": 0, "maximum": 20},
+        params={
+            "asset": asset.asset_id,
+            "preset": "viridis",
+            "minimum": 0,
+            "maximum": 20,
+        },
     )
     assert rejected.status_code == 422
+    assert rejected.headers["cache-control"] == "no-store"

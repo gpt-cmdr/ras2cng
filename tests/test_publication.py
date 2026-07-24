@@ -245,6 +245,70 @@ def test_publication_gate_accepts_queryable_vector_stored_map():
     assert report.counts["stored_maps"] == 11
 
 
+def test_publication_gate_accepts_depth_derived_inundation_boundary():
+    manifest, archive = _valid_bundle()
+    boundary = manifest["layers"]["p01-inundation-boundary-max"]
+    boundary.update(
+        {
+            "sourceKind": "calculated",
+            "resultKind": "calculated_vector",
+            "role": "inundation_boundary",
+        }
+    )
+    boundary["query"].update(
+        {
+            "sourceKind": "calculated",
+            "valueSemantics": "thresholded-depth-raster-cell-coverage",
+        }
+    )
+    boundary["provenance"].update(
+        {
+            "sourceKind": "calculated",
+            "sourceMapType": "Depth",
+            "interpolationAuthority": "RASMapper/RasProcess source raster",
+            "derivationAuthority": "ras2cng",
+            "nativeRasMapperStoredPolygon": False,
+            "comparison": "depth > threshold",
+        }
+    )
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert report.ok, report.to_dict()
+    assert report.counts["stored_maps"] == 10
+
+
+def test_publication_gate_rejects_unproven_derived_inundation_boundary():
+    manifest, archive = _valid_bundle()
+    boundary = manifest["layers"]["p01-inundation-boundary-max"]
+    boundary.update(
+        {
+            "sourceKind": "calculated",
+            "resultKind": "calculated_vector",
+            "role": "inundation_boundary",
+        }
+    )
+    boundary["query"]["sourceKind"] = "calculated"
+    boundary["provenance"].update(
+        {
+            "sourceKind": "calculated",
+            "sourceMapType": "Depth",
+            "interpolationAuthority": "RASMapper/RasProcess source raster",
+            "nativeRasMapperStoredPolygon": False,
+            "comparison": "depth > threshold",
+        }
+    )
+
+    report = validate_example_publication(manifest, archive, check_files=False)
+
+    assert any(
+        issue.code == "results.stored-map-type"
+        and issue.context == "p01"
+        and "inundation_boundary" in issue.message
+        for issue in report.errors
+    )
+
+
 def test_publication_gate_rejects_missing_result_families():
     manifest, archive = _valid_bundle()
     manifest["layers"] = {

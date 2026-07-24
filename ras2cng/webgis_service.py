@@ -12,12 +12,13 @@ import os
 from pathlib import Path
 import re
 from threading import Lock
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 from urllib.parse import unquote, urlparse
 
 
 RASTER_ASSET_SCHEMA = "rascommander.raster-assets/v1"
 _ASSET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+_BYTE_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class RasterServiceSettings:
     max_view_dimension: int = 4096
     tile_size: int = 256
     cache_entries: int = 512
+    max_cog_range_bytes: int = 67_108_864
     allowed_origins: tuple[str, ...] = ("https://rascommander.info",)
 
 
@@ -76,15 +78,32 @@ STYLE_PRESETS: dict[str, StylePreset] = {
     ),
     "rasmapper.depth": StylePreset(
         "rasmapper.depth",
-        ((239, 246, 255, 210), (147, 197, 253, 225), (37, 99, 235, 235), (30, 58, 138, 245)),
+        (
+            (239, 246, 255, 210),
+            (147, 197, 253, 225),
+            (37, 99, 235, 235),
+            (30, 58, 138, 245),
+        ),
     ),
     "rasmapper.velocity": StylePreset(
         "rasmapper.velocity",
-        ((254, 249, 195, 220), (250, 204, 21, 230), (249, 115, 22, 235), (220, 38, 38, 240), (126, 34, 206, 245)),
+        (
+            (254, 249, 195, 220),
+            (250, 204, 21, 230),
+            (249, 115, 22, 235),
+            (220, 38, 38, 240),
+            (126, 34, 206, 245),
+        ),
     ),
     "rasmapper.water-surface-elevation": StylePreset(
         "rasmapper.water-surface-elevation",
-        ((34, 197, 94, 225), (250, 204, 21, 230), (249, 115, 22, 235), (220, 38, 38, 240), (248, 250, 252, 245)),
+        (
+            (34, 197, 94, 225),
+            (250, 204, 21, 230),
+            (249, 115, 22, 235),
+            (220, 38, 38, 240),
+            (248, 250, 252, 245),
+        ),
     ),
     "rasmapper.inundation": StylePreset(
         "rasmapper.inundation",
@@ -140,15 +159,34 @@ STYLE_PRESETS: dict[str, StylePreset] = {
     ),
     "rascommander.difference": StylePreset(
         "rascommander.difference",
-        ((30, 64, 175, 240), (147, 197, 253, 225), (248, 250, 252, 210), (252, 165, 165, 225), (185, 28, 28, 240)),
+        (
+            (30, 64, 175, 240),
+            (147, 197, 253, 225),
+            (248, 250, 252, 210),
+            (252, 165, 165, 225),
+            (185, 28, 28, 240),
+        ),
     ),
     "rascommander.depth-velocity": StylePreset(
         "rascommander.depth-velocity",
-        ((254, 249, 195, 215), (250, 204, 21, 225), (249, 115, 22, 235), (190, 24, 93, 240), (88, 28, 135, 245)),
+        (
+            (254, 249, 195, 215),
+            (250, 204, 21, 225),
+            (249, 115, 22, 235),
+            (190, 24, 93, 240),
+            (88, 28, 135, 245),
+        ),
     ),
     "rascommander.hazard-aidr-2017": StylePreset(
         "rascommander.hazard-aidr-2017",
-        ((214, 244, 210, 235), (166, 217, 106, 235), (255, 237, 111, 235), (253, 174, 97, 240), (239, 91, 82, 245), (165, 0, 38, 250)),
+        (
+            (214, 244, 210, 235),
+            (166, 217, 106, 235),
+            (255, 237, 111, 235),
+            (253, 174, 97, 240),
+            (239, 91, 82, 245),
+            (165, 0, 38, 250),
+        ),
         (1, 2, 3, 4, 5, 6),
     ),
     "rascommander.threshold": StylePreset(
@@ -171,7 +209,9 @@ class RasterAssetCatalog:
         catalog_path = Path(catalog_path)
         document = json.loads(catalog_path.read_text(encoding="utf-8"))
         if document.get("schema") != RASTER_ASSET_SCHEMA:
-            raise ValueError(f"Unsupported raster asset catalog schema: {document.get('schema')!r}")
+            raise ValueError(
+                f"Unsupported raster asset catalog schema: {document.get('schema')!r}"
+            )
         root = Path(data_root).resolve()
         assets: dict[str, RasterAsset] = {}
         for asset_id, record in (document.get("assets") or {}).items():
@@ -181,19 +221,27 @@ class RasterAssetCatalog:
                 raise ValueError(f"Raster asset {asset_id!r} must use a relative path")
             path = (root / relative).resolve()
             if not path.is_relative_to(root):
-                raise ValueError(f"Raster asset {asset_id!r} escapes the configured data root")
+                raise ValueError(
+                    f"Raster asset {asset_id!r} escapes the configured data root"
+                )
             if not path.is_file():
-                raise FileNotFoundError(f"Raster asset {asset_id!r} does not exist: {path}")
+                raise FileNotFoundError(
+                    f"Raster asset {asset_id!r} does not exist: {path}"
+                )
             preset = str(record.get("preset") or "")
             if preset not in STYLE_PRESETS:
-                raise ValueError(f"Raster asset {asset_id!r} uses unsupported preset {preset!r}")
+                raise ValueError(
+                    f"Raster asset {asset_id!r} uses unsupported preset {preset!r}"
+                )
             assets[asset_id] = RasterAsset(
                 asset_id=asset_id,
                 path=path,
                 revision=str(record.get("revision") or _asset_revision(path)),
                 preset=preset,
                 units=str(record.get("units") or ""),
-                categorical=bool(record.get("categorical", STYLE_PRESETS[preset].categorical)),
+                categorical=bool(
+                    record.get("categorical", STYLE_PRESETS[preset].categorical)
+                ),
                 minimum=_optional_float(record.get("minimum")),
                 maximum=_optional_float(record.get("maximum")),
             )
@@ -221,18 +269,32 @@ def build_raster_asset_catalog(
     root = Path(data_root).resolve()
     if not root.is_dir():
         raise NotADirectoryError(f"WebGIS data root does not exist: {root}")
-    paths = [Path(path).resolve() for path in manifest_paths] if manifest_paths else sorted(root.glob("**/viewer/manifest.json"))
+    paths = (
+        [Path(path).resolve() for path in manifest_paths]
+        if manifest_paths
+        else sorted(root.glob("**/viewer/manifest.json"))
+    )
     assets: dict[str, dict[str, Any]] = {}
     for manifest_path in paths:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("schema") != "rascommander.maplibre/v2":
-            raise ValueError(f"Raster service catalog requires manifest v2: {manifest_path}")
+            raise ValueError(
+                f"Raster service catalog requires manifest v2: {manifest_path}"
+            )
         project_key = _project_key(root, manifest_path, manifest)
         modified = False
         for layer_id, layer in (manifest.get("layers") or {}).items():
             numeric_id = (layer.get("query") or {}).get("numericResource")
-            resource = (manifest.get("resources") or {}).get(numeric_id) if numeric_id else None
-            if not resource or resource.get("type") != "cog" or not resource.get("href"):
+            resource = (
+                (manifest.get("resources") or {}).get(numeric_id)
+                if numeric_id
+                else None
+            )
+            if (
+                not resource
+                or resource.get("type") != "cog"
+                or not resource.get("href")
+            ):
                 continue
             path = _resolve_numeric_href(
                 root,
@@ -241,12 +303,16 @@ def build_raster_asset_catalog(
                 public_url_prefix=public_url_prefix,
             )
             if not path.is_file():
-                raise FileNotFoundError(f"Numeric COG for {layer_id!r} does not exist: {path}")
+                raise FileNotFoundError(
+                    f"Numeric COG for {layer_id!r} does not exist: {path}"
+                )
             legend_id = (layer.get("style") or {}).get("legendRef")
             legend = (manifest.get("legends") or {}).get(legend_id, {})
             preset = str(legend.get("preset") or _default_preset(layer))
             if preset not in STYLE_PRESETS:
-                raise ValueError(f"Layer {layer_id!r} uses unsupported service preset {preset!r}")
+                raise ValueError(
+                    f"Layer {layer_id!r} uses unsupported service preset {preset!r}"
+                )
             asset_id = f"{project_key}/{_slug(layer_id)}"
             _validate_asset_id(asset_id)
             revision = _asset_revision(path)
@@ -255,8 +321,13 @@ def build_raster_asset_catalog(
                 "path": path.relative_to(root).as_posix(),
                 "revision": revision,
                 "preset": preset,
-                "units": str(legend.get("units") or (layer.get("raster") or {}).get("units") or ""),
-                "categorical": legend.get("type") == "categorical" or STYLE_PRESETS[preset].categorical,
+                "units": str(
+                    legend.get("units")
+                    or (layer.get("raster") or {}).get("units")
+                    or ""
+                ),
+                "categorical": legend.get("type") == "categorical"
+                or STYLE_PRESETS[preset].categorical,
                 "minimum": _optional_float(domain.get("minimum")),
                 "maximum": _optional_float(domain.get("maximum")),
             }
@@ -264,7 +335,10 @@ def build_raster_asset_catalog(
                 resource["serviceAsset"] = asset_id
                 resource["serviceRevision"] = revision
                 for tileset in manifest.get("tilesets", []):
-                    if tileset.get("id") == layer_id and tileset.get("type") == "raster":
+                    if (
+                        tileset.get("id") == layer_id
+                        and tileset.get("type") == "raster"
+                    ):
                         tileset["serviceAsset"] = asset_id
                         tileset["serviceRevision"] = revision
                         break
@@ -274,6 +348,9 @@ def build_raster_asset_catalog(
                 "baseUrl": service_base_url.rstrip("/"),
                 "statisticsPath": "/stats",
                 "samplePath": "/sample",
+                "cogPath": "/cog",
+                "cogRangeTransport": "header-or-query",
+                "cogRangeParameter": "range",
                 "tilePath": "/tiles/{z}/{x}/{y}.png",
                 "maxViewPixels": 2_097_152,
             }
@@ -330,7 +407,10 @@ def compute_view_statistics(
     robust_maximum = float(values.get("percentile_98", maximum))
     domain_minimum = minimum if exact else robust_minimum
     domain_maximum = maximum if exact else robust_maximum
-    if not all(math.isfinite(value) for value in (minimum, maximum, domain_minimum, domain_maximum)):
+    if not all(
+        math.isfinite(value)
+        for value in (minimum, maximum, domain_minimum, domain_maximum)
+    ):
         raise ValueError("Viewport statistics are not finite")
     return {
         "asset": asset.asset_id,
@@ -370,7 +450,9 @@ def sample_raster_at_point(
     if not math.isfinite(longitude) or not math.isfinite(latitude):
         raise ValueError("Sample coordinates must be finite")
     if longitude < -180 or longitude > 180 or latitude < -90 or latitude > 90:
-        raise ValueError("Sample coordinates must be valid WGS84 longitude and latitude")
+        raise ValueError(
+            "Sample coordinates must be valid WGS84 longitude and latitude"
+        )
 
     with rasterio.open(asset.path) as source:
         if source.crs is None:
@@ -447,7 +529,11 @@ def render_styled_tile(
             raise ValueError("Continuous styled tiles require minimum and maximum")
         minimum = float(minimum)
         maximum = float(maximum)
-        if not math.isfinite(minimum) or not math.isfinite(maximum) or maximum < minimum:
+        if (
+            not math.isfinite(minimum)
+            or not math.isfinite(maximum)
+            or maximum < minimum
+        ):
             raise ValueError("Styled tile range must be finite with maximum >= minimum")
         if maximum == minimum:
             epsilon = max(abs(minimum) * 1e-9, 1e-9)
@@ -466,12 +552,20 @@ def create_raster_app(
 ):
     """Create the isolated FastAPI application used by CLB-WebGIS."""
 
-    from fastapi import FastAPI, HTTPException, Query, Response
+    from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
+    from fastapi.exception_handlers import (
+        http_exception_handler,
+        request_validation_exception_handler,
+    )
+    from fastapi.exceptions import RequestValidationError
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, StreamingResponse
+    from starlette.exceptions import HTTPException as StarletteHTTPException
 
     settings = settings or _settings_from_environment()
-    catalog_path = Path(catalog_path or os.environ.get("RAS2CNG_RASTER_CATALOG", "raster-assets.json"))
+    catalog_path = Path(
+        catalog_path or os.environ.get("RAS2CNG_RASTER_CATALOG", "raster-assets.json")
+    )
     data_root = Path(data_root or os.environ.get("RAS2CNG_RASTER_DATA_ROOT", "."))
     catalog = RasterAssetCatalog.load(catalog_path, data_root)
     cache = _LruCache(settings.cache_entries)
@@ -485,9 +579,27 @@ def create_raster_app(
     )
     app.state.catalog = catalog
 
+    @app.exception_handler(StarletteHTTPException)
+    async def no_store_http_error(request: Request, error: StarletteHTTPException):
+        response = await http_exception_handler(request, error)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def no_store_validation_error(
+        request: Request, error: RequestValidationError
+    ):
+        response = await request_validation_exception_handler(request, error)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get(f"{prefix}/health")
     def health():
-        return {"status": "ok", "assets": len(catalog.assets), "schema": RASTER_ASSET_SCHEMA}
+        return {
+            "status": "ok",
+            "assets": len(catalog.assets),
+            "schema": RASTER_ASSET_SCHEMA,
+        }
 
     @app.get(f"{prefix}/stats")
     def statistics(
@@ -509,7 +621,14 @@ def create_raster_app(
                 max_pixels=settings.max_view_pixels,
                 max_dimension=settings.max_view_dimension,
             )
-            key = (record.asset_id, record.revision, normalized_bbox, read_width, read_height, exact)
+            key = (
+                record.asset_id,
+                record.revision,
+                normalized_bbox,
+                read_width,
+                read_height,
+                exact,
+            )
             result = cache.get(key)
             if result is None:
                 result = compute_view_statistics(
@@ -541,7 +660,13 @@ def create_raster_app(
         try:
             record = catalog.get(asset)
             _require_revision(record, revision)
-            key = ("sample", record.asset_id, record.revision, round(lng, 10), round(lat, 10))
+            key = (
+                "sample",
+                record.asset_id,
+                record.revision,
+                round(lng, 10),
+                round(lat, 10),
+            )
             result = cache.get(key)
             if result is None:
                 result = sample_raster_at_point(record, lng, lat)
@@ -555,9 +680,99 @@ def create_raster_app(
             headers=_cache_headers(record, revision, result),
         )
 
+    @app.head(f"{prefix}/cog")
+    def cog_head(
+        asset: str = Query(..., min_length=1, max_length=300),
+        revision: str | None = Query(None, max_length=80),
+    ):
+        try:
+            record = catalog.get(asset)
+            _require_revision(record, revision)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        size = record.path.stat().st_size
+        return Response(
+            status_code=200,
+            media_type="image/tiff",
+            headers=_cog_headers(
+                record,
+                revision,
+                content_length=size,
+            ),
+        )
+
+    @app.get(f"{prefix}/cog")
+    def cog_range(
+        asset: str = Query(..., min_length=1, max_length=300),
+        revision: str | None = Query(None, max_length=80),
+        range_header: str | None = Header(None, alias="Range"),
+        range_query: str | None = Query(
+            None,
+            alias="range",
+            min_length=8,
+            max_length=80,
+        ),
+    ):
+        try:
+            record = catalog.get(asset)
+            _require_revision(record, revision)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        size = record.path.stat().st_size
+        if range_header and range_query and range_header != range_query:
+            return JSONResponse(
+                status_code=416,
+                content={"detail": "Header and query byte ranges do not match"},
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Range": f"bytes */{size}",
+                    "Cache-Control": "no-store",
+                    "X-Raster-Revision": record.revision,
+                },
+            )
+        try:
+            start, end = parse_byte_range(
+                range_header or range_query,
+                size,
+                max_bytes=settings.max_cog_range_bytes,
+            )
+        except ValueError as error:
+            return JSONResponse(
+                status_code=416,
+                content={"detail": str(error)},
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Range": f"bytes */{size}",
+                    "Cache-Control": "no-store",
+                    "X-Raster-Revision": record.revision,
+                },
+            )
+        content_length = end - start + 1
+        return StreamingResponse(
+            iter_file_range(record.path, start, content_length),
+            status_code=206,
+            media_type="image/tiff",
+            headers=_cog_headers(
+                record,
+                revision,
+                content_length=content_length,
+                content_range=f"bytes {start}-{end}/{size}",
+            ),
+        )
+
     @app.get(
         f"{prefix}/tiles/{{z}}/{{x}}/{{y}}.png",
-        responses={200: {"content": {"image/png": {}}, "description": "Styled numeric raster tile"}},
+        responses={
+            200: {
+                "content": {"image/png": {}},
+                "description": "Styled numeric raster tile",
+            }
+        },
     )
     def tile(
         z: int,
@@ -571,13 +786,24 @@ def create_raster_app(
     ):
         try:
             if z < 0 or z > 24 or x < 0 or y < 0 or x >= 2**z or y >= 2**z:
-                raise ValueError("Tile coordinates are outside the supported Web Mercator pyramid")
+                raise ValueError(
+                    "Tile coordinates are outside the supported Web Mercator pyramid"
+                )
             record = catalog.get(asset)
             _require_revision(record, revision)
             selected_preset = preset or record.preset
             if selected_preset != record.preset:
                 raise ValueError("Requested preset does not match the asset allowlist")
-            key = (record.asset_id, record.revision, z, x, y, selected_preset, minimum, maximum)
+            key = (
+                record.asset_id,
+                record.revision,
+                z,
+                x,
+                y,
+                selected_preset,
+                minimum,
+                maximum,
+            )
             content = cache.get(key)
             if content is None:
                 content = render_styled_tile(
@@ -619,6 +845,63 @@ def parse_bbox(value: str) -> tuple[float, float, float, float]:
     return west, south, east, north
 
 
+def parse_byte_range(
+    value: str | None,
+    size: int,
+    *,
+    max_bytes: int,
+) -> tuple[int, int]:
+    """Parse one RFC 9110 byte range with an explicit response-size ceiling."""
+
+    if size <= 0:
+        raise ValueError("The requested COG is empty")
+    if max_bytes <= 0:
+        raise ValueError("The COG range limit must be positive")
+    match = _BYTE_RANGE.fullmatch((value or "").strip())
+    if not match or (not match.group(1) and not match.group(2)):
+        raise ValueError("A single byte Range header is required")
+    start_text, end_text = match.groups()
+    if not start_text:
+        suffix_length = int(end_text)
+        if suffix_length <= 0:
+            raise ValueError("Suffix byte ranges must be positive")
+        start = max(0, size - suffix_length)
+        end = size - 1
+    else:
+        start = int(start_text)
+        end = int(end_text) if end_text else size - 1
+        if start >= size or end < start:
+            raise ValueError("Requested byte range is outside the COG")
+        end = min(end, size - 1)
+    if end - start + 1 > max_bytes:
+        raise ValueError(
+            f"Requested byte range exceeds the {max_bytes}-byte service limit"
+        )
+    return start, end
+
+
+def iter_file_range(
+    path: Path,
+    start: int,
+    length: int,
+    *,
+    chunk_size: int = 1_048_576,
+) -> Iterator[bytes]:
+    """Stream one bounded file range without loading it fully into memory."""
+
+    remaining = length
+    with Path(path).open("rb") as file_handle:
+        file_handle.seek(start)
+        while remaining:
+            block = file_handle.read(min(chunk_size, remaining))
+            if not block:
+                break
+            remaining -= len(block)
+            yield block
+    if remaining:
+        raise OSError(f"COG ended {remaining} bytes before the requested range")
+
+
 def normalize_view_bbox(
     bbox: tuple[float, float, float, float],
     width: int,
@@ -643,7 +926,9 @@ def bounded_view_dimensions(
     scale = min(1.0, max_dimension / width, max_dimension / height)
     if width * height * scale * scale > max_pixels:
         scale = min(scale, math.sqrt(max_pixels / (width * height)))
-    return max(1, int(math.floor(width * scale))), max(1, int(math.floor(height * scale)))
+    return max(1, int(math.floor(width * scale))), max(
+        1, int(math.floor(height * scale))
+    )
 
 
 def get_style_preset(preset_id: str) -> StylePreset:
@@ -681,7 +966,9 @@ def _linear_colormap(colors):
     targets = np.linspace(0.0, 1.0, 256)
     channels = []
     for channel in range(4):
-        channels.append(np.interp(targets, positions, [color[channel] for color in colors]))
+        channels.append(
+            np.interp(targets, positions, [color[channel] for color in colors])
+        )
     rgba = np.stack(channels, axis=1).round().astype("uint8")
     return {index: tuple(int(value) for value in row) for index, row in enumerate(rgba)}
 
@@ -696,8 +983,10 @@ def _resolve_numeric_href(
     parsed = urlparse(href)
     if parsed.scheme in {"http", "https"}:
         if not public_url_prefix or not href.startswith(public_url_prefix):
-            raise ValueError(f"Hosted numeric COG requires a matching public_url_prefix: {href}")
-        relative = unquote(href[len(public_url_prefix):].split("?", 1)[0]).lstrip("/")
+            raise ValueError(
+                f"Hosted numeric COG requires a matching public_url_prefix: {href}"
+            )
+        relative = unquote(href[len(public_url_prefix) :].split("?", 1)[0]).lstrip("/")
         path = (root / relative).resolve()
     else:
         path = (manifest_path.parent / unquote(parsed.path)).resolve()
@@ -709,9 +998,17 @@ def _resolve_numeric_href(
 def _project_key(root: Path, manifest_path: Path, manifest: Mapping[str, Any]) -> str:
     try:
         relative = manifest_path.parent.parent.relative_to(root).as_posix()
-        value = relative if relative not in {"", "."} else str(manifest.get("sourceProject") or "project")
+        value = (
+            relative
+            if relative not in {"", "."}
+            else str(manifest.get("sourceProject") or "project")
+        )
     except ValueError:
-        value = str(manifest.get("sourceProject") or manifest_path.parent.parent.name or "project")
+        value = str(
+            manifest.get("sourceProject")
+            or manifest_path.parent.parent.name
+            or "project"
+        )
     return "/".join(_slug(part) for part in value.split("/") if _slug(part))
 
 
@@ -751,11 +1048,15 @@ def _asset_revision(path: Path) -> str:
     return hashlib.sha256(value).hexdigest()[:16]
 
 
-def _cache_headers(asset: RasterAsset, requested_revision: str | None, content: Any) -> dict[str, str]:
+def _cache_headers(
+    asset: RasterAsset, requested_revision: str | None, content: Any
+) -> dict[str, str]:
     if isinstance(content, bytes):
         payload = content
     else:
-        payload = json.dumps(content, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload = json.dumps(content, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
     return {
         "Cache-Control": (
             "public, max-age=31536000, immutable"
@@ -767,6 +1068,29 @@ def _cache_headers(asset: RasterAsset, requested_revision: str | None, content: 
     }
 
 
+def _cog_headers(
+    asset: RasterAsset,
+    requested_revision: str | None,
+    *,
+    content_length: int,
+    content_range: str | None = None,
+) -> dict[str, str]:
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": (
+            "public, max-age=31536000, immutable, no-transform"
+            if requested_revision == asset.revision
+            else "public, max-age=300, no-transform"
+        ),
+        "Content-Length": str(content_length),
+        "ETag": f'"{asset.revision}"',
+        "X-Raster-Revision": asset.revision,
+    }
+    if content_range:
+        headers["Content-Range"] = content_range
+    return headers
+
+
 def _require_revision(asset: RasterAsset, revision: str | None) -> None:
     if revision is not None and revision != asset.revision:
         raise ValueError("Requested raster revision is stale")
@@ -775,21 +1099,32 @@ def _require_revision(asset: RasterAsset, revision: str | None) -> None:
 def _settings_from_environment() -> RasterServiceSettings:
     origins = tuple(
         value.strip()
-        for value in os.environ.get("RAS2CNG_RASTER_ALLOWED_ORIGINS", "https://rascommander.info").split(",")
+        for value in os.environ.get(
+            "RAS2CNG_RASTER_ALLOWED_ORIGINS", "https://rascommander.info"
+        ).split(",")
         if value.strip()
     )
     return RasterServiceSettings(
         route_prefix=os.environ.get("RAS2CNG_RASTER_ROUTE_PREFIX", "/ras-raster"),
-        max_view_pixels=int(os.environ.get("RAS2CNG_RASTER_MAX_VIEW_PIXELS", "2097152")),
-        max_view_dimension=int(os.environ.get("RAS2CNG_RASTER_MAX_VIEW_DIMENSION", "4096")),
+        max_view_pixels=int(
+            os.environ.get("RAS2CNG_RASTER_MAX_VIEW_PIXELS", "2097152")
+        ),
+        max_view_dimension=int(
+            os.environ.get("RAS2CNG_RASTER_MAX_VIEW_DIMENSION", "4096")
+        ),
         cache_entries=int(os.environ.get("RAS2CNG_RASTER_CACHE_ENTRIES", "512")),
+        max_cog_range_bytes=int(
+            os.environ.get("RAS2CNG_RASTER_MAX_COG_RANGE_BYTES", "67108864")
+        ),
         allowed_origins=origins,
     )
 
 
 def _validate_asset_id(asset_id: str) -> None:
     segments = asset_id.split("/")
-    if not _ASSET_ID.fullmatch(asset_id) or any(segment in {"", ".", ".."} for segment in segments):
+    if not _ASSET_ID.fullmatch(asset_id) or any(
+        segment in {"", ".", ".."} for segment in segments
+    ):
         raise ValueError(f"Invalid raster asset id: {asset_id!r}")
 
 

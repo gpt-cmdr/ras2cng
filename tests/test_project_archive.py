@@ -864,6 +864,19 @@ def test_manifest_terrain_entry_preserves_resolution_provenance(tmp_path):
     assert entry["resolution_decision"] == resolution
 
 
+def test_terrain_cog_options_optimize_numeric_and_nodata_blocks():
+    from ras2cng.project import _terrain_cog_creation_options
+
+    options = _terrain_cog_creation_options()
+    option_pairs = list(zip(options[::2], options[1::2]))
+
+    assert ("-co", "COMPRESS=ZSTD") in option_pairs
+    assert ("-co", "PREDICTOR=YES") in option_pairs
+    assert ("-co", "OVERVIEW_PREDICTOR=YES") in option_pairs
+    assert ("-co", "SPARSE_OK=YES") in option_pairs
+    assert ("-co", "NUM_THREADS=ALL_CPUS") in option_pairs
+
+
 # ---------------------------------------------------------------------------
 # Enhanced inspect — new fields
 # ---------------------------------------------------------------------------
