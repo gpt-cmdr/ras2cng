@@ -94,8 +94,10 @@ class ManifestTerrainEntry:
     crs: Optional[str]
     terrain_name: str = ""
     source_files: list[str] = field(default_factory=list)
+    native_resolutions: list[float] = field(default_factory=list)
     target_resolution: Optional[float] = None
     horizontal_units: str = ""
+    resolution_decision: dict = field(default_factory=dict)
     provenance_file: str = ""
     authoritative: bool = False
 

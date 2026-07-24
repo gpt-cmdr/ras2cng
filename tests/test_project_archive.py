@@ -829,6 +829,41 @@ def test_manifest_maps_omitted_when_empty(tmp_path):
     assert "maps" not in d
 
 
+def test_manifest_terrain_entry_preserves_resolution_provenance(tmp_path):
+    from ras2cng.catalog import ManifestTerrainEntry
+
+    prj = tmp_path / "M.prj"
+    manifest = Manifest.create("M", prj, tmp_path, tmp_path / "out")
+    resolution = {
+        "native_resolutions": [2.5],
+        "target_resolution": 5.0,
+        "horizontal_units": "Feet",
+        "factors": [2.0],
+        "policy": "whole-native-multiple-no-upsample",
+    }
+    manifest.add_terrain_entry(
+        ManifestTerrainEntry(
+            source_file="Terrain",
+            cog_file="terrain/Terrain_merged_cog.tif",
+            size_bytes=1024,
+            crs="EPSG:2278",
+            terrain_name="Terrain",
+            source_files=["terrain-01.tif"],
+            native_resolutions=[2.5],
+            target_resolution=5.0,
+            horizontal_units="Feet",
+            resolution_decision=resolution,
+            provenance_file="terrain/Terrain_terrain-provenance.json",
+            authoritative=True,
+        )
+    )
+
+    entry = manifest.to_dict()["terrain"][0]
+    assert entry["native_resolutions"] == [2.5]
+    assert entry["target_resolution"] == 5.0
+    assert entry["resolution_decision"] == resolution
+
+
 # ---------------------------------------------------------------------------
 # Enhanced inspect — new fields
 # ---------------------------------------------------------------------------
