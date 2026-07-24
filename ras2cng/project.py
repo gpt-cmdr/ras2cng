@@ -1082,6 +1082,7 @@ def archive_project(
                         if provenance_path.is_file()
                         else {}
                     )
+                    resolution = provenance.get("resolution") or {}
                     manifest.add_terrain_entry(ManifestTerrainEntry(
                         source_file=terrain_source_name,
                         cog_file=cog_path.relative_to(output_dir).as_posix(),
@@ -1092,8 +1093,13 @@ def archive_project(
                             str(item.get("path", ""))
                             for item in provenance.get("sources", [])
                         ],
-                        target_resolution=(provenance.get("resolution") or {}).get("target_resolution"),
-                        horizontal_units=(provenance.get("resolution") or {}).get("horizontal_units", ""),
+                        native_resolutions=[
+                            float(value)
+                            for value in resolution.get("native_resolutions", [])
+                        ],
+                        target_resolution=resolution.get("target_resolution"),
+                        horizontal_units=resolution.get("horizontal_units", ""),
+                        resolution_decision=resolution,
                         provenance_file=(
                             provenance_path.relative_to(output_dir).as_posix()
                             if provenance_path.is_file()
