@@ -693,7 +693,14 @@ def archive_project(
                 cog_path = _terrain_cog_path(tif, cog_out_dir, cog_names)
                 try:
                     subprocess.run(
-                        ["gdal_translate", "-of", "COG", str(tif), str(cog_path)],
+                        [
+                            "gdal_translate",
+                            "-of",
+                            "COG",
+                            *_terrain_cog_creation_options(),
+                            str(tif),
+                            str(cog_path),
+                        ],
                         check=True, capture_output=True,
                     )
                     terrain_crs = _tif_crs(tif)
@@ -1068,9 +1075,7 @@ def archive_project(
                         [
                             "gdal_translate",
                             "-of", "COG",
-                            "-co", "COMPRESS=ZSTD",
-                            "-co", "BLOCKSIZE=512",
-                            "-co", "BIGTIFF=IF_SAFER",
+                            *_terrain_cog_creation_options(),
                             str(consolidated_path),
                             str(cog_path),
                         ],
@@ -1345,6 +1350,23 @@ def _terrain_cog_path(tif_path: Path, cog_out_dir: Path, used_names: set[str]) -
             used_names.add(key)
             return cog_out_dir / name
         suffix += 1
+
+
+def _terrain_cog_creation_options() -> list[str]:
+    """Return lossless COG options tuned for large numeric terrain rasters."""
+
+    return [
+        "-co", "COMPRESS=ZSTD",
+        "-co", "LEVEL=9",
+        "-co", "PREDICTOR=YES",
+        "-co", "OVERVIEW_COMPRESS=ZSTD",
+        "-co", "OVERVIEW_PREDICTOR=YES",
+        "-co", "OVERVIEW_RESAMPLING=AVERAGE",
+        "-co", "BLOCKSIZE=512",
+        "-co", "BIGTIFF=IF_SAFER",
+        "-co", "SPARSE_OK=YES",
+        "-co", "NUM_THREADS=ALL_CPUS",
+    ]
 
 
 def _detect_ras_version(ras) -> Optional[str]:

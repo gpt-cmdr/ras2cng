@@ -170,6 +170,10 @@ def validate_example_publication(
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "stored-map"
     }
+    calculated_layers = {
+        layer_id: layer for layer_id, layer in layers.items()
+        if layer.get("sourceKind") == "calculated"
+    }
     terrain_layers = {
         layer_id: layer for layer_id, layer in layers.items()
         if layer.get("sourceKind") == "terrain"
@@ -263,6 +267,12 @@ def validate_example_publication(
                     )
                 )
             }
+            if any(
+                _is_authoritative_depth_derived_boundary(layer)
+                for layer in calculated_layers.values()
+                if layer.get("plan") == plan_id
+            ):
+                published_map_types.add("inundation_boundary")
             missing_map_types = sorted(
                 REQUIRED_STORED_MAP_TYPE_KEYS - published_map_types
             )
@@ -598,6 +608,26 @@ def _mappable_archive_variables(plan: Mapping[str, Any]) -> dict[str, str]:
             continue
         expected[variable_name.casefold()] = variable_name
     return expected
+
+
+def _is_authoritative_depth_derived_boundary(layer: Mapping[str, Any]) -> bool:
+    """Accept ras2cng boundaries derived from an authoritative RASMapper depth COG."""
+
+    provenance = layer.get("provenance") or {}
+    query = layer.get("query") or {}
+    role = str(layer.get("role") or "").replace("_", " ")
+    return (
+        layer.get("resultKind") == "calculated_vector"
+        and stored_map_type_key(role) == "inundation_boundary"
+        and query.get("enabled") is True
+        and provenance.get("sourceKind") == "calculated"
+        and stored_map_type_key(str(provenance.get("sourceMapType") or "")) == "depth"
+        and provenance.get("interpolationAuthority")
+        == "RASMapper/RasProcess source raster"
+        and provenance.get("derivationAuthority") == "ras2cng"
+        and provenance.get("nativeRasMapperStoredPolygon") is False
+        and provenance.get("comparison") == "depth > threshold"
+    )
 
 
 def _validate_extent_color_service(
