@@ -884,6 +884,36 @@ def raster_service_command(
         raise typer.Exit(1)
 
 
+@app.command("raster-service-catalog-merge")
+def raster_service_catalog_merge_command(
+    output: Path = typer.Argument(..., help="Output merged raster-assets.json"),
+    catalogs: list[Path] = typer.Option(
+        ...,
+        "--catalog",
+        help="Raster asset catalog to merge; repeat for each retained release",
+    ),
+    release_id: str = typer.Option(
+        ...,
+        "--release-id",
+        help="Active immutable release identifier reported by readiness checks",
+    ),
+):
+    """Merge release-qualified allowlists while preserving older viewers."""
+
+    from ras2cng.webgis_service import merge_raster_asset_catalogs
+
+    try:
+        result = merge_raster_asset_catalogs(
+            catalogs,
+            output,
+            release_id=release_id,
+        )
+        console.print(f"[green]OK[/green] Merged raster service catalog: {result}")
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
 @app.command("raster-calculate")
 def raster_calculate_command(
     recipe: str = typer.Argument(..., help="Allowlisted raster recipe identifier"),

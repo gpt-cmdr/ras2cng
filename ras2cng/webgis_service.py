@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
 import re
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 from typing import Any, Iterable, Iterator, Mapping
 from urllib.parse import unquote, urlparse
 
 
 RASTER_ASSET_SCHEMA = "rascommander.raster-assets/v1"
 _ASSET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+_RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+logger = logging.getLogger(__name__)
 _BYTE_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
@@ -45,6 +49,7 @@ class RasterServiceSettings:
     tile_size: int = 256
     cache_entries: int = 512
     max_cog_range_bytes: int = 67_108_864
+    max_concurrent_operations: int = 8
     allowed_origins: tuple[str, ...] = ("https://rascommander.info",)
 
 
@@ -200,14 +205,26 @@ STYLE_PRESETS: dict[str, StylePreset] = {
 class RasterAssetCatalog:
     """Validated in-memory view of a data-root-relative asset catalog."""
 
-    def __init__(self, data_root: Path, assets: Mapping[str, RasterAsset]):
+    def __init__(
+        self,
+        data_root: Path,
+        assets: Mapping[str, RasterAsset],
+        *,
+        catalog_path: Path,
+        catalog_revision: str,
+        release_id: str,
+    ):
         self.data_root = Path(data_root).resolve()
         self.assets = dict(assets)
+        self.catalog_path = Path(catalog_path).resolve()
+        self.catalog_revision = catalog_revision
+        self.release_id = release_id
 
     @classmethod
     def load(cls, catalog_path: Path, data_root: Path) -> "RasterAssetCatalog":
         catalog_path = Path(catalog_path)
-        document = json.loads(catalog_path.read_text(encoding="utf-8"))
+        catalog_bytes = catalog_path.read_bytes()
+        document = json.loads(catalog_bytes.decode("utf-8"))
         if document.get("schema") != RASTER_ASSET_SCHEMA:
             raise ValueError(
                 f"Unsupported raster asset catalog schema: {document.get('schema')!r}"
@@ -245,7 +262,15 @@ class RasterAssetCatalog:
                 minimum=_optional_float(record.get("minimum")),
                 maximum=_optional_float(record.get("maximum")),
             )
-        return cls(root, assets)
+        catalog_revision = hashlib.sha256(catalog_bytes).hexdigest()[:24]
+        release_id = str(document.get("releaseId") or catalog_revision)
+        return cls(
+            root,
+            assets,
+            catalog_path=catalog_path,
+            catalog_revision=catalog_revision,
+            release_id=release_id,
+        )
 
     def get(self, asset_id: str) -> RasterAsset:
         _validate_asset_id(asset_id)
@@ -359,6 +384,49 @@ def build_raster_asset_catalog(
     document = {
         "schema": RASTER_ASSET_SCHEMA,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "dataRoot": ".",
+        "assets": assets,
+    }
+    _atomic_json_write(Path(output_path), document)
+    return Path(output_path)
+
+
+def merge_raster_asset_catalogs(
+    catalog_paths: Iterable[Path],
+    output_path: Path,
+    *,
+    release_id: str,
+) -> Path:
+    """Merge immutable release catalogs without invalidating older manifests."""
+
+    release_id = str(release_id).strip()
+    if not _RELEASE_ID.fullmatch(release_id):
+        raise ValueError("release_id contains unsupported characters")
+    assets: dict[str, dict[str, Any]] = {}
+    for catalog_path in catalog_paths:
+        path = Path(catalog_path)
+        if not path.is_file():
+            continue
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if document.get("schema") != RASTER_ASSET_SCHEMA:
+            raise ValueError(f"Unsupported raster asset catalog: {path}")
+        records = document.get("assets")
+        if not isinstance(records, dict):
+            raise ValueError(f"Raster asset catalog has no asset mapping: {path}")
+        for asset_id, record in records.items():
+            _validate_asset_id(asset_id)
+            existing = assets.get(asset_id)
+            if existing is not None and existing != record:
+                raise ValueError(
+                    f"Raster asset {asset_id!r} conflicts across release catalogs"
+                )
+            assets[asset_id] = dict(record)
+    if not assets:
+        raise ValueError("At least one non-empty raster asset catalog is required")
+    document = {
+        "schema": RASTER_ASSET_SCHEMA,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "releaseId": release_id,
         "dataRoot": ".",
         "assets": assets,
     }
@@ -569,6 +637,7 @@ def create_raster_app(
     data_root = Path(data_root or os.environ.get("RAS2CNG_RASTER_DATA_ROOT", "."))
     catalog = RasterAssetCatalog.load(catalog_path, data_root)
     cache = _LruCache(settings.cache_entries)
+    operation_limiter = _OperationLimiter(settings.max_concurrent_operations)
     prefix = "/" + settings.route_prefix.strip("/")
     app = FastAPI(title="RAS Commander Numeric Raster Service", version="1")
     app.add_middleware(
@@ -576,8 +645,18 @@ def create_raster_app(
         allow_origins=list(settings.allowed_origins),
         allow_methods=["GET"],
         allow_headers=["*"],
+        expose_headers=[
+            "Accept-Ranges",
+            "Cache-Control",
+            "Content-Length",
+            "Content-Range",
+            "ETag",
+            "Retry-After",
+            "X-Raster-Revision",
+        ],
     )
     app.state.catalog = catalog
+    app.state.operation_limiter = operation_limiter
 
     @app.exception_handler(StarletteHTTPException)
     async def no_store_http_error(request: Request, error: StarletteHTTPException):
@@ -593,13 +672,51 @@ def create_raster_app(
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.exception_handler(RasterServiceBusyError)
+    async def no_store_busy_error(request: Request, error: RasterServiceBusyError):
+        return JSONResponse(
+            status_code=503,
+            content={"detail": str(error)},
+            headers={"Cache-Control": "no-store", "Retry-After": "1"},
+        )
+
+    @app.exception_handler(Exception)
+    async def no_store_internal_error(request: Request, error: Exception):
+        logger.exception(
+            "Unhandled raster service error for %s",
+            request.url.path,
+            exc_info=(type(error), error, error.__traceback__),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "The raster service could not complete the request"},
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get(f"{prefix}/health")
     def health():
-        return {
-            "status": "ok",
-            "assets": len(catalog.assets),
-            "schema": RASTER_ASSET_SCHEMA,
-        }
+        return JSONResponse(
+            content=_service_status(catalog, status="ok"),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get(f"{prefix}/ready")
+    def ready():
+        missing = [
+            asset.asset_id
+            for asset in catalog.assets.values()
+            if not asset.path.is_file()
+        ]
+        status = "ready" if not missing else "not-ready"
+        return JSONResponse(
+            status_code=200 if not missing else 503,
+            content={
+                **_service_status(catalog, status=status),
+                "missingAssets": len(missing),
+                "missingAssetExamples": missing[:10],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get(f"{prefix}/stats")
     def statistics(
@@ -631,15 +748,16 @@ def create_raster_app(
             )
             result = cache.get(key)
             if result is None:
-                result = compute_view_statistics(
-                    record,
-                    normalized_bbox,
-                    read_width,
-                    read_height,
-                    exact=exact,
-                    max_pixels=settings.max_view_pixels,
-                    max_dimension=settings.max_view_dimension,
-                )
+                with operation_limiter.slot():
+                    result = compute_view_statistics(
+                        record,
+                        normalized_bbox,
+                        read_width,
+                        read_height,
+                        exact=exact,
+                        max_pixels=settings.max_view_pixels,
+                        max_dimension=settings.max_view_dimension,
+                    )
                 cache.put(key, result)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -669,7 +787,8 @@ def create_raster_app(
             )
             result = cache.get(key)
             if result is None:
-                result = sample_raster_at_point(record, lng, lat)
+                with operation_limiter.slot():
+                    result = sample_raster_at_point(record, lng, lat)
                 cache.put(key, result)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -806,16 +925,17 @@ def create_raster_app(
             )
             content = cache.get(key)
             if content is None:
-                content = render_styled_tile(
-                    record,
-                    x,
-                    y,
-                    z,
-                    preset_id=selected_preset,
-                    minimum=minimum,
-                    maximum=maximum,
-                    tile_size=settings.tile_size,
-                )
+                with operation_limiter.slot():
+                    content = render_styled_tile(
+                        record,
+                        x,
+                        y,
+                        z,
+                        preset_id=selected_preset,
+                        minimum=minimum,
+                        maximum=maximum,
+                        tile_size=settings.tile_size,
+                    )
                 cache.put(key, content)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -959,6 +1079,31 @@ class _LruCache:
                 self._values.popitem(last=False)
 
 
+class _OperationLimiter:
+    """Reject excess raster work before GDAL allocations begin."""
+
+    def __init__(self, maximum: int):
+        if maximum < 1:
+            raise ValueError("The raster operation limit must be positive")
+        self.maximum = maximum
+        self._semaphore = BoundedSemaphore(maximum)
+
+    @contextmanager
+    def slot(self):
+        if not self._semaphore.acquire(blocking=False):
+            raise RasterServiceBusyError(
+                "The raster service is at its concurrent operation limit"
+            )
+        try:
+            yield
+        finally:
+            self._semaphore.release()
+
+
+class RasterServiceBusyError(RuntimeError):
+    """Raised when accepting more work would exceed the service budget."""
+
+
 def _linear_colormap(colors):
     import numpy as np
 
@@ -1048,6 +1193,20 @@ def _asset_revision(path: Path) -> str:
     return hashlib.sha256(value).hexdigest()[:16]
 
 
+def _service_status(
+    catalog: RasterAssetCatalog,
+    *,
+    status: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "assets": len(catalog.assets),
+        "schema": RASTER_ASSET_SCHEMA,
+        "releaseId": catalog.release_id,
+        "catalogRevision": catalog.catalog_revision,
+    }
+
+
 def _cache_headers(
     asset: RasterAsset, requested_revision: str | None, content: Any
 ) -> dict[str, str]:
@@ -1115,6 +1274,9 @@ def _settings_from_environment() -> RasterServiceSettings:
         cache_entries=int(os.environ.get("RAS2CNG_RASTER_CACHE_ENTRIES", "512")),
         max_cog_range_bytes=int(
             os.environ.get("RAS2CNG_RASTER_MAX_COG_RANGE_BYTES", "67108864")
+        ),
+        max_concurrent_operations=int(
+            os.environ.get("RAS2CNG_RASTER_MAX_CONCURRENT_OPERATIONS", "8")
         ),
         allowed_origins=origins,
     )
