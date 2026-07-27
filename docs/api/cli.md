@@ -494,3 +494,9 @@ revisions, and the public service endpoint into manifest v2 bundles.
 Runs the bounded statistics and styled-tile API. The listener is restricted to loopback and
 must be published through a reverse proxy. See
 [Numeric Raster Service](../user-guide/numeric-raster-service.md).
+
+## ras2cng raster-release-service
+
+Runs the release-aware form of the numeric raster API. It loads each immutable release's
+catalog on demand from `releases/<release-id>/raster-assets.json`, so publishing a release
+does not require a global catalog merge or service restart.

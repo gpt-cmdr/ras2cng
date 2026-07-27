@@ -910,6 +910,21 @@ def test_raster_service_rejects_non_loopback_listener(tmp_path: Path):
     assert "loopback" in result.output
 
 
+def test_raster_release_service_rejects_non_loopback_listener(tmp_path: Path):
+    result = runner.invoke(
+        app,
+        [
+            "raster-release-service",
+            str(tmp_path / "data"),
+            "--host",
+            "0.0.0.0",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "loopback" in result.output
+
+
 def test_precip_routes_to_export_precipitation(monkeypatch, tmp_path: Path):
     called = {"kwargs": None}
 

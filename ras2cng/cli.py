@@ -884,6 +884,40 @@ def raster_service_command(
         raise typer.Exit(1)
 
 
+@app.command("raster-release-service")
+def raster_release_service_command(
+    data_root: Path = typer.Argument(
+        ...,
+        help="Data root containing releases/<release-id>/raster-assets.json",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="Loopback listener address"),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        min=1,
+        max=65535,
+        help="Loopback listener port",
+    ),
+):
+    """Run the release-aware numeric raster service behind a reverse proxy."""
+
+    import ipaddress
+
+    import uvicorn
+
+    from ras2cng.webgis_service import create_release_raster_app
+
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+        if not address.is_loopback:
+            raise ValueError("raster-release-service must bind to a loopback address")
+        service = create_release_raster_app(data_root)
+        uvicorn.run(service, host=host, port=port, workers=1)
+    except Exception as error:
+        console.print(f"[red]ERROR:[/red] {error}")
+        raise typer.Exit(1)
+
+
 @app.command("raster-calculate")
 def raster_calculate_command(
     recipe: str = typer.Argument(..., help="Allowlisted raster recipe identifier"),

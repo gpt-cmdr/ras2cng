@@ -10,14 +10,17 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 
+import ras2cng.webgis_service as webgis_service
 from ras2cng.webgis_service import (
     RASTER_ASSET_SCHEMA,
     RasterAsset,
     RasterAssetCatalog,
+    ReleaseRasterCatalogStore,
     RasterServiceSettings,
     bounded_view_dimensions,
     build_raster_asset_catalog,
     compute_view_statistics,
+    create_release_raster_app,
     create_raster_app,
     parse_byte_range,
     render_styled_tile,
@@ -27,8 +30,11 @@ from ras2cng.webgis_service import (
 from ras2cng.viewer_manifest import apply_manifest_v2
 
 
-def _write_cog(path: Path) -> Path:
-    values = np.linspace(0, 20, 256 * 256, dtype="float32").reshape((256, 256))
+def _write_cog(path: Path, *, value_offset: float = 0.0) -> Path:
+    values = (
+        np.linspace(0, 20, 256 * 256, dtype="float32").reshape((256, 256))
+        + value_offset
+    )
     values[:16, :16] = -9999
     temporary = path.with_name("source.tif")
     with rasterio.open(
@@ -65,6 +71,39 @@ def _asset(path: Path) -> RasterAsset:
         minimum=0,
         maximum=20,
     )
+
+
+def _write_release(
+    root: Path,
+    release_id: str,
+    *,
+    value_offset: float = 0.0,
+) -> tuple[Path, RasterAsset]:
+    release_root = root / "releases" / release_id
+    release_root.mkdir(parents=True)
+    asset = _asset(
+        _write_cog(release_root / "depth.tif", value_offset=value_offset)
+    )
+    (release_root / "raster-assets.json").write_text(
+        json.dumps(
+            {
+                "schema": RASTER_ASSET_SCHEMA,
+                "releaseId": release_id,
+                "assets": {
+                    asset.asset_id: {
+                        "path": asset.path.name,
+                        "revision": asset.revision,
+                        "preset": asset.preset,
+                        "units": asset.units,
+                        "minimum": asset.minimum,
+                        "maximum": asset.maximum,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return release_root, asset
 
 
 def test_all_continuous_stored_map_presets_are_allowlisted() -> None:
@@ -201,6 +240,171 @@ def test_catalog_builder_attaches_service_asset_to_manifest(tmp_path: Path):
     assert regenerated["serviceRevision"] == resource["serviceRevision"]
 
 
+def test_release_catalog_store_loads_self_contained_catalogs(tmp_path: Path):
+    root = tmp_path / "hec-ras-7.0"
+    first_root, first_asset = _write_release(root, "release-one")
+    second_root, _ = _write_release(root, "release-two")
+    store = ReleaseRasterCatalogStore(root, max_entries=2)
+
+    first = store.get("release-one")
+    second = store.get("release-two")
+
+    assert first.release_id == "release-one"
+    assert first.get(first_asset.asset_id).path == first_root / "depth.tif"
+    assert second.release_id == "release-two"
+    assert second.data_root == second_root
+    assert store.get("release-one") is first
+
+
+def test_release_catalog_store_rejects_identity_mismatch(tmp_path: Path):
+    root = tmp_path / "hec-ras-7.0"
+    release_root, _ = _write_release(root, "release-one")
+    catalog_path = release_root / "raster-assets.json"
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    catalog["releaseId"] = "other-release"
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not match"):
+        ReleaseRasterCatalogStore(root).get("release-one")
+
+
+@pytest.mark.parametrize(
+    "release_id",
+    ("../escape", "nested/release", ".hidden", "", "white space"),
+)
+def test_release_catalog_store_rejects_unsafe_release_ids(
+    tmp_path: Path,
+    release_id: str,
+):
+    with pytest.raises(ValueError, match="Release ID"):
+        ReleaseRasterCatalogStore(tmp_path).get(release_id)
+
+
+def test_release_raster_app_discovers_catalog_without_restart(tmp_path: Path):
+    root = tmp_path / "hec-ras-7.0"
+    _, asset = _write_release(root, "release-one")
+    client = TestClient(create_release_raster_app(root))
+    _, second_asset = _write_release(root, "release-two")
+
+    health = client.get("/ras-raster/health")
+    ready = client.get("/ras-raster/releases/release-one/ready")
+    sample = client.get(
+        "/ras-raster/releases/release-one/sample",
+        params={
+            "asset": asset.asset_id,
+            "lng": -84.98,
+            "lat": 40.05,
+            "revision": asset.revision,
+        },
+    )
+    second_ready = client.get("/ras-raster/releases/release-two/ready")
+    second_sample = client.get(
+        "/ras-raster/releases/release-two/sample",
+        params={
+            "asset": second_asset.asset_id,
+            "lng": -84.98,
+            "lat": 40.05,
+            "revision": second_asset.revision,
+        },
+    )
+    missing = client.get("/ras-raster/releases/missing/ready")
+
+    assert health.status_code == 200
+    assert health.json()["catalogMode"] == "immutable-releases"
+    assert ready.status_code == 200
+    assert ready.json()["releaseId"] == "release-one"
+    assert ready.json()["assets"] == 1
+    assert sample.status_code == 200
+    assert sample.json()["state"] == "value"
+    assert second_ready.status_code == 200
+    assert second_ready.json()["releaseId"] == "release-two"
+    assert second_sample.status_code == 200
+    assert missing.status_code == 404
+    assert missing.headers["cache-control"] == "no-store"
+
+
+def test_release_raster_app_reports_missing_assets_as_not_ready(tmp_path: Path):
+    root = tmp_path / "hec-ras-7.0"
+    release_root, _ = _write_release(root, "release-missing")
+    (release_root / "depth.tif").unlink()
+    client = TestClient(create_release_raster_app(root))
+
+    response = client.get("/ras-raster/releases/release-missing/ready")
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["detail"] == {
+        "status": "not-ready",
+        "releaseId": "release-missing",
+        "missingAssets": 1,
+        "missingAssetExamples": ["muncie/p03-depth"],
+    }
+
+
+def test_legacy_routes_follow_current_without_cross_release_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "hec-ras-7.0"
+    _, first_asset = _write_release(root, "release-one")
+    _, second_asset = _write_release(root, "release-two", value_offset=100)
+    app = create_release_raster_app(root)
+    selected_release = ["release-one"]
+    monkeypatch.setattr(
+        app.state.catalog_store,
+        "current_release_id",
+        lambda: selected_release[0],
+    )
+    client = TestClient(app)
+    parameters = {
+        "asset": first_asset.asset_id,
+        "lng": -84.98,
+        "lat": 40.05,
+        "revision": first_asset.revision,
+    }
+    assert first_asset.revision == second_asset.revision
+
+    first = client.get("/ras-raster/sample", params=parameters)
+    ready = client.get("/ras-raster/ready")
+    selected_release[0] = "release-two"
+    second = client.get(
+        "/ras-raster/sample",
+        params={**parameters, "revision": second_asset.revision},
+    )
+
+    assert first.status_code == 200
+    assert ready.status_code == 200
+    assert ready.json()["releaseId"] == "release-one"
+    assert second.status_code == 200
+    assert first.json()["value"] < 25
+    assert second.json()["value"] > 100
+
+
+def test_legacy_routes_fail_closed_without_current_pointer(tmp_path: Path):
+    root = tmp_path / "hec-ras-7.0"
+    _, asset = _write_release(root, "release-one")
+    client = TestClient(create_release_raster_app(root))
+
+    response = client.get(
+        "/ras-raster/sample",
+        headers={"Origin": "https://rascommander.info"},
+        params={
+            "asset": asset.asset_id,
+            "lng": -84.98,
+            "lat": 40.05,
+            "revision": asset.revision,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "no-store"
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "https://rascommander.info"
+    )
+    assert response.json()["detail"] == "Current raster release unavailable"
+
+
 def test_view_statistics_are_pixel_bounded_and_robust(tmp_path: Path):
     asset = _asset(_write_cog(tmp_path / "depth.tif"))
     result = compute_view_statistics(
@@ -284,6 +488,7 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
         json.dumps(
             {
                 "schema": RASTER_ASSET_SCHEMA,
+                "releaseId": "release-20260725",
                 "assets": {
                     asset.asset_id: {
                         "path": "depth.tif",
@@ -311,6 +516,14 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
     health = client.get("/ras-raster/health")
     assert health.status_code == 200
     assert health.json()["assets"] == 1
+    assert health.json()["releaseId"] == "release-20260725"
+    assert health.json()["catalogRevision"]
+    assert health.headers["cache-control"] == "no-store"
+
+    ready = client.get("/ras-raster/ready")
+    assert ready.status_code == 200
+    assert ready.json()["status"] == "ready"
+    assert ready.headers["cache-control"] == "no-store"
 
     stats = client.get(
         "/ras-raster/stats",
@@ -461,3 +674,130 @@ def test_styled_tile_and_fastapi_endpoints(tmp_path: Path):
     )
     assert rejected.status_code == 422
     assert rejected.headers["cache-control"] == "no-store"
+
+
+def test_readiness_detects_missing_assets_after_startup(tmp_path: Path):
+    root = tmp_path / "data"
+    root.mkdir()
+    cog = _write_cog(root / "depth.tif")
+    asset = _asset(cog)
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "schema": RASTER_ASSET_SCHEMA,
+                "releaseId": "release-missing",
+                "assets": {
+                    asset.asset_id: {
+                        "path": cog.name,
+                        "revision": asset.revision,
+                        "preset": asset.preset,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(create_raster_app(catalog_path, root))
+    cog.unlink()
+
+    ready = client.get("/ras-raster/ready")
+
+    assert ready.status_code == 503
+    assert ready.json()["status"] == "not-ready"
+    assert ready.json()["missingAssets"] == 1
+    assert ready.headers["cache-control"] == "no-store"
+
+
+def test_unexpected_raster_errors_are_not_cacheable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "data"
+    root.mkdir()
+    cog = _write_cog(root / "depth.tif")
+    asset = _asset(cog)
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "schema": RASTER_ASSET_SCHEMA,
+                "assets": {
+                    asset.asset_id: {
+                        "path": cog.name,
+                        "revision": asset.revision,
+                        "preset": asset.preset,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        webgis_service,
+        "compute_view_statistics",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("GDAL failed")),
+    )
+    client = TestClient(
+        create_raster_app(catalog_path, root),
+        raise_server_exceptions=False,
+    )
+
+    response = client.get(
+        "/ras-raster/stats",
+        params={
+            "asset": asset.asset_id,
+            "bbox": "-85.09,39.96,-84.86,40.19",
+            "revision": asset.revision,
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.headers["cache-control"] == "no-store"
+    assert "GDAL failed" not in response.text
+
+
+def test_concurrency_limit_returns_non_cacheable_503(
+    tmp_path: Path,
+):
+    root = tmp_path / "data"
+    root.mkdir()
+    cog = _write_cog(root / "depth.tif")
+    asset = _asset(cog)
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "schema": RASTER_ASSET_SCHEMA,
+                "assets": {
+                    asset.asset_id: {
+                        "path": cog.name,
+                        "revision": asset.revision,
+                        "preset": asset.preset,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = create_raster_app(
+        catalog_path,
+        root,
+        settings=RasterServiceSettings(max_concurrent_operations=1),
+    )
+    client = TestClient(app)
+
+    with app.state.operation_limiter.slot():
+        response = client.get(
+            "/ras-raster/sample",
+            params={
+                "asset": asset.asset_id,
+                "lng": -84.98,
+                "lat": 40.05,
+                "revision": asset.revision,
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["retry-after"] == "1"
