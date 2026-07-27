@@ -884,31 +884,35 @@ def raster_service_command(
         raise typer.Exit(1)
 
 
-@app.command("raster-service-catalog-merge")
-def raster_service_catalog_merge_command(
-    output: Path = typer.Argument(..., help="Output merged raster-assets.json"),
-    catalogs: list[Path] = typer.Option(
+@app.command("raster-release-service")
+def raster_release_service_command(
+    data_root: Path = typer.Argument(
         ...,
-        "--catalog",
-        help="Raster asset catalog to merge; repeat for each retained release",
+        help="Data root containing releases/<release-id>/raster-assets.json",
     ),
-    release_id: str = typer.Option(
-        ...,
-        "--release-id",
-        help="Active immutable release identifier reported by readiness checks",
+    host: str = typer.Option("127.0.0.1", "--host", help="Loopback listener address"),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        min=1,
+        max=65535,
+        help="Loopback listener port",
     ),
 ):
-    """Merge release-qualified allowlists while preserving older viewers."""
+    """Run the release-aware numeric raster service behind a reverse proxy."""
 
-    from ras2cng.webgis_service import merge_raster_asset_catalogs
+    import ipaddress
+
+    import uvicorn
+
+    from ras2cng.webgis_service import create_release_raster_app
 
     try:
-        result = merge_raster_asset_catalogs(
-            catalogs,
-            output,
-            release_id=release_id,
-        )
-        console.print(f"[green]OK[/green] Merged raster service catalog: {result}")
+        address = ipaddress.ip_address(host.strip("[]"))
+        if not address.is_loopback:
+            raise ValueError("raster-release-service must bind to a loopback address")
+        service = create_release_raster_app(data_root)
+        uvicorn.run(service, host=host, port=port, workers=1)
     except Exception as error:
         console.print(f"[red]ERROR:[/red] {error}")
         raise typer.Exit(1)

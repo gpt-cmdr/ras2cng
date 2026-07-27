@@ -39,6 +39,22 @@ class RasterAsset:
     maximum: float | None = None
 
 
+class RasterAssetFilesMissingError(FileNotFoundError):
+    """Raised when a catalog exists but one or more allowlisted files do not."""
+
+    def __init__(self, asset_ids: Iterable[str]):
+        self.asset_ids = tuple(asset_ids)
+        examples = ", ".join(self.asset_ids[:10])
+        super().__init__(
+            f"Raster catalog references {len(self.asset_ids)} missing asset file(s): "
+            f"{examples}"
+        )
+
+
+class ReleaseCatalogNotFoundError(FileNotFoundError):
+    """Raised when an immutable release has no raster catalog."""
+
+
 @dataclass(frozen=True)
 class RasterServiceSettings:
     """Resource and request limits for the isolated WebGIS service."""
@@ -231,6 +247,7 @@ class RasterAssetCatalog:
             )
         root = Path(data_root).resolve()
         assets: dict[str, RasterAsset] = {}
+        missing_assets: list[str] = []
         for asset_id, record in (document.get("assets") or {}).items():
             _validate_asset_id(asset_id)
             relative = Path(str(record.get("path") or ""))
@@ -242,9 +259,8 @@ class RasterAssetCatalog:
                     f"Raster asset {asset_id!r} escapes the configured data root"
                 )
             if not path.is_file():
-                raise FileNotFoundError(
-                    f"Raster asset {asset_id!r} does not exist: {path}"
-                )
+                missing_assets.append(asset_id)
+                continue
             preset = str(record.get("preset") or "")
             if preset not in STYLE_PRESETS:
                 raise ValueError(
@@ -262,6 +278,8 @@ class RasterAssetCatalog:
                 minimum=_optional_float(record.get("minimum")),
                 maximum=_optional_float(record.get("maximum")),
             )
+        if missing_assets:
+            raise RasterAssetFilesMissingError(missing_assets)
         catalog_revision = hashlib.sha256(catalog_bytes).hexdigest()[:24]
         release_id = str(document.get("releaseId") or catalog_revision)
         return cls(
@@ -278,6 +296,78 @@ class RasterAssetCatalog:
             return self.assets[asset_id]
         except KeyError as error:
             raise KeyError(f"Unknown raster asset: {asset_id}") from error
+
+
+class ReleaseRasterCatalogStore:
+    """Load and cache self-contained immutable release catalogs."""
+
+    def __init__(self, data_root: Path, *, max_entries: int = 64):
+        if max_entries < 1:
+            raise ValueError("The release catalog cache limit must be positive")
+        self.data_root = Path(data_root).resolve()
+        self.releases_root = (self.data_root / "releases").resolve()
+        if not self.releases_root.is_relative_to(self.data_root):
+            raise ValueError("The releases directory escapes the configured data root")
+        self.max_entries = max_entries
+        self._catalogs: OrderedDict[str, RasterAssetCatalog] = OrderedDict()
+        self._lock = Lock()
+
+    def get(self, release_id: str) -> RasterAssetCatalog:
+        release_id = str(release_id).strip()
+        if not _RELEASE_ID.fullmatch(release_id):
+            raise ValueError("Release ID contains unsupported characters")
+        with self._lock:
+            cached = self._catalogs.get(release_id)
+            if cached is not None:
+                self._catalogs.move_to_end(release_id)
+                return cached
+
+            release_root = (self.releases_root / release_id).resolve()
+            if not release_root.is_relative_to(self.releases_root):
+                raise ValueError("Release path escapes the configured releases root")
+            catalog_path = release_root / "raster-assets.json"
+            if not catalog_path.is_file():
+                raise ReleaseCatalogNotFoundError(
+                    f"Raster release {release_id!r} has no catalog"
+                )
+            catalog = RasterAssetCatalog.load(
+                catalog_path,
+                release_root,
+            )
+            if catalog.release_id != release_id:
+                raise ValueError(
+                    f"Raster catalog release ID {catalog.release_id!r} does not "
+                    f"match {release_id!r}"
+                )
+            self._catalogs[release_id] = catalog
+            self._catalogs.move_to_end(release_id)
+            while len(self._catalogs) > self.max_entries:
+                self._catalogs.popitem(last=False)
+            return catalog
+
+    def current_release_id(self) -> str:
+        """Resolve the single atomic ``current`` pointer to an immutable release."""
+
+        current = self.data_root / "current"
+        if not current.is_symlink():
+            raise ReleaseCatalogNotFoundError(
+                "The current raster release pointer is unavailable"
+            )
+        try:
+            release_root = current.resolve(strict=True)
+        except FileNotFoundError as error:
+            raise ReleaseCatalogNotFoundError(
+                "The current raster release pointer is broken"
+            ) from error
+        if (
+            release_root.parent != self.releases_root
+            or not _RELEASE_ID.fullmatch(release_root.name)
+        ):
+            raise ValueError(
+                "The current raster release pointer must select one direct child "
+                "of the releases directory"
+            )
+        return release_root.name
 
 
 def build_raster_asset_catalog(
@@ -384,49 +474,6 @@ def build_raster_asset_catalog(
     document = {
         "schema": RASTER_ASSET_SCHEMA,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "dataRoot": ".",
-        "assets": assets,
-    }
-    _atomic_json_write(Path(output_path), document)
-    return Path(output_path)
-
-
-def merge_raster_asset_catalogs(
-    catalog_paths: Iterable[Path],
-    output_path: Path,
-    *,
-    release_id: str,
-) -> Path:
-    """Merge immutable release catalogs without invalidating older manifests."""
-
-    release_id = str(release_id).strip()
-    if not _RELEASE_ID.fullmatch(release_id):
-        raise ValueError("release_id contains unsupported characters")
-    assets: dict[str, dict[str, Any]] = {}
-    for catalog_path in catalog_paths:
-        path = Path(catalog_path)
-        if not path.is_file():
-            continue
-        document = json.loads(path.read_text(encoding="utf-8"))
-        if document.get("schema") != RASTER_ASSET_SCHEMA:
-            raise ValueError(f"Unsupported raster asset catalog: {path}")
-        records = document.get("assets")
-        if not isinstance(records, dict):
-            raise ValueError(f"Raster asset catalog has no asset mapping: {path}")
-        for asset_id, record in records.items():
-            _validate_asset_id(asset_id)
-            existing = assets.get(asset_id)
-            if existing is not None and existing != record:
-                raise ValueError(
-                    f"Raster asset {asset_id!r} conflicts across release catalogs"
-                )
-            assets[asset_id] = dict(record)
-    if not assets:
-        raise ValueError("At least one non-empty raster asset catalog is required")
-    document = {
-        "schema": RASTER_ASSET_SCHEMA,
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "releaseId": release_id,
         "dataRoot": ".",
         "assets": assets,
     }
@@ -617,10 +664,19 @@ def create_raster_app(
     data_root: Path | None = None,
     *,
     settings: RasterServiceSettings | None = None,
+    release_catalogs: bool = False,
 ):
     """Create the isolated FastAPI application used by CLB-WebGIS."""
 
-    from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
+    from fastapi import (
+        FastAPI,
+        Header,
+        HTTPException,
+        Path as ApiPath,
+        Query,
+        Request,
+        Response,
+    )
     from fastapi.exception_handlers import (
         http_exception_handler,
         request_validation_exception_handler,
@@ -631,32 +687,57 @@ def create_raster_app(
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
     settings = settings or _settings_from_environment()
-    catalog_path = Path(
-        catalog_path or os.environ.get("RAS2CNG_RASTER_CATALOG", "raster-assets.json")
-    )
     data_root = Path(data_root or os.environ.get("RAS2CNG_RASTER_DATA_ROOT", "."))
-    catalog = RasterAssetCatalog.load(catalog_path, data_root)
+    if release_catalogs:
+        catalog = None
+        catalog_store = ReleaseRasterCatalogStore(data_root)
+    else:
+        catalog_path = Path(
+            catalog_path
+            or os.environ.get("RAS2CNG_RASTER_CATALOG", "raster-assets.json")
+        )
+        catalog = RasterAssetCatalog.load(catalog_path, data_root)
+        catalog_store = None
     cache = _LruCache(settings.cache_entries)
     operation_limiter = _OperationLimiter(settings.max_concurrent_operations)
     prefix = "/" + settings.route_prefix.strip("/")
-    app = FastAPI(title="RAS Commander Numeric Raster Service", version="1")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(settings.allowed_origins),
-        allow_methods=["GET"],
-        allow_headers=["*"],
-        expose_headers=[
-            "Accept-Ranges",
-            "Cache-Control",
-            "Content-Length",
-            "Content-Range",
-            "ETag",
-            "Retry-After",
-            "X-Raster-Revision",
-        ],
+    release_prefix = (
+        f"{prefix}/releases/{{release_id}}" if release_catalogs else prefix
     )
+    release_parameter = (
+        ApiPath(..., min_length=1, max_length=80)
+        if release_catalogs
+        else Query(None, include_in_schema=False)
+    )
+    app = FastAPI(title="RAS Commander Numeric Raster Service", version="1")
     app.state.catalog = catalog
+    app.state.catalog_store = catalog_store
     app.state.operation_limiter = operation_limiter
+
+    def request_catalog(release_id: str | None) -> RasterAssetCatalog:
+        if catalog_store is None:
+            if catalog is None:
+                raise HTTPException(status_code=503, detail="Raster catalog unavailable")
+            return catalog
+        try:
+            return catalog_store.get(str(release_id or ""))
+        except RasterAssetFilesMissingError as error:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "not-ready",
+                    "releaseId": str(release_id or ""),
+                    "missingAssets": len(error.asset_ids),
+                    "missingAssetExamples": list(error.asset_ids[:10]),
+                },
+            ) from error
+        except ReleaseCatalogNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Unknown raster release",
+            ) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @app.exception_handler(StarletteHTTPException)
     async def no_store_http_error(request: Request, error: StarletteHTTPException):
@@ -693,32 +774,87 @@ def create_raster_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    if catalog_store is not None:
+
+        @app.middleware("http")
+        async def route_legacy_requests_to_current(request: Request, call_next):
+            path = request.scope.get("path", "")
+            suffix = path[len(prefix) :] if path.startswith(prefix) else ""
+            if re.match(
+                r"^/(?:ready|stats|sample|cog)(?:$|/)|^/tiles(?:$|/)",
+                suffix,
+            ):
+                try:
+                    current_release_id = catalog_store.current_release_id()
+                except (ReleaseCatalogNotFoundError, ValueError) as error:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "detail": "Current raster release unavailable",
+                            "reason": str(error),
+                        },
+                        headers={"Cache-Control": "no-store"},
+                    )
+                routed_path = (
+                    f"{prefix}/releases/{current_release_id}{suffix}"
+                )
+                request.scope["path"] = routed_path
+                request.scope["raw_path"] = routed_path.encode("ascii")
+            return await call_next(request)
+
+    # Add CORS after the legacy rewrite so it remains the outermost middleware
+    # and decorates fail-closed responses returned before route dispatch.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.allowed_origins),
+        allow_methods=["GET"],
+        allow_headers=["*"],
+        expose_headers=[
+            "Accept-Ranges",
+            "Cache-Control",
+            "Content-Length",
+            "Content-Range",
+            "ETag",
+            "Retry-After",
+            "X-Raster-Revision",
+        ],
+    )
+
     @app.get(f"{prefix}/health")
     def health():
+        if catalog is None:
+            content = {
+                "status": "ok",
+                "schema": RASTER_ASSET_SCHEMA,
+                "catalogMode": "immutable-releases",
+            }
+        else:
+            content = _service_status(catalog, status="ok")
         return JSONResponse(
-            content=_service_status(catalog, status="ok"),
+            content=content,
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.get(f"{prefix}/ready")
-    def ready():
+    @app.get(f"{release_prefix}/ready")
+    def ready(release_id: str | None = release_parameter):
+        selected_catalog = request_catalog(release_id)
         missing = [
             asset.asset_id
-            for asset in catalog.assets.values()
+            for asset in selected_catalog.assets.values()
             if not asset.path.is_file()
         ]
         status = "ready" if not missing else "not-ready"
         return JSONResponse(
             status_code=200 if not missing else 503,
             content={
-                **_service_status(catalog, status=status),
+                **_service_status(selected_catalog, status=status),
                 "missingAssets": len(missing),
                 "missingAssetExamples": missing[:10],
             },
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.get(f"{prefix}/stats")
+    @app.get(f"{release_prefix}/stats")
     def statistics(
         asset: str = Query(..., min_length=1, max_length=300),
         bbox: str = Query(..., min_length=7, max_length=160),
@@ -726,9 +862,11 @@ def create_raster_app(
         height: int = Query(768, ge=1, le=settings.max_view_dimension),
         exact: bool = Query(False),
         revision: str | None = Query(None, max_length=80),
+        release_id: str | None = release_parameter,
     ):
+        selected_catalog = request_catalog(release_id)
         try:
-            record = catalog.get(asset)
+            record = selected_catalog.get(asset)
             _require_revision(record, revision)
             parsed_bbox = parse_bbox(bbox)
             normalized_bbox = normalize_view_bbox(parsed_bbox, width, height)
@@ -739,6 +877,7 @@ def create_raster_app(
                 max_dimension=settings.max_view_dimension,
             )
             key = (
+                selected_catalog.release_id,
                 record.asset_id,
                 record.revision,
                 normalized_bbox,
@@ -768,18 +907,21 @@ def create_raster_app(
             headers=_cache_headers(record, revision, result),
         )
 
-    @app.get(f"{prefix}/sample")
+    @app.get(f"{release_prefix}/sample")
     def sample(
         asset: str = Query(..., min_length=1, max_length=300),
         lng: float = Query(..., ge=-180, le=180),
         lat: float = Query(..., ge=-90, le=90),
         revision: str | None = Query(None, max_length=80),
+        release_id: str | None = release_parameter,
     ):
+        selected_catalog = request_catalog(release_id)
         try:
-            record = catalog.get(asset)
+            record = selected_catalog.get(asset)
             _require_revision(record, revision)
             key = (
                 "sample",
+                selected_catalog.release_id,
                 record.asset_id,
                 record.revision,
                 round(lng, 10),
@@ -799,13 +941,15 @@ def create_raster_app(
             headers=_cache_headers(record, revision, result),
         )
 
-    @app.head(f"{prefix}/cog")
+    @app.head(f"{release_prefix}/cog")
     def cog_head(
         asset: str = Query(..., min_length=1, max_length=300),
         revision: str | None = Query(None, max_length=80),
+        release_id: str | None = release_parameter,
     ):
+        selected_catalog = request_catalog(release_id)
         try:
-            record = catalog.get(asset)
+            record = selected_catalog.get(asset)
             _require_revision(record, revision)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -822,7 +966,7 @@ def create_raster_app(
             ),
         )
 
-    @app.get(f"{prefix}/cog")
+    @app.get(f"{release_prefix}/cog")
     def cog_range(
         asset: str = Query(..., min_length=1, max_length=300),
         revision: str | None = Query(None, max_length=80),
@@ -833,9 +977,11 @@ def create_raster_app(
             min_length=8,
             max_length=80,
         ),
+        release_id: str | None = release_parameter,
     ):
+        selected_catalog = request_catalog(release_id)
         try:
-            record = catalog.get(asset)
+            record = selected_catalog.get(asset)
             _require_revision(record, revision)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -885,7 +1031,7 @@ def create_raster_app(
         )
 
     @app.get(
-        f"{prefix}/tiles/{{z}}/{{x}}/{{y}}.png",
+        f"{release_prefix}/tiles/{{z}}/{{x}}/{{y}}.png",
         responses={
             200: {
                 "content": {"image/png": {}},
@@ -902,18 +1048,21 @@ def create_raster_app(
         minimum: float | None = Query(None),
         maximum: float | None = Query(None),
         revision: str | None = Query(None, max_length=80),
+        release_id: str | None = release_parameter,
     ):
+        selected_catalog = request_catalog(release_id)
         try:
             if z < 0 or z > 24 or x < 0 or y < 0 or x >= 2**z or y >= 2**z:
                 raise ValueError(
                     "Tile coordinates are outside the supported Web Mercator pyramid"
                 )
-            record = catalog.get(asset)
+            record = selected_catalog.get(asset)
             _require_revision(record, revision)
             selected_preset = preset or record.preset
             if selected_preset != record.preset:
                 raise ValueError("Requested preset does not match the asset allowlist")
             key = (
+                selected_catalog.release_id,
                 record.asset_id,
                 record.revision,
                 z,
@@ -948,6 +1097,20 @@ def create_raster_app(
         )
 
     return app
+
+
+def create_release_raster_app(
+    data_root: Path | None = None,
+    *,
+    settings: RasterServiceSettings | None = None,
+):
+    """Create a service that discovers one catalog per immutable release."""
+
+    return create_raster_app(
+        data_root=data_root,
+        settings=settings,
+        release_catalogs=True,
+    )
 
 
 def parse_bbox(value: str) -> tuple[float, float, float, float]:

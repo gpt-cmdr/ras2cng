@@ -35,6 +35,29 @@ ras2cng raster-service /srv/rascommander/raster-assets.json \
 The CLI rejects non-loopback listeners. The reverse proxy is the only public entry point.
 The repository includes example systemd and Nginx configurations under `deploy/webgis/`.
 
+For a site that retains self-contained immutable releases, run one release-aware service:
+
+```bash
+ras2cng raster-release-service /srv/rascommander/hec-ras-7.0 \
+  --host 127.0.0.1 --port 8087
+```
+
+Each release supplies its own
+`releases/<release-id>/raster-assets.json`. Its API is available beneath
+`/ras-raster/releases/<release-id>/`; newly published releases are discovered on
+first request without merging catalogs or restarting the service.
+
+During migration, the original unprefixed routes (`/ras-raster/sample`,
+`/stats`, `/cog`, `/tiles/...`, and `/ready`) resolve through the data root's
+single `current -> releases/<release-id>` symlink. They therefore follow the
+active release while release-scoped routes remain immutable. The compatibility
+routes fail closed with a non-cacheable `503` if `current` is absent, broken, or
+does not select a direct release child.
+
+If a release catalog exists but references missing files, release readiness
+returns a non-cacheable `503` with the missing-asset count and examples. A
+missing catalog remains a `404` unknown release.
+
 ## Request Limits
 
 - Assets are selected by allowlisted IDs, never arbitrary paths or URLs.

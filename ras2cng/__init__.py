@@ -70,9 +70,11 @@ from ras2cng.webgis_service import (
     STYLE_PRESETS,
     RasterAsset,
     RasterAssetCatalog,
+    ReleaseRasterCatalogStore,
     RasterServiceSettings,
     build_raster_asset_catalog,
     compute_view_statistics,
+    create_release_raster_app,
     create_raster_app,
     render_styled_tile,
 )
@@ -202,9 +204,11 @@ __all__ = [
     "STYLE_PRESETS",
     "RasterAsset",
     "RasterAssetCatalog",
+    "ReleaseRasterCatalogStore",
     "RasterServiceSettings",
     "build_raster_asset_catalog",
     "compute_view_statistics",
+    "create_release_raster_app",
     "create_raster_app",
     "render_styled_tile",
     # PostGIS
