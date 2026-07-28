@@ -841,8 +841,10 @@ def package_maplibre_terrain(
     viewer_dir: Path,
     *,
     name: str = "Terrain",
+    layer_id: str | None = None,
     source_cog: str | None = None,
     units: str = "ft",
+    visible: bool = True,
     max_zoom: int | None = None,
     scratch_dir: Path | None = None,
     overwrite: bool = False,
@@ -865,9 +867,15 @@ def package_maplibre_terrain(
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     tilesets = manifest.setdefault("tilesets", [])
-    existing = next((item for item in tilesets if item.get("id") == "terrain"), None)
+    terrain_id = _slug(layer_id or "terrain")
+    if not terrain_id:
+        raise ValueError("Terrain layer ID must contain at least one letter or number.")
+    existing = next((item for item in tilesets if item.get("id") == terrain_id), None)
     if existing and not overwrite:
-        raise FileExistsError("Viewer already has a terrain tileset; pass overwrite=True to replace it.")
+        raise FileExistsError(
+            f"Viewer already has terrain tileset {terrain_id!r}; "
+            "pass overwrite=True to replace it."
+        )
 
     for executable in (
         _gdalinfo_command(),
@@ -889,7 +897,7 @@ def package_maplibre_terrain(
     raster_metadata = _raster_source_metadata(cog_path)
     tiles_dir = viewer_dir / "tiles"
     tiles_dir.mkdir(parents=True, exist_ok=True)
-    output = tiles_dir / "terrain.pmtiles"
+    output = tiles_dir / f"{terrain_id}.pmtiles"
     if output.exists() and not overwrite:
         raise FileExistsError(f"Terrain PMTiles already exists: {output}")
     source_href = source_cog or _relative_href(cog_path, viewer_dir)
@@ -900,19 +908,19 @@ def package_maplibre_terrain(
         ramp_writer=lambda path: _terrain_color_ramp(stats, path),
         max_zoom=max_zoom,
         scratch_dir=scratch_dir,
-        prefix="terrain",
+        prefix=terrain_id,
     )
 
     terrain_tileset = {
-        "id": "terrain",
+        "id": terrain_id,
         "name": name,
         "type": "raster",
-        "href": "tiles/terrain.pmtiles",
+        "href": f"tiles/{terrain_id}.pmtiles",
         "sourceCog": source_href,
         "bytes": output.stat().st_size,
         "tileSize": 256,
         "groupId": "ras-terrains",
-        "visible": True,
+        "visible": visible,
         "opacity": 1.0,
         "maxzoom": selected_max_zoom,
         "rasterStats": stats,
