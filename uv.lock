@@ -3942,7 +3942,7 @@ wheels = [
 
 [[package]]
 name = "ras-commander"
-version = "0.98.2"
+version = "0.99.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fsspec" },
@@ -3955,7 +3955,11 @@ dependencies = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "psutil" },
+    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "rasterio", version = "1.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "rasterio", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "rasterstats" },
     { name = "requests" },
     { name = "rtree" },
@@ -3966,9 +3970,9 @@ dependencies = [
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2026.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/6e/57906138eee383b1c8936ff9923cba80988e264abaf29b09570aa1992e50/ras_commander-0.98.2.tar.gz", hash = "sha256:1e447971dcb9d4a6f928f9ae965f7050a9000a8f658cb3138e04bd39e12fcd9d", size = 1631506, upload-time = "2026-06-11T23:43:00.913Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/d7/0bc706b14e80886fd7b67fe9239cf63a13c475af1042d7a1566bf3563362/ras_commander-0.99.1.tar.gz", hash = "sha256:35c6f0d9e42ba0e5762b1e8786c02609f8ae1796899e70991e8315949dd42331", size = 2005494, upload-time = "2026-07-21T14:32:23.855Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/34/a30cd96c4623bec72b801478c10334ceeef47f54bbd99e08a6cb8ea4a56b/ras_commander-0.98.2-py3-none-any.whl", hash = "sha256:9b8fc5297dec4b40510e22182dcaadb32c78e1803ebd0fee133f5147fb8a4b3c", size = 1540823, upload-time = "2026-06-11T23:42:59.4Z" },
+    { url = "https://files.pythonhosted.org/packages/23/3b/fe942aeefd34ffd2aace59dc9bd86da096931d3c6f0b11d21e93a4909c7d/ras_commander-0.99.1-py3-none-any.whl", hash = "sha256:ee6457de99b13300453d163c7defecc77705de5b02b57f13cb35028c96ba4c16", size = 1768516, upload-time = "2026-07-21T14:32:21.633Z" },
 ]
 
 [[package]]
@@ -4047,7 +4051,7 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgis'", specifier = ">=2.9.0" },
     { name = "pyarrow", specifier = ">=14.0.0" },
-    { name = "ras-commander", specifier = ">=0.98.2" },
+    { name = "ras-commander", specifier = ">=0.99.0" },
     { name = "rasterio", marker = "extra == 'all'", specifier = ">=1.3.0" },
     { name = "rasterio", marker = "extra == 'pmtiles'", specifier = ">=1.3.0" },
     { name = "rich", specifier = ">=13.0.0" },
