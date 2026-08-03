@@ -7,7 +7,7 @@
 [![PyPI version](https://badge.fury.io/py/ras2cng.svg)](https://badge.fury.io/py/ras2cng)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://readthedocs.org/projects/ras2cng/badge/?version=latest)](https://ras2cng.readthedocs.io/en/latest/)
+[![Documentation](https://img.shields.io/badge/docs-rascommander.info-blue.svg)](https://rascommander.info/ras2cng/)
 
 Full-project archival and cloud-native export tool for HEC-RAS. Extracts geometry, results, and
 terrain from any HEC-RAS project into hierarchical GeoParquet archives with a `manifest.json`
@@ -16,6 +16,8 @@ PostGIS sync. Archives are spatially post-processed by default for predicate pus
 stable viewer-side joins.
 
 Built on [`ras-commander`](https://github.com/gpt-cmdr/ras-commander) by [CLB Engineering Corporation](https://clbengineering.com/).
+
+**Documentation:** [rascommander.info/ras2cng](https://rascommander.info/ras2cng/)
 
 ## Installation
 

@@ -80,7 +80,7 @@ ras2cng = "ras2cng.cli:app"
 [project.urls]
 Homepage = "https://github.com/gpt-cmdr/ras2cng"
 Repository = "https://github.com/gpt-cmdr/ras2cng"
-Documentation = "https://gpt-cmdr.github.io/ras2cng/"
+Documentation = "https://rascommander.info/ras2cng/"
 "Bug Tracker" = "https://github.com/gpt-cmdr/ras2cng/issues"
 
 [tool.pytest.ini_options]

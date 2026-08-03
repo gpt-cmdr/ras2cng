@@ -96,3 +96,13 @@ Each consolidated GeoParquet includes per-row bbox columns (`bbox_xmin`, `bbox_y
 - Archive output uses **ZSTD compression** (not snappy) per GeoParquet best practices. Legacy per-file exports still use snappy.
 - `merge_all_layers()` and `merge_all_variables()` produce consolidated GeoDataFrames with `layer` column; text layers get `_text` suffix
 - Hilbert spatial sorting (via DuckDB) is default ON for archives; disable with `--no-sort`
+
+## Documentation Site
+
+- The canonical documentation is `https://rascommander.info/ras2cng/`.
+- The `ras-commander-docs` umbrella builds this repo's `master` branch and injects the shared
+  cross-product theme at publish time. Keep this repo's own `mkdocs.yml` and docs content here;
+  do not copy the umbrella theme into the repo.
+- `ras2cng.readthedocs.io` is a legacy URL and should redirect to the canonical site.
+- When a public DataFrame/GeoDataFrame contract changes, update `ras2cng/schemas.py` in the same
+  change so the agent-native surface at `/ras2cng/llms/api/` remains accurate.

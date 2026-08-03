@@ -1,7 +1,7 @@
 site_name: ras2cng — RAS to Cloud Native GIS
 site_description: CLI for exporting HEC-RAS geometry/results to GeoParquet, PMTiles, DuckDB, and PostGIS
 site_author: William Katzenmeyer, P.E., C.F.M.
-site_url: https://gpt-cmdr.github.io/ras2cng/
+site_url: https://rascommander.info/ras2cng/
 
 repo_name: gpt-cmdr/ras2cng
 repo_url: https://github.com/gpt-cmdr/ras2cng
