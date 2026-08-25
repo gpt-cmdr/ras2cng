@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -25,8 +27,16 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import shapely
 
+from ras2cng.cog import (
+    assert_plausible_wgs84_bounds,
+    atomic_output,
+    describe_crs,
+    overview_factors,
+)
 from ras2cng.pmtiles import _require_cli
 from ras2cng.viewer_manifest import apply_manifest_v2
+
+LOGGER = logging.getLogger(__name__)
 
 
 _INTERNAL_COLUMNS = {
@@ -485,44 +495,102 @@ def _stream_dense_layer_ndgeojson(
     return count, sorted(geometry_types), _merge_bounds(bounds)
 
 
+def _bounded_tiles_requested() -> bool:
+    """Whether to cap tile size instead of choosing fidelity unconditionally.
+
+    ``--no-tile-size-limit --no-feature-limit`` keeps every feature at every
+    zoom, which is the right call for an engineering deliverable but produces
+    multi-megabyte individual tiles from a dense RAS mesh -- MapLibre stalls on
+    them and the CDN pays for them.  The bounded policy is opt-in rather than
+    default because dropping features from a published hydraulic tileset is a
+    decision for the publisher, not a silent default.
+    """
+
+    return os.environ.get("RAS2CNG_TIPPECANOE_BOUNDED", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _log_tippecanoe_output(stderr: str | None) -> None:
+    """Surface tippecanoe's diagnostics instead of discarding them.
+
+    Tippecanoe reports dropped features and oversized tiles on stderr even when
+    it exits zero; swallowing that makes silent data loss invisible.
+    """
+
+    for line in (stderr or "").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if any(token in text.lower() for token in ("dropp", "exceed", "too large", "warning")):
+            LOGGER.warning("tippecanoe: %s", text)
+        else:
+            LOGGER.debug("tippecanoe: %s", text)
+
+
 def _run_tippecanoe(
     output: Path,
     layers: Sequence[tuple[str, Path]],
     min_zoom: int,
     max_zoom: int,
     temporary_directory: Path | None = None,
+    *,
+    bounded: bool | None = None,
 ) -> None:
     if not layers:
         raise ValueError("Tippecanoe needs at least one non-empty source layer.")
     output.parent.mkdir(parents=True, exist_ok=True)
-    mbtiles_path = output.with_suffix(".mbtiles")
-    command = [
-        _tippecanoe_command(),
-        "--force",
-        "--read-parallel",
-        "--no-tile-size-limit",
-        "--no-feature-limit",
-        "--extend-zooms-if-still-dropping",
-        f"--minimum-zoom={min_zoom}",
-        f"--maximum-zoom={max_zoom}",
-        "--output",
-        str(mbtiles_path),
-    ]
+    if bounded is None:
+        bounded = _bounded_tiles_requested()
     if temporary_directory is not None:
         temporary_directory.mkdir(parents=True, exist_ok=True)
-        command.extend(["--temporary-directory", str(temporary_directory)])
-    for source_layer, source_path in layers:
-        command.extend(["-L", f"{source_layer}:{source_path}"])
-    try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
-        subprocess.run(
-            [_pmtiles_command(), "convert", str(mbtiles_path), str(output)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        mbtiles_path.unlink(missing_ok=True)
+
+    # The .mbtiles intermediate is multi-GB for a large mesh.  Writing it beside
+    # the final output put it inside the published release tree, where a kill
+    # between tippecanoe and `pmtiles convert` left both an orphan intermediate
+    # and a truncated tileset at the published path.
+    with tempfile.TemporaryDirectory(
+        prefix="ras2cng-tippecanoe-",
+        dir=str(temporary_directory) if temporary_directory is not None else None,
+    ) as scratch:
+        scratch_dir = Path(scratch)
+        mbtiles_path = scratch_dir / f"{output.stem}.mbtiles"
+        command = [
+            _tippecanoe_command(),
+            "--force",
+            "--read-parallel",
+        ]
+        if bounded:
+            command.append("--drop-densest-as-needed")
+        else:
+            command.extend(["--no-tile-size-limit", "--no-feature-limit"])
+        command.extend([
+            # Only acts when features are being dropped, so it is inert under
+            # the unbounded policy above and load-bearing under the bounded one.
+            "--extend-zooms-if-still-dropping",
+            # Adjacent RAS mesh cells share edges.  Simplified independently,
+            # those edges diverge and open visible slivers between cells at low
+            # zoom.
+            "--no-simplification-of-shared-nodes",
+            f"--minimum-zoom={min_zoom}",
+            f"--maximum-zoom={max_zoom}",
+            "--output",
+            str(mbtiles_path),
+            "--temporary-directory",
+            str(scratch_dir),
+        ])
+        for source_layer, source_path in layers:
+            command.extend(["-L", f"{source_layer}:{source_path}"])
+
+        completed = subprocess.run(command, check=True, capture_output=True, text=True)
+        _log_tippecanoe_output(completed.stderr)
+        with atomic_output(output) as staged:
+            subprocess.run(
+                [_pmtiles_command(), "convert", str(mbtiles_path), str(staged)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
 
 def _gdalinfo(path: Path) -> dict[str, Any]:
@@ -607,6 +675,21 @@ def _web_mercator_raster_resolution(cog_path: Path) -> float:
     return max(abs(float(transform.a)), abs(float(transform.e)))
 
 
+def _web_mercator_bounds(cog_path: Path) -> tuple[float, float, float, float]:
+    """Return the source raster's extent in EPSG:3857."""
+
+    import rasterio
+    from rasterio.warp import transform_bounds
+
+    with rasterio.open(cog_path) as source:
+        if source.crs is None:
+            raise ValueError(f"Numeric COG has no CRS: {cog_path}")
+        west, south, east, north = transform_bounds(
+            source.crs, "EPSG:3857", *source.bounds, densify_pts=21
+        )
+    return float(west), float(south), float(east), float(north)
+
+
 def _terrain_color_ramp(stats: Mapping[str, float], path: Path) -> None:
     """Write a stretched RAS terrain palette with transparent no-data cells."""
 
@@ -626,7 +709,14 @@ def _terrain_color_ramp(stats: Mapping[str, float], path: Path) -> None:
     # HEC-RAS terrains conventionally use -9999 outside the valid terrain
     # footprint. Without this palette entry, gdaldem assigns those cells the
     # first terrain color instead of preserving the raster's no-data mask.
-    lines.append("nv 0 0 0 0")
+    #
+    # The RGB carried at alpha 0 matters: gdaladdo averages each band
+    # independently and does not premultiply by alpha, so a (0,0,0,0) nodata
+    # pixel mixes pure black into every overview tile that straddles the
+    # terrain edge -- a dark fringe that widens as you zoom out.  Carrying the
+    # adjacent ramp colour instead keeps the mix neutral.
+    edge_red, edge_green, edge_blue = _RAS_TERRAIN_COLORS[0][1:4]
+    lines.append(f"nv {edge_red} {edge_green} {edge_blue} 0")
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
@@ -673,7 +763,11 @@ def _result_color_ramp(
     for index, (red, green, blue, alpha) in enumerate(palette):
         fraction = index / max(1, len(palette) - 1)
         lines.append(f"{minimum + span * fraction:.9f} {red} {green} {blue} {alpha}")
-    lines.append("nv 0 0 0 0")
+    # Alpha-0 nodata carries the low ramp colour rather than black: gdaladdo
+    # averages RGB without premultiplying by alpha, so black here paints a dark
+    # fringe along every flood boundary at every overview level.
+    edge_red, edge_green, edge_blue = palette[0][:3]
+    lines.append(f"nv {edge_red} {edge_green} {edge_blue} 0")
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
     preset = {
         "froude": "rascommander.froude",
@@ -701,36 +795,39 @@ def _relative_href(path: Path, base_dir: Path) -> str:
 def _raster_source_metadata(path: Path) -> dict[str, Any]:
     """Read CRS, native bounds, WGS84 bounds, dtype, and nodata from a COG."""
 
-    import math
     import rasterio
     from rasterio.warp import transform_bounds
 
     with rasterio.open(path) as source:
         if source.crs is None:
             raise ValueError(f"Numeric raster has no CRS and cannot be published: {path}")
-        # RASMapper GeoTIFF WKT frequently omits the projected CRS authority even
-        # when PROJ can identify it at lower confidence. The browser still needs
-        # an explicit Proj4 definition because proj4js does not bundle EPSG data.
-        epsg = source.crs.to_epsg(confidence_threshold=25)
-        crs = f"EPSG:{epsg}" if epsg else source.crs.to_string()
-        proj4 = source.crs.to_proj4() or None
-        if proj4:
-            proj4 = " ".join(
-                token[:-5] if token.endswith("=True") else token
-                for token in proj4.split()
-            )
+        # RASMapper GeoTIFF WKT frequently omits the projected CRS authority.
+        # The browser needs an explicit Proj4 definition regardless, because
+        # proj4js bundles no EPSG data -- so `sourceProj4`, taken verbatim from
+        # the source, is the authoritative field and `sourceCrs` is advisory.
+        #
+        # Matching the authority at a permissive confidence is not a substitute:
+        # a Texas Centric Albers definition in US survey feet has no exact EPSG
+        # match, and the nearest code (3083) is the metre variant, which
+        # displaces the raster by roughly 25,000 km.  `describe_crs` returns a
+        # code only when the linear unit and ellipsoid round-trip.
+        described = describe_crs(source.crs)
         wgs84_bounds = transform_bounds(
             source.crs,
             "EPSG:4326",
             *source.bounds,
             densify_pts=21,
         )
+        # A wrong CRS shows up here first, as out-of-range or degenerate lon/lat.
+        assert_plausible_wgs84_bounds(wgs84_bounds, path)
         nodata = source.nodata
         if nodata is not None and not math.isfinite(float(nodata)):
             nodata = None
         return {
-            "sourceCrs": crs,
-            "sourceProj4": proj4,
+            "sourceCrs": described["crs"],
+            "sourceCrsAuthority": described["authority"],
+            "sourceProj4": described["proj4"],
+            "sourceWkt": described["wkt"],
             "sourceBounds": [float(value) for value in source.bounds],
             "bounds": [float(value) for value in wgs84_bounds],
             "dtype": str(source.dtypes[0]),
@@ -808,19 +905,33 @@ def _render_raster_pmtiles(
             capture_output=True,
             text=True,
         )
-        subprocess.run(
-            [_gdaladdo_command(), "-r", "average", str(mbtiles), "2", "4", "8", "16", "32", "64", "128"],
-            check=True,
-            capture_output=True,
-            text=True,
+        # Pyramid depth follows the raster, rather than a fixed 2..128 ladder
+        # that over-builds a small raster and stops short on a large one.
+        # MBTiles tiles are 256 px, so that is the size the top level must fit.
+        west, south, east, north = _web_mercator_bounds(cog_path)
+        addo_factors = overview_factors(
+            max(1, math.ceil((east - west) / display_resolution)),
+            max(1, math.ceil((north - south) / display_resolution)),
+            blocksize=256,
         )
-        output.unlink(missing_ok=True)
-        subprocess.run(
-            [_pmtiles_command(), "convert", str(mbtiles), str(output)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        if addo_factors:
+            subprocess.run(
+                [_gdaladdo_command(), "-r", "average", str(mbtiles)]
+                + [str(factor) for factor in addo_factors],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        # Never delete the published tileset before its replacement exists: a
+        # crash, a full disk, or a missing `pmtiles` binary between the two used
+        # to leave the release with no tileset at all.
+        with atomic_output(output) as staged:
+            subprocess.run(
+                [_pmtiles_command(), "convert", str(mbtiles), str(staged)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
     return selected_max_zoom
 
 
@@ -1878,6 +1989,16 @@ def package_maplibre_viewer(
                 max(min_zoom, 13),
                 max_zoom,
                 work_dir / "tippecanoe-detail",
+                # Only the dense mesh is bounded, and only here.  At this
+                # tileset's floor of z13 a typical RAS cell is roughly half a
+                # pixel, so unbounded tiles pay multi-megabyte transfers for
+                # geometry no one can resolve.  Paired with
+                # --extend-zooms-if-still-dropping this does not discard
+                # features: it pushes them to the zoom where they are legible.
+                # The overview tileset stays unbounded because its engineering
+                # layers -- cross sections, structures, BC and reference lines
+                # -- are sparse and must be complete at every zoom.
+                bounded=True,
             )
 
         result_sources: list[tuple[str, Path]] = []
@@ -1997,6 +2118,12 @@ def package_maplibre_viewer(
                 min_zoom,
                 max_zoom,
                 work_dir / "tippecanoe-results",
+                # Result values joined to mesh cells are one polygon per cell --
+                # as dense as the detail tileset, but spanning the full zoom
+                # range rather than starting at z13.  The ceiling is only a
+                # ceiling: on a sparse join (reference lines or points) it never
+                # fires, so this costs nothing where density is not a problem.
+                bounded=True,
             )
 
     final_bounds = _merge_bounds(all_bounds)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 import json
+import logging
 import math
 import re
 from pathlib import Path
@@ -21,6 +22,7 @@ from typing import Optional
 from rich.console import Console
 
 console = Console()
+LOGGER = logging.getLogger(__name__)
 
 
 def _glob_tifs(directory: Path, pattern: str = "*.tif") -> list[Path]:
@@ -998,12 +1000,21 @@ def _merge_tifs(
                             existing[fill] = candidate[fill]
                             destination.write(existing, 1, window=window)
 
-            overview_factors = [
-                factor for factor in (2, 4, 8, 16, 32, 64)
-                if min(width, height) // factor >= 128
-            ]
-            if overview_factors:
-                destination.build_overviews(overview_factors, Resampling.average)
+            # One pyramid-depth policy for the repo: continue until the top
+            # level fits a single block, rather than capping at factor 64 and
+            # leaving a large terrain without a cheap top level.
+            from ras2cng.cog import overview_factors as _overview_factors
+
+            factors = _overview_factors(width, height)
+            if factors:
+                # Terrain is a genuinely continuous surface, so `average` is the
+                # right decimator for its interior.  It does expand the terrain
+                # footprint outward by one coarse cell per level at the nodata
+                # edge, but this pyramid no longer reaches the published COG:
+                # the terrain COG writer now passes OVERVIEWS=IGNORE_EXISTING
+                # and rebuilds, so this serves direct readers of the merged
+                # intermediate only.
+                destination.build_overviews(factors, Resampling.average)
                 destination.update_tags(ns="rio_overview", resampling="average")
     finally:
         for dataset in datasets:
@@ -1027,8 +1038,15 @@ def _crs_equivalent(crs1, crs2) -> bool:
         p1 = PyprojCRS(crs1.to_wkt())
         p2 = PyprojCRS(crs2.to_wkt())
         return p1.equals(p2)
-    except (ImportError, Exception):
-        pass
+    except ImportError:
+        LOGGER.debug("pyproj is unavailable; falling back to weaker CRS comparison")
+    except Exception as error:
+        # The fallbacks below (EPSG code, normalized WKT) are much weaker tests
+        # -- two different CRSs can compare equal under them -- so a genuine
+        # pyproj failure must be visible rather than silently downgraded.
+        LOGGER.warning(
+            "pyproj could not compare CRSs (%s); falling back to weaker comparison", error
+        )
 
     # Fallback: compare EPSG codes if both resolve
     try:

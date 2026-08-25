@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ras2cng"
-version = "0.7.0"
+version = "0.8.0"
 description = "CLI for exporting HEC-RAS geometry/results to cloud-native GIS formats (GeoParquet, PMTiles, DuckDB, PostGIS)"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -54,6 +54,10 @@ pmtiles = [
   # Note: tippecanoe + pmtiles + gdal are CLIs and must be installed separately.
   # This extra just pulls common Python deps used by the module.
   "rasterio>=1.3.0",
+  # rio-cogeo is the only check that establishes cloud-optimized *layout*.
+  # Gate on cog_validate(...)[0] from Python -- the `rio cogeo validate` CLI
+  # always exits 0, including on an invalid file.
+  "rio-cogeo>=5.0.0",
 ]
 gpio = [
   "geoparquet-io>=0.9",
@@ -61,6 +65,7 @@ gpio = [
 webgis = [
   "fastapi>=0.115,<1",
   "rio-tiler>=7,<8",
+  "rio-cogeo>=5.0.0",
   "uvicorn[standard]>=0.34,<1",
 ]
 all = [
@@ -71,6 +76,7 @@ all = [
   "rasterio>=1.3.0",
   "fastapi>=0.115,<1",
   "rio-tiler>=7,<8",
+  "rio-cogeo>=5.0.0",
   "uvicorn[standard]>=0.34,<1",
 ]
 
