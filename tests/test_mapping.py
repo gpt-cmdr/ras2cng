@@ -790,7 +790,9 @@ def test_convert_to_cog_uses_bundled_gdal_and_builds_overviews(tmp_path):
         assert source.is_tiled
         assert source.overviews(1)
         assert source.nodata == pytest.approx(-9999.0)
-        assert source.compression.name == "zstd"
+        # DEFLATE, not ZSTD: a published result raster must open in any GDAL,
+        # including builds without libzstd, which fail hard rather than degrade.
+        assert source.compression.name == "deflate"
 
 
 def test_convert_to_cog_rejects_missing_source(tmp_path):

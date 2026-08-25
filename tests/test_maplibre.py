@@ -16,6 +16,16 @@ from ras2cng import maplibre
 from ras2cng.cli import app
 
 
+def _completed(command, stdout: str = "", stderr: str = ""):
+    """Stand-in for subprocess.CompletedProcess used by the fake runners."""
+
+    return type(
+        "Completed",
+        (),
+        {"args": command, "returncode": 0, "stdout": stdout, "stderr": stderr},
+    )()
+
+
 def test_raw_sa2d_results_join_prefixed_hdf_names_to_geometry_connections(
     tmp_path: Path,
 ) -> None:
@@ -144,7 +154,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     archive_dir, hdf = _write_archive(tmp_path)
     calls: list[tuple[Path, list[tuple[str, Path]]]] = []
 
-    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path, **_kwargs):
         calls.append((output, list(layers), temporary_directory))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
@@ -217,7 +227,7 @@ def test_package_reads_plan_layout_raw_results(monkeypatch, tmp_path: Path):
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     emitted_results: list[dict] = []
 
-    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path, **_kwargs):
         for source_layer, source_path in layers:
             if source_layer.startswith("ras-results-"):
                 emitted_results.extend(
@@ -408,14 +418,24 @@ def test_run_tippecanoe_converts_mbtiles_to_pmtiles(monkeypatch, tmp_path: Path)
             Path(command[command.index("--output") + 1]).write_bytes(b"mbtiles")
         else:
             Path(command[-1]).write_bytes(b"pmtiles")
+        return _completed(command)
 
     monkeypatch.setattr(maplibre.subprocess, "run", fake_run)
     maplibre._run_tippecanoe(output, [("geometry", tmp_path / "geometry.ndgeojson")], 0, 17)
 
-    assert calls[0][calls[0].index("--output") + 1] == str(output.with_suffix(".mbtiles"))
-    assert calls[1] == ["pmtiles", "convert", str(output.with_suffix(".mbtiles")), str(output)]
+    mbtiles_argument = Path(calls[0][calls[0].index("--output") + 1])
+    assert mbtiles_argument.name == "geometry.mbtiles"
+    assert mbtiles_argument.parent != output.parent, (
+        "the multi-GB intermediate must not be written into the release tree"
+    )
+    assert "--no-simplification-of-shared-nodes" in calls[0]
+    assert calls[1][:3] == ["pmtiles", "convert", str(mbtiles_argument)]
+    # pmtiles converts into a staged sibling, never over the live tileset.
+    staged = Path(calls[1][3])
+    assert staged.parent == output.parent and staged.name.startswith(f".{output.name}.partial-")
     assert output.read_bytes() == b"pmtiles"
     assert not output.with_suffix(".mbtiles").exists()
+    assert list(output.parent.glob(".*partial*")) == []
 
 
 def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Path) -> None:
@@ -480,6 +500,9 @@ def test_package_terrain_adds_default_queryable_raster(monkeypatch, tmp_path: Pa
 
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_web_mercator_raster_resolution", lambda _: 1.5)
+    monkeypatch.setattr(
+        maplibre, "_web_mercator_bounds", lambda _: (-9500000.0, 4800000.0, -9499000.0, 4801000.0)
+    )
     monkeypatch.setattr(
         maplibre,
         "_raster_source_metadata",
@@ -564,7 +587,13 @@ def test_terrain_color_ramp_makes_nodata_transparent(tmp_path: Path) -> None:
 
     maplibre._terrain_color_ramp({"minimum": 466.0, "maximum": 2542.0}, ramp)
 
-    assert ramp.read_text(encoding="ascii").splitlines()[-1] == "nv 0 0 0 0"
+    nodata_entry = ramp.read_text(encoding="ascii").splitlines()[-1].split()
+    assert nodata_entry[0] == "nv"
+    assert nodata_entry[4] == "0", "nodata must stay fully transparent"
+    # Not black: gdaladdo averages RGB without premultiplying by alpha, so a
+    # (0,0,0,0) nodata pixel mixes pure black into every edge overview tile.
+    assert nodata_entry[1:4] != ["0", "0", "0"]
+    assert nodata_entry[1:4] == [str(value) for value in maplibre._RAS_TERRAIN_COLORS[0][1:4]]
 
 
 def test_package_stored_map_adds_plan_raster_with_numeric_provenance(monkeypatch, tmp_path: Path) -> None:
@@ -648,6 +677,9 @@ def test_package_stored_map_adds_plan_raster_with_numeric_provenance(monkeypatch
     monkeypatch.setattr(maplibre.subprocess, "run", fake_run)
 
     monkeypatch.setattr(maplibre, "_web_mercator_raster_resolution", lambda _: 1.5)
+    monkeypatch.setattr(
+        maplibre, "_web_mercator_bounds", lambda _: (-9500000.0, 4800000.0, -9499000.0, 4801000.0)
+    )
 
     summary = maplibre.package_maplibre_stored_map(
         cog,
@@ -694,7 +726,9 @@ def test_result_color_ramp_makes_nodata_transparent(tmp_path: Path) -> None:
 
     assert preset == "rasmapper.depth"
     assert len(colors) == 4
-    assert ramp.read_text(encoding="ascii").splitlines()[-1] == "nv 0 0 0 0"
+    nodata_entry = ramp.read_text(encoding="ascii").splitlines()[-1].split()
+    assert nodata_entry[0] == "nv" and nodata_entry[4] == "0"
+    assert nodata_entry[1:4] != ["0", "0", "0"]
 
 
 @pytest.mark.parametrize(
@@ -723,7 +757,9 @@ def test_supported_stored_map_types_use_allowlisted_presets(
     )
 
     assert actual == preset
-    assert ramp.read_text(encoding="ascii").splitlines()[-1] == "nv 0 0 0 0"
+    nodata_entry = ramp.read_text(encoding="ascii").splitlines()[-1].split()
+    assert nodata_entry[0] == "nv" and nodata_entry[4] == "0"
+    assert nodata_entry[1:4] != ["0", "0", "0"]
 
 
 def test_numeric_raster_overwrite_preserves_service_identity(monkeypatch, tmp_path: Path) -> None:
@@ -819,7 +855,7 @@ def test_package_stored_vector_adds_rasmapper_result_to_plan(monkeypatch, tmp_pa
 
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
 
-    def fake_tippecanoe(output, _layers, _min_zoom, _max_zoom, _temporary_directory):
+    def fake_tippecanoe(output, _layers, _min_zoom, _max_zoom, _temporary_directory, **_kwargs):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
 
@@ -886,7 +922,7 @@ def test_geometry_only_package_streams_dense_mesh_delivery(monkeypatch, tmp_path
     calls: list[tuple[Path, list[tuple[str, Path]], Path]] = []
     sources: dict[str, str] = {}
 
-    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path, **_kwargs):
         calls.append((output, list(layers), temporary_directory))
         for source_layer, source_path in layers:
             sources[source_layer] = source_path.read_text(encoding="utf-8")
@@ -910,6 +946,80 @@ def test_geometry_only_package_streams_dense_mesh_delivery(monkeypatch, tmp_path
     assert '"cell_id":7.0' in delivery
     assert "hilbert_index" not in delivery
     assert detail_call[2].is_relative_to(tmp_path / "scratch")
+
+
+def test_only_the_dense_detail_tileset_bounds_tile_size(monkeypatch, tmp_path: Path) -> None:
+    """The size policy is per-tileset, not global.
+
+    The detail tileset carries only mesh cells and faces and starts at z13,
+    where a typical RAS cell is roughly half a pixel -- unbounded tiles there
+    pay multi-megabyte transfers for geometry no one can resolve. The overview
+    tileset carries the sparse engineering layers (cross sections, structures,
+    BC and reference lines), which must be complete at every zoom.
+    """
+
+    archive_dir, hdf = _write_archive(tmp_path)
+    policies: dict[str, bool | None] = {}
+
+    def fake_tippecanoe(
+        output: Path, layers, min_zoom, max_zoom, temporary_directory=None, *, bounded=None
+    ):
+        policies[output.name] = bounded
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"pmtiles")
+
+    footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
+    monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
+    monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
+    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+
+    maplibre.package_maplibre_viewer(
+        archive_dir,
+        tmp_path / "viewer",
+        geometry_hdfs={"g01": hdf},
+        scratch_dir=tmp_path / "scratch",
+    )
+
+    assert policies["geometry-detail.pmtiles"] is True
+    assert not policies["geometry.pmtiles"]
+
+
+def test_bounded_tiles_swap_the_size_policy_flags(monkeypatch, tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(list(command))
+        if command[0] == "tippecanoe":
+            Path(command[command.index("--output") + 1]).write_bytes(b"mbtiles")
+        else:
+            Path(command[-1]).write_bytes(b"pmtiles")
+        return _completed(command)
+
+    monkeypatch.setattr(maplibre.subprocess, "run", fake_run)
+    source = tmp_path / "mesh.ndgeojson"
+    source.write_text("", encoding="utf-8")
+
+    maplibre._run_tippecanoe(
+        tmp_path / "detail.pmtiles", [("mesh", source)], 13, 17, bounded=True
+    )
+    bounded = commands[0]
+    assert "--drop-densest-as-needed" in bounded
+    assert "--no-tile-size-limit" not in bounded
+    assert "--no-feature-limit" not in bounded
+    # Inert under the unbounded policy, load-bearing here: features that would
+    # be dropped move to a higher zoom rather than disappearing.
+    assert "--extend-zooms-if-still-dropping" in bounded
+
+    commands.clear()
+    maplibre._run_tippecanoe(
+        tmp_path / "overview.pmtiles", [("xs", source)], 0, 17, bounded=False
+    )
+    unbounded = commands[0]
+    assert "--no-tile-size-limit" in unbounded and "--no-feature-limit" in unbounded
+    assert "--drop-densest-as-needed" not in unbounded
+    # `--drop-fraction-as-needed` is never used: it makes tippecanoe retry the
+    # sparsest features until the native binary crashes on mixed dense layers.
+    assert "--drop-fraction-as-needed" not in bounded + unbounded
 
 
 def test_package_includes_terrain_modification_vectors(monkeypatch, tmp_path: Path):
@@ -941,7 +1051,7 @@ def test_package_includes_terrain_modification_vectors(monkeypatch, tmp_path: Pa
     ]
     archive_manifest_path.write_text(json.dumps(archive_manifest), encoding="utf-8")
 
-    def fake_tippecanoe(output: Path, layers, *_args):
+    def fake_tippecanoe(output: Path, layers, *_args, **_kwargs):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
 
@@ -997,7 +1107,7 @@ def test_package_includes_terrain_source_footprints(monkeypatch, tmp_path: Path)
     ]
     archive_manifest_path.write_text(json.dumps(archive_manifest), encoding="utf-8")
 
-    def fake_tippecanoe(output: Path, layers, *_args):
+    def fake_tippecanoe(output: Path, layers, *_args, **_kwargs):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
 
@@ -1145,7 +1255,7 @@ def test_package_splits_steady_cross_section_results_by_profile(monkeypatch, tmp
 
     sources: dict[str, str] = {}
 
-    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path):
+    def fake_tippecanoe(output: Path, layers, min_zoom: int, max_zoom: int, temporary_directory: Path, **_kwargs):
         for source_layer, source_path in layers:
             sources[source_layer] = source_path.read_text(encoding="utf-8")
         output.parent.mkdir(parents=True, exist_ok=True)

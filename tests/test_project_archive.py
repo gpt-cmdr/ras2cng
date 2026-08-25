@@ -378,8 +378,10 @@ def test_archive_terrain_uses_rasmap_sources_outside_terrain_dir(
         TerrainFileInfo(name="Shared Terrain", tif_files=[outside_tif]),
     ]
 
-    def fake_gdal_translate(command, **kwargs):
-        Path(command[-1]).write_bytes(b"cog")
+    # Terrain now builds through the shared COG policy rather than shelling out
+    # to gdal_translate, so the fixture's stub TIFFs are converted here.
+    def fake_area_matched_cog(source, destination, **kwargs):
+        Path(destination).write_bytes(b"cog")
         return MagicMock()
 
     with (
@@ -388,8 +390,8 @@ def test_archive_terrain_uses_rasmap_sources_outside_terrain_dir(
             return_value=discovered_terrain,
         ),
         patch(
-            "ras2cng.project.subprocess.run",
-            side_effect=fake_gdal_translate,
+            "ras2cng.cog.area_matched_cog",
+            side_effect=fake_area_matched_cog,
         ) as mock_gdal_translate,
         patch("ras2cng.project._tif_crs", return_value="EPSG:4326"),
     ):
@@ -870,11 +872,18 @@ def test_terrain_cog_options_optimize_numeric_and_nodata_blocks():
     options = _terrain_cog_creation_options()
     option_pairs = list(zip(options[::2], options[1::2]))
 
-    assert ("-co", "COMPRESS=ZSTD") in option_pairs
+    # DEFLATE, not ZSTD: ZSTD-in-TIFF needs a GDAL built with libzstd, and a
+    # reader without it fails hard rather than degrading.  Measured cost at the
+    # same predictor is 2% on terrain.
+    assert ("-co", "COMPRESS=DEFLATE") in option_pairs
+    assert ("-co", "OVERVIEW_COMPRESS=DEFLATE") in option_pairs
     assert ("-co", "PREDICTOR=YES") in option_pairs
     assert ("-co", "OVERVIEW_PREDICTOR=YES") in option_pairs
     assert ("-co", "SPARSE_OK=YES") in option_pairs
     assert ("-co", "NUM_THREADS=ALL_CPUS") in option_pairs
+    # AUTO would silently reuse a source pyramid and discard OVERVIEW_RESAMPLING,
+    # and HEC-RAS terrain TIFFs routinely ship one.
+    assert ("-co", "OVERVIEWS=IGNORE_EXISTING") in option_pairs
 
 
 # ---------------------------------------------------------------------------

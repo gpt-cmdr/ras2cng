@@ -10,7 +10,6 @@ import math
 from pathlib import Path
 import tempfile
 from typing import Any, Mapping
-import uuid
 
 
 @dataclass(frozen=True)
@@ -187,9 +186,9 @@ def run_raster_recipe(
 
     import numpy as np
     import rasterio
-    from rasterio.enums import Resampling
-    from rasterio.shutil import copy as copy_raster
     from rasterio.windows import Window
+
+    from ras2cng.cog import area_matched_cog, numeric_predictor
 
     recipe = get_raster_recipe(recipe_id)
     supplied_roles = set(inputs)
@@ -245,7 +244,12 @@ def run_raster_recipe(
                 blockxsize=_valid_tiff_block(block_size),
                 blockysize=_valid_tiff_block(block_size),
                 compress="ZSTD",
-                predictor=2 if recipe.categorical else 3,
+                # Numeric form: this intermediate uses the GTiff driver, which
+                # rejects the COG driver's "YES".  A recipe may declare an
+                # integer output dtype, and predictor 3 is float-only.
+                predictor=numeric_predictor(
+                    recipe.output_dtype, categorical=recipe.categorical
+                ),
                 BIGTIFF="IF_SAFER",
             )
             aggregate = _StatisticsAccumulator()
@@ -277,36 +281,33 @@ def run_raster_recipe(
                         filled[valid] = values[valid].astype(recipe.output_dtype, copy=False)
                         destination.write(filled, 1, window=window)
 
-                factors = _overview_factors(reference.width, reference.height)
-                if factors:
-                    overview_resampling = Resampling.nearest if recipe.categorical else Resampling.average
-                    destination.build_overviews(factors, overview_resampling)
-                    destination.update_tags(
-                        ns="rio_overview",
-                        resampling=overview_resampling.name,
-                    )
-
-            staged_output = output_path.with_name(
-                f".{output_path.name}.{uuid.uuid4().hex}.tmp"
+            # The intermediate deliberately carries no pyramid.  Building one
+            # here and then copying to COG was a trap: the COG driver's
+            # OVERVIEWS=AUTO default reuses a source pyramid verbatim, so the
+            # resampling declared on the copy was only ever honoured by
+            # coincidence.  ras2cng.cog owns the pyramid and states OVERVIEWS
+            # explicitly -- and a difference or depth surface keeps its level-0
+            # wet area instead of growing it at every zoom level.
+            overview_report = area_matched_cog(
+                temporary,
+                output_path,
+                categorical=recipe.categorical,
+                # Predictor selection belongs to the shared policy, which
+                # already keys off `categorical`.
+                blocksize=_valid_tiff_block(block_size),
+                scratch_dir=Path(temp_name),
             )
-            try:
-                copy_raster(
-                    temporary,
-                    staged_output,
-                    driver="COG",
-                    compress="ZSTD",
-                    blocksize=_valid_tiff_block(block_size),
-                    overview_resampling="nearest" if recipe.categorical else "average",
-                    BIGTIFF="IF_SAFER",
-                )
-                staged_output.replace(output_path)
-            finally:
-                staged_output.unlink(missing_ok=True)
 
         statistics = aggregate.to_dict()
         provenance_path = output_path.with_suffix(".provenance.json")
         provenance = {
             "schema": "ras2cng.raster-recipe/v1",
+            "overviews": {
+                "method": overview_report.method,
+                "factors": overview_report.factors,
+                "areaRatios": [round(ratio, 6) for ratio in overview_report.area_ratios],
+                "fallbackReason": overview_report.fallback_reason,
+            },
             "recipe": asdict(recipe),
             "generatedAt": datetime.now(timezone.utc).isoformat(),
             "authority": "ras2cng controlled raster arithmetic",
@@ -505,12 +506,16 @@ class _StatisticsAccumulator:
 
 
 def _overview_factors(width: int, height: int) -> list[int]:
-    factors = []
-    factor = 2
-    while max(width, height) / factor >= 256 and factor <= 128:
-        factors.append(factor)
-        factor *= 2
-    return factors
+    """Deprecated: use :func:`ras2cng.cog.overview_factors`.
+
+    Kept as a thin delegate so the repo has one pyramid-depth policy.  The old
+    body stopped at 256 px and capped the factor at 128, which leaves a large
+    raster without a top level that fits in a single block.
+    """
+
+    from ras2cng.cog import overview_factors
+
+    return overview_factors(width, height)
 
 
 def _valid_tiff_block(value: int) -> int:

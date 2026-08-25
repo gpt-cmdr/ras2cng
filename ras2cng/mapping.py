@@ -90,6 +90,15 @@ ADR_MAP_TYPES = {
     "percent_inundated": ("fraction inundated", "Percent Time Inundated"),
 }
 
+# Map types whose pixels are class or boolean values rather than a continuous
+# surface.  Averaging one invents values that are not members of the class set
+# (a uint8 raster averaging 2 and 4 yields 3), so these decimate by mode.
+CATEGORICAL_MAP_TYPES = {
+    "inundation_boundary",
+    "hazard_class",
+    "inundation_threshold",
+}
+
 TERRAIN_STORED_MAP_TYPES = {
     "wse": ("elevation", "WSE"),
     "depth": ("depth", "Depth"),
@@ -359,7 +368,7 @@ def generate_result_maps(
 
                     # Post-process: convert to COG
                     if convert_cog:
-                        tif_paths = _convert_to_cog(tif_paths)
+                        tif_paths = _convert_to_cog(tif_paths, map_type=map_type)
 
                 if tif_paths:
                     map_result.map_types[map_type] = tif_paths
@@ -967,7 +976,15 @@ def _matching_vrt_source(tif_paths: list[Path]) -> Path | None:
     return max(candidates, key=lambda path: len(path.stem)) if candidates else None
 
 
-def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
+_REPORTED_COG_WARNINGS: set[str] = set()
+
+
+def _convert_to_cog(
+    tif_paths: list[Path],
+    *,
+    map_type: Optional[str] = None,
+    categorical: Optional[bool] = None,
+) -> list[Path]:
     """Convert one result map to a validated Cloud Optimized GeoTIFF.
 
     Rasterio ships with a compatible GDAL runtime, while a system
@@ -976,12 +993,14 @@ def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
     returning a non-COG source TIFF. RASMapper writes one TIFF per terrain
     source plus a VRT mosaic; when that VRT is present, publish the complete
     mosaic as one COG rather than exposing or selecting a source fragment.
-    """
-    import uuid
 
-    import rasterio
-    from rasterio.enums import MaskFlags
-    from rasterio.shutil import copy as copy_raster
+    Overviews come from :mod:`ras2cng.cog`, which preserves the level-0 wet
+    area instead of letting ``average`` grow the inundation extent at every
+    zoom level.  ``map_type`` selects the decimator: continuous surfaces carry
+    the mean of their wet contributors, class rasters the mode.
+    """
+
+    from ras2cng.cog import area_matched_cog, validate_cog
 
     sources = [Path(path) for path in tif_paths]
     for source in sources:
@@ -995,47 +1014,38 @@ def _convert_to_cog(tif_paths: list[Path]) -> list[Path]:
             "RASMapper VRT mosaic could not be identified"
         )
 
+    if categorical is None:
+        categorical = (map_type or "") in CATEGORICAL_MAP_TYPES
+
     conversion_sources = [vrt_source] if vrt_source is not None else sources
     converted: list[Path] = []
     for source in conversion_sources:
         assert source is not None
 
         cog_path = source.parent / f"{source.stem}_cog.tif"
-        staged_path = cog_path.with_name(f".{cog_path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            copy_raster(
+            report = area_matched_cog(
                 source,
-                staged_path,
-                driver="COG",
-                compress="ZSTD",
-                predictor="FLOATING_POINT",
-                blocksize=512,
-                overview_resampling="average",
-                BIGTIFF="IF_SAFER",
-                NUM_THREADS="ALL_CPUS",
+                cog_path,
+                categorical=categorical,
+                scratch_dir=source.parent,
             )
-
-            with rasterio.open(staged_path) as source:
-                if max(source.width, source.height) > 512 and not source.is_tiled:
-                    raise ValueError("large COG is not internally tiled")
-                if max(source.width, source.height) > 1024 and not source.overviews(1):
-                    raise ValueError("large COG has no internal overviews")
-                mask_flags = set(source.mask_flag_enums[0]) if source.mask_flag_enums else set()
-                has_mask = (
-                    source.nodata is not None
-                    or MaskFlags.alpha in mask_flags
-                    or MaskFlags.per_dataset in mask_flags
+            validation = validate_cog(cog_path)
+            if not validation.valid:
+                raise ValueError("; ".join(validation.errors))
+            for message in validation.warnings:
+                if message not in _REPORTED_COG_WARNINGS:
+                    _REPORTED_COG_WARNINGS.add(message)
+                    console.print(f"    [yellow]COG check:[/yellow] {message}")
+            if report.fallback_reason:
+                console.print(
+                    f"    [yellow]Note:[/yellow] {cog_path.name} fell back to "
+                    f"'{report.method}' overviews: {report.fallback_reason}"
                 )
-                if not has_mask:
-                    raise ValueError("COG has no nodata value or validity mask")
-
-            staged_path.replace(cog_path)
-            converted.append(cog_path)
         except Exception as error:
             raise RuntimeError(
                 f"COG conversion failed for {source}: {error}"
             ) from error
-        finally:
-            staged_path.unlink(missing_ok=True)
+        converted.append(cog_path)
 
     return converted

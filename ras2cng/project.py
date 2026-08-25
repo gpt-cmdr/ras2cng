@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import gc
 import re
-import subprocess
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -689,19 +688,26 @@ def archive_project(
             cog_out_dir = output_dir / "terrain"
             cog_out_dir.mkdir(parents=True, exist_ok=True)
             cog_names: set[str] = set()
+            from ras2cng.cog import TERRAIN_CREATION_OPTIONS, area_matched_cog
+
             for tif in tif_files:
                 cog_path = _terrain_cog_path(tif, cog_out_dir, cog_names)
                 try:
-                    subprocess.run(
-                        [
-                            "gdal_translate",
-                            "-of",
-                            "COG",
-                            *_terrain_cog_creation_options(),
-                            str(tif),
-                            str(cog_path),
-                        ],
-                        check=True, capture_output=True,
+                    # Terrain is continuous, but it still carries a nodata
+                    # footprint, and `average` marks a coarse cell valid when any
+                    # sub-cell is -- so the terrain edge creeps outward one coarse
+                    # cell per overview level.  Measured on an irregular footprint:
+                    # 100.2% / 100.5% / 101.1% against 100.0% area-matched.  Going
+                    # through the shared builder also drops the dependency on a
+                    # system gdal_translate new enough to have the COG driver, and
+                    # falls back gracefully (with the reason tagged) on terrains
+                    # past the in-memory ceiling.
+                    area_matched_cog(
+                        tif,
+                        cog_path,
+                        predictor="YES",
+                        scratch_dir=cog_out_dir,
+                        creation_options=TERRAIN_CREATION_OPTIONS,
                     )
                     terrain_crs = _tif_crs(tif)
                     manifest.add_terrain_entry(ManifestTerrainEntry(
@@ -1067,19 +1073,17 @@ def archive_project(
             for terrain_source_name, consolidated_path in consolidated_paths.items():
                 if not consolidated_path.exists() or consolidated_path.suffix.lower() != ".tif":
                     continue
-                import subprocess as _sp
+                from ras2cng.cog import TERRAIN_CREATION_OPTIONS, area_matched_cog
+
                 cog_path = terrain_out / f"{consolidated_path.stem}_cog.tif"
                 provenance_path = terrain_out / f"{consolidated_path.stem.removesuffix('_merged')}_terrain-provenance.json"
                 try:
-                    _sp.run(
-                        [
-                            "gdal_translate",
-                            "-of", "COG",
-                            *_terrain_cog_creation_options(),
-                            str(consolidated_path),
-                            str(cog_path),
-                        ],
-                        check=True, capture_output=True,
+                    area_matched_cog(
+                        consolidated_path,
+                        cog_path,
+                        predictor="YES",
+                        scratch_dir=terrain_out,
+                        creation_options=TERRAIN_CREATION_OPTIONS,
                     )
                     terrain_crs = _tif_crs(consolidated_path)
                     provenance = (
@@ -1272,27 +1276,25 @@ def _parquet_meta(path: Path) -> dict:
 
 
 def _tif_crs(tif_path: Path) -> Optional[str]:
-    """Get CRS string from a GeoTIFF."""
+    """Get a publishable CRS string from a GeoTIFF.
+
+    Older HEC-RAS terrain TIFFs carry ESRI-flavored WKT that GDAL uses
+    correctly but does not identify.  Matching those at a permissive confidence
+    is not the answer: a Texas Centric Albers definition in US survey feet has
+    no exact EPSG match, and the nearest code is the *metre* variant -- about
+    25,000 km of displacement.  An authority code is returned only when the
+    linear unit and ellipsoid round-trip; otherwise the verbatim source
+    definition is, which is what a consumer needs anyway.
+    """
     try:
         import rasterio
+
+        from ras2cng.cog import describe_crs
+
         with rasterio.open(tif_path) as src:
             if not src.crs:
                 return None
-            epsg = src.crs.to_epsg()
-            if epsg:
-                return f"EPSG:{epsg}"
-
-            # Older HEC-RAS terrain TIFFs often contain valid ESRI-flavored
-            # WKT that GDAL will use correctly but will not identify directly.
-            # Pyproj's authority matcher handles those legacy definitions.
-            from pyproj import CRS
-
-            authority = CRS.from_wkt(src.crs.to_wkt()).to_authority(
-                min_confidence=25
-            )
-            if authority:
-                return f"{authority[0]}:{authority[1]}"
-            return src.crs.to_string() or None
+            return describe_crs(src.crs)["crs"]
     except Exception:
         return None
 
@@ -1353,20 +1355,27 @@ def _terrain_cog_path(tif_path: Path, cog_out_dir: Path, used_names: set[str]) -
 
 
 def _terrain_cog_creation_options() -> list[str]:
-    """Return lossless COG options tuned for large numeric terrain rasters."""
+    """Render the terrain COG policy as ``gdal_translate -co`` arguments.
 
-    return [
-        "-co", "COMPRESS=ZSTD",
-        "-co", "LEVEL=9",
-        "-co", "PREDICTOR=YES",
-        "-co", "OVERVIEW_COMPRESS=ZSTD",
-        "-co", "OVERVIEW_PREDICTOR=YES",
-        "-co", "OVERVIEW_RESAMPLING=AVERAGE",
-        "-co", "BLOCKSIZE=512",
-        "-co", "BIGTIFF=IF_SAFER",
-        "-co", "SPARSE_OK=YES",
-        "-co", "NUM_THREADS=ALL_CPUS",
-    ]
+    The archive path builds terrain through :func:`ras2cng.cog.area_matched_cog`
+    rather than shelling out; this remains the CLI rendering of the same policy
+    for callers that do shell out.
+
+    HEC-RAS terrain TIFFs frequently ship internal overviews or ``.ovr``
+    sidecars, and these translate the source TIFF directly -- so the COG
+    driver's ``OVERVIEWS=AUTO`` default (reuse the source pyramid verbatim) is
+    the *normal* path here, not an edge case.  Under AUTO the
+    ``OVERVIEW_RESAMPLING`` below is silently discarded.  The shared helper
+    always states ``OVERVIEWS`` explicitly so the declared method actually runs.
+    """
+
+    from ras2cng.cog import cog_creation_options
+
+    return cog_creation_options(
+        predictor="YES",
+        overview_resampling="AVERAGE",
+        level=9,
+    )
 
 
 def _detect_ras_version(ras) -> Optional[str]:

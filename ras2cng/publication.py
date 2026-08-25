@@ -751,32 +751,34 @@ def _require_http_range(url: str) -> None:
 
 
 def _validate_local_cog(path: Path, resource_id: str, report: PublicationReport) -> None:
-    """Check the local numeric raster structure used by the public COG href."""
+    """Gate the local numeric raster behind a real cloud-optimized layout check.
+
+    The previous hand-rolled checks -- tiled, has overviews, has a mask, driver
+    is GTiff -- cannot distinguish a COG from a plain tiled GeoTIFF with a
+    ``.ovr`` sidecar or mis-ordered IFDs.  Such a file serves, but costs one
+    HTTP range request per tile instead of a header read, which is the entire
+    reason for publishing the format.  ``driver == "GTiff"`` is in fact correct
+    (the COG driver reports as GTiff on read) and for exactly that reason it
+    proves nothing.
+
+    ``rio_cogeo.cog_validate`` is the only check that establishes layout, and it
+    must be called from Python: the ``rio cogeo validate`` CLI always exits 0,
+    including on an invalid file, so any gate that trusts its return code is a
+    no-op.
+    """
 
     try:
-        import rasterio
-        from rasterio.enums import MaskFlags
+        from ras2cng.cog import validate_cog
 
-        with rasterio.open(path) as source:
-            if source.driver != "GTiff":
-                report.add("error", "cog.driver", "Numeric COG is not a GeoTIFF.", resource_id)
-            if source.crs is None:
-                report.add("error", "cog.crs", "Numeric COG has no embedded CRS.", resource_id)
-            if max(source.width, source.height) > 512 and not source.is_tiled:
-                report.add("error", "cog.tiling", "Large numeric COG is not internally tiled.", resource_id)
-            if max(source.width, source.height) > 1024 and not source.overviews(1):
-                report.add("error", "cog.overviews", "Large numeric COG has no overviews.", resource_id)
-            mask_flags = set(source.mask_flag_enums[0]) if source.mask_flag_enums else set()
-            has_mask = source.nodata is not None or MaskFlags.alpha in mask_flags or MaskFlags.per_dataset in mask_flags
-            if not has_mask:
-                report.add(
-                    "error",
-                    "cog.nodata",
-                    "Numeric COG has no nodata value or validity mask for transparent display.",
-                    resource_id,
-                )
+        result = validate_cog(path)
     except Exception as error:
         report.add("error", "cog.read", f"Numeric COG could not be opened: {error}", resource_id)
+        return
+
+    for message in result.errors:
+        report.add("error", "cog.layout", f"Numeric COG failed validation: {message}", resource_id)
+    for message in result.warnings:
+        report.add("warning", "cog.layout", f"Numeric COG: {message}", resource_id)
 
 
 def _validate_no_local_paths(value: Any, report: PublicationReport, key: str = "manifest") -> None:

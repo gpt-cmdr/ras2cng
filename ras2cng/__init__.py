@@ -14,6 +14,24 @@ Built on ras-commander (https://github.com/gpt-cmdr/ras-commander).
 
 __author__ = "CLB Engineering Corporation"
 
+# Shared raster-delivery policy. Downstream pipelines (RBFS clb_tx_webmap, the
+# LWI webmap) import these directly so the overview method, CRS safety rule,
+# validation gate, and atomic-write pattern are inherited from one place rather
+# than re-derived per pipeline.
+from ras2cng.cog import (
+    area_matched_cog,
+    assert_plausible_wgs84_bounds,
+    assert_valid_cog,
+    atomic_output,
+    build_area_matched_overviews,
+    cog_creation_options,
+    describe_crs,
+    numeric_predictor,
+    overview_factors,
+    resolve_compression,
+    resolve_crs_authority,
+    validate_cog,
+)
 from ras2cng.geometry import (
     export_geometry_layers,
     export_all_hdf_layers,
@@ -121,7 +139,7 @@ from ras2cng.terrain import (
     TerrainResolutionDecision,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 _OPTIONAL_EXPORTS = {
     "DuckSession": ("ras2cng.duckdb_session", "DuckSession", "duckdb"),
@@ -157,6 +175,19 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    # Cloud-optimized raster policy (shared with downstream pipelines)
+    "area_matched_cog",
+    "assert_plausible_wgs84_bounds",
+    "assert_valid_cog",
+    "atomic_output",
+    "build_area_matched_overviews",
+    "cog_creation_options",
+    "describe_crs",
+    "numeric_predictor",
+    "overview_factors",
+    "resolve_compression",
+    "resolve_crs_authority",
+    "validate_cog",
     # Geometry
     "export_geometry_layers",
     "export_all_hdf_layers",
