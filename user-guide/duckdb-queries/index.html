@@ -2300,16 +2300,16 @@ short, and collision-free.</p>
 <h2 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Basic query (prints first 20 rows)</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ras2cng<span class="w"> </span>query<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="s2">&quot;SELECT mesh_name, maximum_depth FROM _ ORDER BY maximum_depth DESC LIMIT 10&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="s2">"SELECT mesh_name, maximum_depth FROM _ ORDER BY maximum_depth DESC LIMIT 10"</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Save to CSV</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>ras2cng<span class="w"> </span>query<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="s2">&quot;SELECT * FROM _ WHERE maximum_depth &gt; 5.0&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="s2">"SELECT * FROM _ WHERE maximum_depth &gt; 5.0"</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span>--output<span class="w"> </span>deep_areas.csv
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Save to Parquet</span>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>ras2cng<span class="w"> </span>query<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="s2">&quot;SELECT * FROM _ WHERE maximum_depth &gt; 5.0&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="s2">"SELECT * FROM _ WHERE maximum_depth &gt; 5.0"</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span>--output<span class="w"> </span>deep_areas.parquet
 </code></pre></div>
 <h2 id="python-api-query_parquet">Python API — <code>query_parquet()</code><a class="headerlink" href="#python-api-query_parquet" title="Permanent link">&para;</a></h2>
@@ -2317,8 +2317,8 @@ short, and collision-free.</p>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">df</span> <span class="o">=</span> <span class="n">query_parquet</span><span class="p">(</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;max_depth.parquet&quot;</span><span class="p">),</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="s2">&quot;SELECT mesh_name, MAX(maximum_depth) AS max_depth FROM _ GROUP BY mesh_name&quot;</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"max_depth.parquet"</span><span class="p">),</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="s2">"SELECT mesh_name, MAX(maximum_depth) AS max_depth FROM _ GROUP BY mesh_name"</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">)</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </code></pre></div>
@@ -2327,24 +2327,24 @@ short, and collision-free.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.duckdb_session</span><span class="w"> </span><span class="kn">import</span> <span class="n">DuckSession</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">with</span> <span class="n">DuckSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">duck</span><span class="p">:</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">)</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">&quot;max_depth.parquet&quot;</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">&quot;results&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">"mesh_cells.parquet"</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">"cells"</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">"max_depth.parquet"</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="s2">"results"</span><span class="p">)</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="c1"># Join geometry and results</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">duck</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">duck</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">"""</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="s2">        SELECT c.mesh_name, c.cell_id, r.maximum_depth, ST_Area(c.geometry) AS area_m2</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="s2">        FROM cells c</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="s2">        JOIN results r ON c.mesh_name = r.mesh_name AND c.cell_id = r.cell_id</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="s2">        WHERE r.maximum_depth &gt; 2.0</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="s2">    &quot;&quot;&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="s2">    """</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="spatial-queries">Spatial Queries<a class="headerlink" href="#spatial-queries" title="Permanent link">&para;</a></h2>
 <p>The spatial extension is auto-loaded. Use <code>ST_*</code> functions directly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.duckdb_session</span><span class="w"> </span><span class="kn">import</span> <span class="n">DuckSession</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">with</span> <span class="n">DuckSession</span><span class="p">()</span> <span class="k">as</span> <span class="n">duck</span><span class="p">:</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">duck</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">duck</span><span class="o">.</span><span class="n">register_parquet</span><span class="p">(</span><span class="s2">"mesh_cells.parquet"</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">df</span> <span class="o">=</span> <span class="n">duck</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">"""</span>
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="s2">        SELECT</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="s2">            mesh_name,</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="s2">            ST_Area(geometry) AS cell_area_m2,</span>
@@ -2352,7 +2352,7 @@ short, and collision-free.</p>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="s2">        FROM _</span>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="s2">        ORDER BY cell_area_m2 DESC</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="s2">        LIMIT 20</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="s2">    &quot;&quot;&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="s2">    """</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="wkb-geometry-handling">WKB Geometry Handling<a class="headerlink" href="#wkb-geometry-handling" title="Permanent link">&para;</a></h2>
 <p><code>register_parquet()</code> auto-detects WKB geometry columns (named <code>geometry</code>) and wraps them with

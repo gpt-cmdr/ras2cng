@@ -2270,15 +2270,15 @@
 </code></pre></div>
 <p>Installs the geometry and results export pipeline. No DuckDB, PostGIS, or PMTiles extras needed for basic use.</p>
 <h2 id="full-install-all-extras">Full Install (All Extras)<a class="headerlink" href="#full-install-all-extras" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[all]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[all]"</span>
 </code></pre></div>
 <p>Using <code>uv</code> (recommended, 10–100x faster):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[all]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[all]"</span>
 </code></pre></div>
 <h2 id="install-specific-extras">Install Specific Extras<a class="headerlink" href="#install-specific-extras" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[duckdb]&quot;</span><span class="w">    </span><span class="c1"># DuckDB SQL analytics</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[postgis]&quot;</span><span class="w">   </span><span class="c1"># PostGIS sync (SQLAlchemy + GeoAlchemy2 + psycopg2)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[pmtiles]&quot;</span><span class="w">   </span><span class="c1"># rasterio (PMTiles pipeline also needs external CLIs)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[duckdb]"</span><span class="w">    </span><span class="c1"># DuckDB SQL analytics</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[postgis]"</span><span class="w">   </span><span class="c1"># PostGIS sync (SQLAlchemy + GeoAlchemy2 + psycopg2)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[pmtiles]"</span><span class="w">   </span><span class="c1"># rasterio (PMTiles pipeline also needs external CLIs)</span>
 </code></pre></div>
 <h2 id="dev-install-from-source">Dev Install from Source<a class="headerlink" href="#dev-install-from-source" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/gpt-cmdr/ras2cng.git

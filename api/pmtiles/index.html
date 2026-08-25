@@ -1822,6 +1822,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="pmtiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ras2cng.pmtiles.generate_raster_pmtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        generate_raster_pmtiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2132,6 +2149,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="pmtiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ras2cng.pmtiles.generate_raster_pmtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        generate_raster_pmtiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2169,13 +2203,18 @@
 
     <div class="doc doc-contents first">
 
-        <p>PMTiles generation for rascmdr-parquet.</p>
+        <p>PMTiles generation for the <code>ras2cng pmtiles</code> CLI surface.</p>
 <p>Vector tiles:
-- GeoParquet -&gt; GeoJSON -&gt; tippecanoe -&gt; PMTiles</p>
+- GeoParquet -&gt; reproject to EPSG:4326 -&gt; newline-delimited GeoJSON -&gt;
+  tippecanoe -&gt; PMTiles</p>
 <p>Raster tiles:
-- GeoTIFF -&gt; MBTiles (gdal_translate) -&gt; PMTiles (pmtiles convert)</p>
-<p>Note: tippecanoe, gdal_translate, and pmtiles are command-line tools and must be installed
-separately and available on PATH.</p>
+- delegated to :mod:<code>ras2cng.maplibre</code>, which colorizes at native resolution,
+  warps to an exact Web Mercator zoom, and builds the tile pyramid.</p>
+<p>Note: tippecanoe, gdal, and pmtiles are command-line tools and must be
+installed separately and available on PATH.</p>
+<p>:mod:<code>ras2cng.maplibre</code> is the maintained implementation of both jobs and
+streams its inputs; this module is the older single-file CLI surface kept for
+<code>ras2cng pmtiles</code>.</p>
 
 
 
@@ -2196,6 +2235,142 @@ separately and available on PATH.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="ras2cng.pmtiles.generate_raster_pmtiles" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">generate_raster_pmtiles</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">min_zoom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_zoom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">map_type</span><span class="o">=</span><span class="s1">'depth'</span><span class="p">)</span></code>
+
+<a href="#ras2cng.pmtiles.generate_raster_pmtiles" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Render a numeric raster to PNG PMTiles via the maplibre pipeline.</p>
+<p>This used to run <code>gdal_translate -of MBTiles -co TILE_FORMAT=PNG</code> directly
+on the source.  Against a float32 depth or WSE COG that produces an 8-bit
+image with no color ramp and no alpha -- nodata renders as opaque black --
+and it built no overviews at all, so the <code>MINZOOM</code> creation option had
+nothing to apply to.</p>
+<p>:func:<code>ras2cng.maplibre._render_raster_pmtiles</code> is the correct
+implementation of this job: it applies the color ramp at native resolution
+before any downsampling, warps to an exact Web Mercator zoom resolution, and
+builds the pyramid.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>ras2cng/pmtiles.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-166">166</a></span>
+<span class="normal"><a href="#__codelineno-0-167">167</a></span>
+<span class="normal"><a href="#__codelineno-0-168">168</a></span>
+<span class="normal"><a href="#__codelineno-0-169">169</a></span>
+<span class="normal"><a href="#__codelineno-0-170">170</a></span>
+<span class="normal"><a href="#__codelineno-0-171">171</a></span>
+<span class="normal"><a href="#__codelineno-0-172">172</a></span>
+<span class="normal"><a href="#__codelineno-0-173">173</a></span>
+<span class="normal"><a href="#__codelineno-0-174">174</a></span>
+<span class="normal"><a href="#__codelineno-0-175">175</a></span>
+<span class="normal"><a href="#__codelineno-0-176">176</a></span>
+<span class="normal"><a href="#__codelineno-0-177">177</a></span>
+<span class="normal"><a href="#__codelineno-0-178">178</a></span>
+<span class="normal"><a href="#__codelineno-0-179">179</a></span>
+<span class="normal"><a href="#__codelineno-0-180">180</a></span>
+<span class="normal"><a href="#__codelineno-0-181">181</a></span>
+<span class="normal"><a href="#__codelineno-0-182">182</a></span>
+<span class="normal"><a href="#__codelineno-0-183">183</a></span>
+<span class="normal"><a href="#__codelineno-0-184">184</a></span>
+<span class="normal"><a href="#__codelineno-0-185">185</a></span>
+<span class="normal"><a href="#__codelineno-0-186">186</a></span>
+<span class="normal"><a href="#__codelineno-0-187">187</a></span>
+<span class="normal"><a href="#__codelineno-0-188">188</a></span>
+<span class="normal"><a href="#__codelineno-0-189">189</a></span>
+<span class="normal"><a href="#__codelineno-0-190">190</a></span>
+<span class="normal"><a href="#__codelineno-0-191">191</a></span>
+<span class="normal"><a href="#__codelineno-0-192">192</a></span>
+<span class="normal"><a href="#__codelineno-0-193">193</a></span>
+<span class="normal"><a href="#__codelineno-0-194">194</a></span>
+<span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#__codelineno-0-199">199</a></span>
+<span class="normal"><a href="#__codelineno-0-200">200</a></span>
+<span class="normal"><a href="#__codelineno-0-201">201</a></span>
+<span class="normal"><a href="#__codelineno-0-202">202</a></span>
+<span class="normal"><a href="#__codelineno-0-203">203</a></span>
+<span class="normal"><a href="#__codelineno-0-204">204</a></span>
+<span class="normal"><a href="#__codelineno-0-205">205</a></span>
+<span class="normal"><a href="#__codelineno-0-206">206</a></span>
+<span class="normal"><a href="#__codelineno-0-207">207</a></span>
+<span class="normal"><a href="#__codelineno-0-208">208</a></span>
+<span class="normal"><a href="#__codelineno-0-209">209</a></span>
+<span class="normal"><a href="#__codelineno-0-210">210</a></span>
+<span class="normal"><a href="#__codelineno-0-211">211</a></span>
+<span class="normal"><a href="#__codelineno-0-212">212</a></span>
+<span class="normal"><a href="#__codelineno-0-213">213</a></span>
+<span class="normal"><a href="#__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#__codelineno-0-218">218</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="k">def</span><span class="w"> </span><span class="nf">generate_raster_pmtiles</span><span class="p">(</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a>    <span class="n">input_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a>    <span class="n">output</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a>    <span class="n">min_zoom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a>    <span class="n">max_zoom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-172" name="__codelineno-0-172"></a>    <span class="n">map_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"depth"</span><span class="p">,</span>
+<a id="__codelineno-0-173" name="__codelineno-0-173"></a><span class="p">):</span>
+<a id="__codelineno-0-174" name="__codelineno-0-174"></a><span class="w">    </span><span class="sd">"""Render a numeric raster to PNG PMTiles via the maplibre pipeline.</span>
+<a id="__codelineno-0-175" name="__codelineno-0-175"></a>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">    This used to run ``gdal_translate -of MBTiles -co TILE_FORMAT=PNG`` directly</span>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">    on the source.  Against a float32 depth or WSE COG that produces an 8-bit</span>
+<a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">    image with no color ramp and no alpha -- nodata renders as opaque black --</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">    and it built no overviews at all, so the ``MINZOOM`` creation option had</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">    nothing to apply to.</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a>
+<a id="__codelineno-0-182" name="__codelineno-0-182"></a><span class="sd">    :func:`ras2cng.maplibre._render_raster_pmtiles` is the correct</span>
+<a id="__codelineno-0-183" name="__codelineno-0-183"></a><span class="sd">    implementation of this job: it applies the color ramp at native resolution</span>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a><span class="sd">    before any downsampling, warps to an exact Web Mercator zoom resolution, and</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a><span class="sd">    builds the pyramid.</span>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a><span class="sd">    """</span>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng</span><span class="w"> </span><span class="kn">import</span> <span class="n">maplibre</span>
+<a id="__codelineno-0-189" name="__codelineno-0-189"></a>
+<a id="__codelineno-0-190" name="__codelineno-0-190"></a>    <span class="n">input_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">input_file</span><span class="p">)</span>
+<a id="__codelineno-0-191" name="__codelineno-0-191"></a>    <span class="n">output</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+<a id="__codelineno-0-192" name="__codelineno-0-192"></a>    <span class="n">output</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a>    <span class="n">_require_cli</span><span class="p">(</span><span class="s2">"gdal_translate"</span><span class="p">)</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a>    <span class="n">_require_cli</span><span class="p">(</span><span class="s2">"pmtiles"</span><span class="p">)</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a>    <span class="n">info</span> <span class="o">=</span> <span class="n">maplibre</span><span class="o">.</span><span class="n">_gdalinfo</span><span class="p">(</span><span class="n">input_path</span><span class="p">)</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a>    <span class="n">bands</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"bands"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">bands</span><span class="p">:</span>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Raster has no readable bands: </span><span class="si">{</span><span class="n">input_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a>    <span class="n">band</span> <span class="o">=</span> <span class="n">bands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a>    <span class="n">stats</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a>        <span class="s2">"minimum"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>        <span class="s2">"maximum"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"maximum"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)),</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>    <span class="p">}</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">ramp_writer</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>        <span class="n">maplibre</span><span class="o">.</span><span class="n">_result_color_ramp</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="n">map_type</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">"ras2cng-raster-pmtiles-"</span><span class="p">)</span> <span class="k">as</span> <span class="n">scratch</span><span class="p">:</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>        <span class="n">maplibre</span><span class="o">.</span><span class="n">_render_raster_pmtiles</span><span class="p">(</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>            <span class="n">input_path</span><span class="p">,</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>            <span class="n">output</span><span class="p">,</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>            <span class="n">ramp_writer</span><span class="o">=</span><span class="n">ramp_writer</span><span class="p">,</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a>            <span class="n">max_zoom</span><span class="o">=</span><span class="n">max_zoom</span><span class="p">,</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>            <span class="n">scratch_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="n">scratch</span><span class="p">),</span>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a>            <span class="n">prefix</span><span class="o">=</span><span class="s2">"cli-raster"</span><span class="p">,</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>        <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 
 

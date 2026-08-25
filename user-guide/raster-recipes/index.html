@@ -2240,7 +2240,7 @@ Compatible US customary and metric units are converted before calculation.</p>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--input<span class="w"> </span><span class="nv">depth</span><span class="o">=</span>maps/Depth_01JAN2026_120000.cog.tif<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--input<span class="w"> </span><span class="nv">velocity</span><span class="o">=</span>maps/Velocity_01JAN2026_120000.cog.tif<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--input-unit<span class="w"> </span><span class="nv">depth</span><span class="o">=</span>ft<span class="w"> </span>--input-unit<span class="w"> </span><span class="nv">velocity</span><span class="o">=</span>ft/s<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--plan<span class="w"> </span>p03<span class="w"> </span>--profile<span class="w"> </span><span class="s2">&quot;01JAN2026 12:00:00&quot;</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--plan<span class="w"> </span>p03<span class="w"> </span>--profile<span class="w"> </span><span class="s2">"01JAN2026 12:00:00"</span>
 </code></pre></div>
 <p>Processing is windowed and writes a staged tiled GeoTIFF before atomically replacing the
 final COG. Nodata remains transparent. The adjacent <code>.provenance.json</code> records the recipe
@@ -2250,7 +2250,7 @@ hashes are opt-in because hashing adds another complete read of every large rast
 <p>Publish a recipe output under its plan's <code>Calculated Layers</code> branch:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ras2cng<span class="w"> </span>maplibre-calculated-map<span class="w"> </span>output/dv.cog.tif<span class="w"> </span>VIEWER_DIR<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--plan<span class="w"> </span>p03<span class="w"> </span>--recipe<span class="w"> </span>depth_velocity<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--profile<span class="w"> </span><span class="s2">&quot;01JAN2026 12:00:00&quot;</span><span class="w"> </span>--geometry<span class="w"> </span>g03<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--profile<span class="w"> </span><span class="s2">"01JAN2026 12:00:00"</span><span class="w"> </span>--geometry<span class="w"> </span>g03<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--source-cog<span class="w"> </span>../archive/calculated/p03/dv.cog.tif
 </code></pre></div>
 <p>The numeric COG remains authoritative. The PMTiles derivative is a fast display layer.

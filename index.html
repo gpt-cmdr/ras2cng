@@ -2364,15 +2364,15 @@ the web and analytical engines:</p>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Full project archive</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">manifest</span> <span class="o">=</span> <span class="n">archive_project</span><span class="p">(</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;path/to/MyProject/&quot;</span><span class="p">),</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./archive/&quot;</span><span class="p">),</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"path/to/MyProject/"</span><span class="p">),</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"./archive/"</span><span class="p">),</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">include_results</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">)</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exported </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">manifest</span><span class="o">.</span><span class="n">geometry</span><span class="p">)</span><span class="si">}</span><span class="s2"> geometry configurations&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Exported </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">manifest</span><span class="o">.</span><span class="n">geometry</span><span class="p">)</span><span class="si">}</span><span class="s2"> geometry configurations"</span><span class="p">)</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># Inspect project without extracting</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">info</span> <span class="o">=</span> <span class="n">inspect_project</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;path/to/MyProject/&quot;</span><span class="p">))</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">info</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">geom_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> geometry files, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">plan_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> plans&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">info</span> <span class="o">=</span> <span class="n">inspect_project</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"path/to/MyProject/"</span><span class="p">))</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">info</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">geom_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> geometry files, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">info</span><span class="o">.</span><span class="n">plan_files</span><span class="p">)</span><span class="si">}</span><span class="s2"> plans"</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="single-file-export">Single-File Export<a class="headerlink" href="#single-file-export" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Export mesh cell geometry</span>
@@ -2380,17 +2380,17 @@ the web and analytical engines:</p>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Export max depth results joined to polygons</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>ras2cng<span class="w"> </span>results<span class="w"> </span>model.p01.hdf<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--geometry<span class="w"> </span>mesh_cells.parquet<span class="w"> </span>--var<span class="w"> </span><span class="s2">&quot;Maximum Depth&quot;</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--geometry<span class="w"> </span>mesh_cells.parquet<span class="w"> </span>--var<span class="w"> </span><span class="s2">"Maximum Depth"</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># Query with DuckDB (use _ as table name)</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>ras2cng<span class="w"> </span>query<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="s2">&quot;SELECT mesh_name, AVG(maximum_depth) FROM _ GROUP BY mesh_name&quot;</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="s2">"SELECT mesh_name, AVG(maximum_depth) FROM _ GROUP BY mesh_name"</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1"># Generate PMTiles for web visualization</span>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>ras2cng<span class="w"> </span>pmtiles<span class="w"> </span>max_depth.parquet<span class="w"> </span>flood_depth.pmtiles<span class="w"> </span>--layer<span class="w"> </span>flood
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># Sync to PostGIS</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">&quot;postgresql://user:pass@host/db&quot;</span><span class="w"> </span>max_depth
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">"postgresql://user:pass@host/db"</span><span class="w"> </span>max_depth
 </code></pre></div>
 <h2 id="key-features">Key Features<a class="headerlink" href="#key-features" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2408,7 +2408,7 @@ the web and analytical engines:</p>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>pip<span class="w"> </span>install<span class="w"> </span>ras2cng
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># All optional dependencies (DuckDB, PostGIS, PMTiles rasterio)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[all]&quot;</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[all]"</span>
 </code></pre></div>
 <p>See <a href="getting-started/installation/">Installation</a> for full details including external CLI tools.</p>
 

@@ -2288,15 +2288,15 @@ statistics for the requested variable.</p>
 <p>Column names are <strong>snake_case</strong> — ras-commander normalizes all variable names.</p>
 <p>Use <code>list_available_summary_variables()</code> to discover what a specific plan HDF contains:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_available_summary_variables</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">variables</span> <span class="o">=</span> <span class="n">list_available_summary_variables</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">))</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">variables</span><span class="p">)</span>  <span class="c1"># [&#39;Maximum Depth&#39;, &#39;Maximum Water Surface&#39;, ...]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">variables</span> <span class="o">=</span> <span class="n">list_available_summary_variables</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.p01.hdf"</span><span class="p">))</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">variables</span><span class="p">)</span>  <span class="c1"># ['Maximum Depth', 'Maximum Water Surface', ...]</span>
 </code></pre></div>
 <h2 id="polygon-join">Polygon Join<a class="headerlink" href="#polygon-join" title="Permanent link">&para;</a></h2>
 <p>Results from <code>HdfResultsMesh</code> are <strong>points</strong> (one per mesh cell centroid). To get polygon geometry
 suitable for choropleth maps and area calculations, provide a <code>--geometry</code> GeoParquet file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ras2cng<span class="w"> </span>results<span class="w"> </span>model.p01.hdf<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--geometry<span class="w"> </span>mesh_cells.parquet<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--var<span class="w"> </span><span class="s2">&quot;Maximum Depth&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--var<span class="w"> </span><span class="s2">"Maximum Depth"</span>
 </code></pre></div>
 <p>The merge is performed on <code>(mesh_name, cell_id)</code> — both columns must be present in the geometry file.
 Result: each row is a mesh cell <strong>polygon</strong> with the hydraulic result attribute attached.</p>
@@ -2315,38 +2315,38 @@ Result: each row is a mesh cell <strong>polygon</strong> with the hydraulic resu
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1"># List variables</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="n">variables</span> <span class="o">=</span> <span class="n">list_available_summary_variables</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">))</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="n">variables</span> <span class="o">=</span> <span class="n">list_available_summary_variables</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.p01.hdf"</span><span class="p">))</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1"># Export single variable (points, no geometry join)</span>
 <a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">export_results_layer</span><span class="p">(</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">output</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;max_depth_points.parquet&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="n">variable</span><span class="o">=</span><span class="s2">&quot;Maximum Depth&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.p01.hdf"</span><span class="p">),</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">output</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"max_depth_points.parquet"</span><span class="p">),</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="n">variable</span><span class="o">=</span><span class="s2">"Maximum Depth"</span><span class="p">,</span>
 <a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="p">)</span>
 <a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>
 <a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="c1"># Export with polygon join</span>
 <a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="n">export_results_layer</span><span class="p">(</span>
-<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    <span class="n">output</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;max_depth_polygons.parquet&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    <span class="n">variable</span><span class="o">=</span><span class="s2">&quot;Maximum Depth&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>    <span class="n">geom_file</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">),</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.p01.hdf"</span><span class="p">),</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    <span class="n">output</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"max_depth_polygons.parquet"</span><span class="p">),</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    <span class="n">variable</span><span class="o">=</span><span class="s2">"Maximum Depth"</span><span class="p">,</span>
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>    <span class="n">geom_file</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"mesh_cells.parquet"</span><span class="p">),</span>
 <a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="p">)</span>
 <a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>
 <a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="c1"># Export all variables to separate parquet files</span>
 <a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="n">exported</span> <span class="o">=</span> <span class="n">export_all_variables</span><span class="p">(</span>
-<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./results/&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>    <span class="n">geom_file</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;mesh_cells.parquet&quot;</span><span class="p">),</span>
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.p01.hdf"</span><span class="p">),</span>
+<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"./results/"</span><span class="p">),</span>
+<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>    <span class="n">geom_file</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"mesh_cells.parquet"</span><span class="p">),</span>
 <a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a><span class="p">)</span>
-<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exported </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">exported</span><span class="p">)</span><span class="si">}</span><span class="s2"> variables: </span><span class="si">{</span><span class="n">exported</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Exported </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">exported</span><span class="p">)</span><span class="si">}</span><span class="s2"> variables: </span><span class="si">{</span><span class="n">exported</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a>
 <a id="__codelineno-3-35" name="__codelineno-3-35" href="#__codelineno-3-35"></a><span class="c1"># Merge all variables into one GeoDataFrame with `layer` column</span>
 <a id="__codelineno-3-36" name="__codelineno-3-36" href="#__codelineno-3-36"></a><span class="c1"># (used by archive_project() for consolidated output)</span>
 <a id="__codelineno-3-37" name="__codelineno-3-37" href="#__codelineno-3-37"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">merge_all_variables</span><span class="p">(</span>
-<a id="__codelineno-3-38" name="__codelineno-3-38" href="#__codelineno-3-38"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;model.p01.hdf&quot;</span><span class="p">),</span>
+<a id="__codelineno-3-38" name="__codelineno-3-38" href="#__codelineno-3-38"></a>    <span class="n">plan_hdf</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"model.p01.hdf"</span><span class="p">),</span>
 <a id="__codelineno-3-39" name="__codelineno-3-39" href="#__codelineno-3-39"></a>    <span class="n">mesh_cells_gdf</span><span class="o">=</span><span class="n">mesh_cells_gdf</span><span class="p">,</span>  <span class="c1"># GeoDataFrame with polygon geometry</span>
 <a id="__codelineno-3-40" name="__codelineno-3-40" href="#__codelineno-3-40"></a><span class="p">)</span>
-<a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a><span class="c1"># gdf has `layer` column: &#39;maximum_depth&#39;, &#39;maximum_water_surface&#39;, ...</span>
+<a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a><span class="c1"># gdf has `layer` column: 'maximum_depth', 'maximum_water_surface', ...</span>
 </code></pre></div>
 
 

@@ -2783,38 +2783,38 @@
 </code></pre></div>
 <h3 id="all-layers-via-archive-consolidated">All layers via archive (consolidated)<a class="headerlink" href="#all-layers-via-archive-consolidated" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ras2cng<span class="w"> </span>archive<span class="w"> </span>path/to/project<span class="w"> </span>/output/archive
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Creates BaldEagle.g01.parquet with all layers, use WHERE layer = &#39;mesh_cells&#39;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Creates BaldEagle.g01.parquet with all layers, use WHERE layer = 'mesh_cells'</span>
 </code></pre></div>
 <h3 id="all-layers-merged-python-api">All layers merged (Python API)<a class="headerlink" href="#all-layers-merged-python-api" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng</span><span class="w"> </span><span class="kn">import</span> <span class="n">merge_all_layers</span><span class="p">,</span> <span class="n">HDF_LAYERS</span><span class="p">,</span> <span class="n">ALL_HDF_LAYERS</span><span class="p">,</span> <span class="n">ALL_TEXT_LAYERS</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># See all known HDF layers</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">ALL_HDF_LAYERS</span><span class="p">)</span>   <span class="c1"># [&#39;mesh_cells&#39;, &#39;mesh_areas&#39;, &#39;bc_lines&#39;, ...]</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">ALL_TEXT_LAYERS</span><span class="p">)</span>   <span class="c1"># [&#39;cross_sections&#39;, &#39;centerlines&#39;, &#39;storage_areas&#39;]</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">ALL_HDF_LAYERS</span><span class="p">)</span>   <span class="c1"># ['mesh_cells', 'mesh_areas', 'bc_lines', ...]</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">ALL_TEXT_LAYERS</span><span class="p">)</span>   <span class="c1"># ['cross_sections', 'centerlines', 'storage_areas']</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1"># Merge all layers into one GeoDataFrame with `layer` column</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">merge_all_layers</span><span class="p">(</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;BaldEagle.g01.hdf&quot;</span><span class="p">),</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">text_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;BaldEagle.g01&quot;</span><span class="p">),</span>  <span class="c1"># optional text file</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"BaldEagle.g01.hdf"</span><span class="p">),</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">text_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"BaldEagle.g01"</span><span class="p">),</span>  <span class="c1"># optional text file</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">sort</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                         <span class="c1"># Hilbert spatial sorting</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="p">)</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="c1"># gdf has `layer` column: &#39;mesh_cells&#39;, &#39;bc_lines&#39;, &#39;cross_sections_text&#39;, ...</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="c1"># gdf has `layer` column: 'mesh_cells', 'bc_lines', 'cross_sections_text', ...</span>
 </code></pre></div>
 <h3 id="legacy-per-file-export-python-api">Legacy per-file export (Python API)<a class="headerlink" href="#legacy-per-file-export-python-api" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_all_hdf_layers</span><span class="p">,</span> <span class="n">export_all_text_layers</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Export all available layers from one HDF file to separate parquets</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">written</span> <span class="o">=</span> <span class="n">export_all_hdf_layers</span><span class="p">(</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;BaldEagle.g01.hdf&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/output/geometry/g01&quot;</span><span class="p">),</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"BaldEagle.g01.hdf"</span><span class="p">),</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"/output/geometry/g01"</span><span class="p">),</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># written = {&quot;mesh_cells&quot;: Path(&quot;...&quot;), &quot;bc_lines&quot;: Path(&quot;...&quot;), ...}</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># written = {"mesh_cells": Path("..."), "bc_lines": Path("..."), ...}</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># Export all available layers from a text file</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">written</span> <span class="o">=</span> <span class="n">export_all_text_layers</span><span class="p">(</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;BaldEagle.g01&quot;</span><span class="p">),</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/output/geometry/g01_text&quot;</span><span class="p">),</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"BaldEagle.g01"</span><span class="p">),</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">Path</span><span class="p">(</span><span class="s2">"/output/geometry/g01_text"</span><span class="p">),</span>
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">)</span>
 </code></pre></div>
 <hr />
@@ -2859,12 +2859,12 @@
 <hr />
 <h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
 <p>Layers absent from a given model are skipped gracefully — no error is raised. This is intentional: most models have only a subset of these layers.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># If bc_lines doesn&#39;t exist in this model, written dict simply won&#39;t have it</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># If bc_lines doesn't exist in this model, written dict simply won't have it</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">written</span> <span class="o">=</span> <span class="n">export_all_hdf_layers</span><span class="p">(</span><span class="n">hdf_path</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">)</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">if</span> <span class="s2">&quot;bc_lines&quot;</span> <span class="ow">in</span> <span class="n">written</span><span class="p">:</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;BC lines exported:&quot;</span><span class="p">,</span> <span class="n">written</span><span class="p">[</span><span class="s2">&quot;bc_lines&quot;</span><span class="p">])</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">if</span> <span class="s2">"bc_lines"</span> <span class="ow">in</span> <span class="n">written</span><span class="p">:</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"BC lines exported:"</span><span class="p">,</span> <span class="n">written</span><span class="p">[</span><span class="s2">"bc_lines"</span><span class="p">])</span>
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No BC lines in this geometry&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"No BC lines in this geometry"</span><span class="p">)</span>
 </code></pre></div>
 
 

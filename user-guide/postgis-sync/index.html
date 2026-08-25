@@ -2247,23 +2247,23 @@
 <p>ras2cng uploads GeoParquet to PostGIS using SQLAlchemy + GeoAlchemy2, with automatic
 GIST spatial index creation after upload.</p>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ras2cng[postgis]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ras2cng[postgis]"</span>
 </code></pre></div>
 <p>A running PostgreSQL + PostGIS instance. The <code>postgis</code> extension must be enabled in the target database.</p>
 <h2 id="cli">CLI<a class="headerlink" href="#cli" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Basic sync (replace if exists)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">&quot;postgresql://user:pass@localhost/mydb&quot;</span><span class="w"> </span>max_depth
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">"postgresql://user:pass@localhost/mydb"</span><span class="w"> </span>max_depth
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Specify schema</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">&quot;postgresql://user:pass@localhost/mydb&quot;</span><span class="w"> </span>max_depth<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">"postgresql://user:pass@localhost/mydb"</span><span class="w"> </span>max_depth<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span>--schema<span class="w"> </span>hydraulics
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># Append to existing table</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">&quot;postgresql://user:pass@localhost/mydb&quot;</span><span class="w"> </span>max_depth<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">"postgresql://user:pass@localhost/mydb"</span><span class="w"> </span>max_depth<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span>--if-exists<span class="w"> </span>append
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="c1"># Fail if table already exists</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">&quot;postgresql://user:pass@localhost/mydb&quot;</span><span class="w"> </span>max_depth<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>ras2cng<span class="w"> </span>sync<span class="w"> </span>max_depth.parquet<span class="w"> </span><span class="s2">"postgresql://user:pass@localhost/mydb"</span><span class="w"> </span>max_depth<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span>--if-exists<span class="w"> </span>fail
 </code></pre></div>
 <h2 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h2>
@@ -2272,18 +2272,18 @@ GIST spatial index creation after upload.</p>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Upload to PostGIS</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">sync_to_postgres</span><span class="p">(</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">parquet_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;max_depth.parquet&quot;</span><span class="p">),</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">postgres_uri</span><span class="o">=</span><span class="s2">&quot;postgresql://user:pass@localhost/mydb&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">table_name</span><span class="o">=</span><span class="s2">&quot;max_depth&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">schema</span><span class="o">=</span><span class="s2">&quot;hydraulics&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">if_exists</span><span class="o">=</span><span class="s2">&quot;replace&quot;</span><span class="p">,</span>  <span class="c1"># &quot;replace&quot;, &quot;append&quot;, or &quot;fail&quot;</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">parquet_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"max_depth.parquet"</span><span class="p">),</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">postgres_uri</span><span class="o">=</span><span class="s2">"postgresql://user:pass@localhost/mydb"</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">table_name</span><span class="o">=</span><span class="s2">"max_depth"</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">schema</span><span class="o">=</span><span class="s2">"hydraulics"</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">if_exists</span><span class="o">=</span><span class="s2">"replace"</span><span class="p">,</span>  <span class="c1"># "replace", "append", or "fail"</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="p">)</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># Read back from PostGIS</span>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">gdf</span> <span class="o">=</span> <span class="n">read_from_postgres</span><span class="p">(</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">postgres_uri</span><span class="o">=</span><span class="s2">&quot;postgresql://user:pass@localhost/mydb&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">table_name</span><span class="o">=</span><span class="s2">&quot;max_depth&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">schema</span><span class="o">=</span><span class="s2">&quot;hydraulics&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">postgres_uri</span><span class="o">=</span><span class="s2">"postgresql://user:pass@localhost/mydb"</span><span class="p">,</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">table_name</span><span class="o">=</span><span class="s2">"max_depth"</span><span class="p">,</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">schema</span><span class="o">=</span><span class="s2">"hydraulics"</span><span class="p">,</span>
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="spatial-index">Spatial Index<a class="headerlink" href="#spatial-index" title="Permanent link">&para;</a></h2>

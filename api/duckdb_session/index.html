@@ -2340,53 +2340,53 @@
 <span class="normal"><a href="#__codelineno-0-65">65</a></span>
 <span class="normal"><a href="#__codelineno-0-66">66</a></span>
 <span class="normal"><a href="#__codelineno-0-67">67</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-12" name="__codelineno-0-12"></a><span class="k">class</span><span class="w"> </span><span class="nc">DuckSession</span><span class="p">:</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;DuckDB session with spatial extension pre-loaded when available.&quot;&quot;&quot;</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="w">    </span><span class="sd">"""DuckDB session with spatial extension pre-loaded when available."""</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14"></a>
-<a id="__codelineno-0-15" name="__codelineno-0-15"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;:memory:&quot;</span><span class="p">):</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15"></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">":memory:"</span><span class="p">):</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">con</span> <span class="o">=</span> <span class="n">duckdb</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_load_spatial_extension</span><span class="p">()</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18"></a>
 <a id="__codelineno-0-19" name="__codelineno-0-19"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_load_spatial_extension</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <a id="__codelineno-0-20" name="__codelineno-0-20"></a>        <span class="c1"># Prefer LOAD first (works if extension already installed), then INSTALL.</span>
 <a id="__codelineno-0-21" name="__codelineno-0-21"></a>        <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;LOAD spatial;&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">"LOAD spatial;"</span><span class="p">)</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23"></a>            <span class="k">return</span>
 <a id="__codelineno-0-24" name="__codelineno-0-24"></a>        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25"></a>            <span class="k">pass</span>
 <a id="__codelineno-0-26" name="__codelineno-0-26"></a>
 <a id="__codelineno-0-27" name="__codelineno-0-27"></a>        <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;INSTALL spatial;&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-29" name="__codelineno-0-29"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;LOAD spatial;&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">"INSTALL spatial;"</span><span class="p">)</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">"LOAD spatial;"</span><span class="p">)</span>
 <a id="__codelineno-0-30" name="__codelineno-0-30"></a>        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
 <a id="__codelineno-0-31" name="__codelineno-0-31"></a>            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32"></a>                <span class="s2">&quot;DuckDB spatial extension could not be loaded. &quot;</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33"></a>                <span class="s2">&quot;If you&#39;re offline, pre-install extensions or skip spatial queries. &quot;</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34"></a>                <span class="sa">f</span><span class="s2">&quot;Underlying error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32"></a>                <span class="s2">"DuckDB spatial extension could not be loaded. "</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33"></a>                <span class="s2">"If you're offline, pre-install extensions or skip spatial queries. "</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34"></a>                <span class="sa">f</span><span class="s2">"Underlying error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span>
 <a id="__codelineno-0-35" name="__codelineno-0-35"></a>            <span class="p">)</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36"></a>
-<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">register_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span><span class="p">):</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a (Geo)Parquet file as a view.</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">register_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"_"</span><span class="p">):</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">        </span><span class="sd">"""Register a (Geo)Parquet file as a view.</span>
 <a id="__codelineno-0-39" name="__codelineno-0-39"></a>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">        If a GeoParquet &#39;geometry&#39; column exists (WKB), it will be converted into DuckDB&#39;s</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">        If a GeoParquet 'geometry' column exists (WKB), it will be converted into DuckDB's</span>
 <a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">        GEOMETRY type in the view so that ST_* functions work.</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">        &quot;&quot;&quot;</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">        """</span>
 <a id="__codelineno-0-43" name="__codelineno-0-43"></a>
 <a id="__codelineno-0-44" name="__codelineno-0-44"></a>        <span class="n">p</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a>        <span class="c1"># Try to wrap geometry column into GEOMETRY type.</span>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a>        <span class="k">try</span><span class="p">:</span>
 <a id="__codelineno-0-48" name="__codelineno-0-48"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a>                <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a>                <span class="sa">f</span><span class="s2">"""</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="s2">                CREATE OR REPLACE VIEW </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> AS</span>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="s2">                SELECT * EXCLUDE (geometry),</span>
 <a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="s2">                       ST_GeomFromWKB(geometry) AS geometry</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="s2">                FROM read_parquet(&#39;</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">&#39;);</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="s2">                &quot;&quot;&quot;</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="s2">                FROM read_parquet('</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">');</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="s2">                """</span>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a>            <span class="p">)</span>
 <a id="__codelineno-0-56" name="__codelineno-0-56"></a>        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
 <a id="__codelineno-0-57" name="__codelineno-0-57"></a>            <span class="c1"># Fallback for non-GeoParquet or files without geometry column.</span>
 <a id="__codelineno-0-58" name="__codelineno-0-58"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a>                <span class="sa">f</span><span class="s2">&quot;CREATE OR REPLACE VIEW </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> AS SELECT * FROM read_parquet(&#39;</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">&#39;);&quot;</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a>                <span class="sa">f</span><span class="s2">"CREATE OR REPLACE VIEW </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> AS SELECT * FROM read_parquet('</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">');"</span>
 <a id="__codelineno-0-60" name="__codelineno-0-60"></a>            <span class="p">)</span>
 <a id="__codelineno-0-61" name="__codelineno-0-61"></a>        <span class="k">return</span> <span class="bp">self</span>
 <a id="__codelineno-0-62" name="__codelineno-0-62"></a>
@@ -2415,7 +2415,7 @@
 
 
 <h4 id="ras2cng.duckdb_session.DuckSession.register_parquet" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">register_parquet</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;_&#39;</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">register_parquet</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">'_'</span><span class="p">)</span></code>
 
 <a href="#ras2cng.duckdb_session.DuckSession.register_parquet" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -2453,29 +2453,29 @@ GEOMETRY type in the view so that ST_* functions work.</p>
 <span class="normal"><a href="#__codelineno-0-58">58</a></span>
 <span class="normal"><a href="#__codelineno-0-59">59</a></span>
 <span class="normal"><a href="#__codelineno-0-60">60</a></span>
-<span class="normal"><a href="#__codelineno-0-61">61</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="k">def</span><span class="w"> </span><span class="nf">register_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;_&quot;</span><span class="p">):</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Register a (Geo)Parquet file as a view.</span>
+<span class="normal"><a href="#__codelineno-0-61">61</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="k">def</span><span class="w"> </span><span class="nf">register_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"_"</span><span class="p">):</span>
+<a id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">    </span><span class="sd">"""Register a (Geo)Parquet file as a view.</span>
 <a id="__codelineno-0-39" name="__codelineno-0-39"></a>
-<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">    If a GeoParquet &#39;geometry&#39; column exists (WKB), it will be converted into DuckDB&#39;s</span>
+<a id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="sd">    If a GeoParquet 'geometry' column exists (WKB), it will be converted into DuckDB's</span>
 <a id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="sd">    GEOMETRY type in the view so that ST_* functions work.</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-42" name="__codelineno-0-42"></a><span class="sd">    """</span>
 <a id="__codelineno-0-43" name="__codelineno-0-43"></a>
 <a id="__codelineno-0-44" name="__codelineno-0-44"></a>    <span class="n">p</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
 <a id="__codelineno-0-45" name="__codelineno-0-45"></a>
 <a id="__codelineno-0-46" name="__codelineno-0-46"></a>    <span class="c1"># Try to wrap geometry column into GEOMETRY type.</span>
 <a id="__codelineno-0-47" name="__codelineno-0-47"></a>    <span class="k">try</span><span class="p">:</span>
 <a id="__codelineno-0-48" name="__codelineno-0-48"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49"></a>            <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a>            <span class="sa">f</span><span class="s2">"""</span>
 <a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="s2">            CREATE OR REPLACE VIEW </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> AS</span>
 <a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="s2">            SELECT * EXCLUDE (geometry),</span>
 <a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="s2">                   ST_GeomFromWKB(geometry) AS geometry</span>
-<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="s2">            FROM read_parquet(&#39;</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">&#39;);</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="s2">            &quot;&quot;&quot;</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="s2">            FROM read_parquet('</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">');</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="s2">            """</span>
 <a id="__codelineno-0-55" name="__codelineno-0-55"></a>        <span class="p">)</span>
 <a id="__codelineno-0-56" name="__codelineno-0-56"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
 <a id="__codelineno-0-57" name="__codelineno-0-57"></a>        <span class="c1"># Fallback for non-GeoParquet or files without geometry column.</span>
 <a id="__codelineno-0-58" name="__codelineno-0-58"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a>            <span class="sa">f</span><span class="s2">&quot;CREATE OR REPLACE VIEW </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> AS SELECT * FROM read_parquet(&#39;</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">&#39;);&quot;</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a>            <span class="sa">f</span><span class="s2">"CREATE OR REPLACE VIEW </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> AS SELECT * FROM read_parquet('</span><span class="si">{</span><span class="n">p</span><span class="si">}</span><span class="s2">');"</span>
 <a id="__codelineno-0-60" name="__codelineno-0-60"></a>        <span class="p">)</span>
 <a id="__codelineno-0-61" name="__codelineno-0-61"></a>    <span class="k">return</span> <span class="bp">self</span>
 </code></pre></div></td></tr></table></div>
