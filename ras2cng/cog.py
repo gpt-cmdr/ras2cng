@@ -89,6 +89,50 @@ MAX_AREA_MATCHED_PIXELS = int(
     os.environ.get("RAS2CNG_AREA_MATCHED_MAX_PIXELS", 400_000_000)
 )
 
+def _parse_lerc_default(value: str) -> float | None:
+    """Read the LERC default from the environment, allowing it to be switched off."""
+
+    text = (value or "").strip().lower()
+    if text in {"", "0", "off", "none", "no", "false", "lossless"}:
+        return None
+    try:
+        tolerance = float(text)
+    except ValueError as error:
+        raise ValueError(
+            f"RAS2CNG_LERC_MAX_Z_ERROR must be a positive number or 'off', got {value!r}"
+        ) from error
+    if not (tolerance > 0.0) or not math.isfinite(tolerance):
+        raise ValueError(
+            f"RAS2CNG_LERC_MAX_Z_ERROR must be a positive number or 'off', got {value!r}"
+        )
+    return tolerance
+
+
+#: Default LERC tolerance, expressed **in the raster's own vertical units**.
+#:
+#: 0.01 is chosen for delivery of HEC-RAS result surfaces in US survey feet:
+#: 0.01 ft is roughly an eighth of an inch, one to two orders of magnitude below
+#: the accuracy of the terrain and boundary conditions any of these values were
+#: computed from.  For water surface elevation, depth and velocity mapping it is
+#: not a meaningful loss, and it buys 73-95% of the file size back.
+#:
+#: It is a **lossy** default, and two things follow.  It applies only to
+#: floating-point rasters -- integer and categorical rasters stay lossless,
+#: because a sub-unit tolerance on a count is pointless and on a class value is
+#: meaningless.  And because the units are the raster's own, a model in metres
+#: gets a 1 cm tolerance rather than a 3 mm one; check this value against your
+#: units before trusting it.
+#:
+#: Turn it off with ``RAS2CNG_LERC_MAX_Z_ERROR=off`` (or pass
+#: ``lerc_max_z_error=None``) for any raster whose values feed a downstream
+#: calculation rather than a map.
+DEFAULT_LERC_MAX_Z_ERROR: float | None = _parse_lerc_default(
+    os.environ.get("RAS2CNG_LERC_MAX_Z_ERROR", "0.01")
+)
+
+#: Sentinel: the caller did not express an opinion, so the default applies.
+_USE_DEFAULT_LERC: Any = object()
+
 #: PROJ's own default authority-match confidence.  Anything lower will match a
 #: CRS to a registered code that differs in linear unit or datum.
 MIN_CRS_CONFIDENCE = 70
@@ -423,25 +467,34 @@ def resolve_compression(
     *,
     lerc_max_z_error: float | None,
     categorical: bool = False,
+    floating_point: bool = True,
+    explicit: bool = True,
 ) -> tuple[str, float | None]:
-    """Resolve the compression name, applying LERC only when asked for explicitly.
+    """Resolve the compression name and the LERC tolerance that applies.
 
-    LERC is **lossy**.  It is not a default and never will be: it is a per-product
-    engineering decision, and passing a tolerance is how that decision is
-    expressed.  Measured on a smooth WSE surface, ``MAX_Z_ERROR=0.01`` ft gave an
-    84% size reduction with the error bound honoured exactly -- but the same
-    setting must never be applied to a raster whose values feed a downstream
-    calculation, and never to a class raster, where "within tolerance" is
-    meaningless.
+    LERC is **lossy and on by default** (see :data:`DEFAULT_LERC_MAX_Z_ERROR`),
+    because these artifacts are built to be served: at 0.01 ft the error is far
+    below the accuracy of the inputs the values were computed from, and it
+    returns 73-95% of the file size.
+
+    The default is narrowed rather than blanket-applied.  It reaches
+    floating-point rasters only; integer and categorical rasters stay lossless,
+    since "within 0.01" is pointless on a count and meaningless on a class.
+    ``explicit`` separates a caller asking for LERC from the default arriving on
+    its own: an explicit request for a lossy class raster is a mistake and is
+    refused, whereas the default simply steps aside.
     """
 
     if lerc_max_z_error is None:
         return compress, None
-    if categorical:
-        raise ValueError(
-            "LERC is lossy and cannot be applied to a categorical raster: "
-            "a class value that is 'within tolerance' is a different class"
-        )
+    if categorical or not floating_point:
+        reason = "a categorical" if categorical else "an integer"
+        if explicit:
+            raise ValueError(
+                f"LERC is lossy and cannot be applied to {reason} raster: "
+                "a value that is 'within tolerance' is a different value"
+            )
+        return compress, None
     tolerance = float(lerc_max_z_error)
     if not (tolerance > 0.0) or not math.isfinite(tolerance):
         raise ValueError(
@@ -461,7 +514,8 @@ def cog_creation_options(
     reuse_overviews: bool = False,
     level: int | None = None,
     sparse_ok: bool = True,
-    lerc_max_z_error: float | None = None,
+    lerc_max_z_error: float | None = _USE_DEFAULT_LERC,
+    floating_point: bool = True,
 ) -> list[str]:
     """Return ``-co`` arguments for a ``gdal_translate -of COG`` invocation.
 
@@ -472,12 +526,16 @@ def cog_creation_options(
     ``OVERVIEW_RESAMPLING`` setting is silently discarded.
     """
 
-    compress, tolerance = resolve_compression(compress, lerc_max_z_error=lerc_max_z_error)
+    explicit = lerc_max_z_error is not _USE_DEFAULT_LERC
+    compress, tolerance = resolve_compression(
+        compress,
+        lerc_max_z_error=DEFAULT_LERC_MAX_Z_ERROR if not explicit else lerc_max_z_error,
+        floating_point=floating_point,
+        explicit=explicit,
+    )
     options = [
         "-co", f"COMPRESS={compress}",
-        "-co", f"PREDICTOR={predictor}",
         "-co", f"OVERVIEW_COMPRESS={compress}",
-        "-co", f"OVERVIEW_PREDICTOR={predictor}",
         "-co", f"OVERVIEW_RESAMPLING={overview_resampling}",
         # FORCE_USE_EXISTING makes a deliberately pre-built pyramid explicit and
         # fails loudly when it is missing; IGNORE_EXISTING makes the declared
@@ -487,6 +545,13 @@ def cog_creation_options(
         "-co", "BIGTIFF=IF_SAFER",
         "-co", "NUM_THREADS=ALL_CPUS",
     ]
+    if tolerance is None:
+        # LERC does its own encoding; a byte predictor on top is meaningless,
+        # and GDAL rejects the pairing rather than ignoring it.
+        options.extend([
+            "-co", f"PREDICTOR={predictor}",
+            "-co", f"OVERVIEW_PREDICTOR={predictor}",
+        ])
     if level is not None:
         options.extend(["-co", f"LEVEL={level}"])
     if sparse_ok:
@@ -875,7 +940,7 @@ def area_matched_cog(
     scratch_dir: Path | None = None,
     fallback_resampling: str = "average",
     require_area_matched: bool = False,
-    lerc_max_z_error: float | None = None,
+    lerc_max_z_error: float | None = _USE_DEFAULT_LERC,
     creation_options: Mapping[str, Any] | None = None,
 ) -> OverviewReport:
     """Write ``source_path`` to ``destination`` as a COG with correct overviews.
@@ -887,9 +952,11 @@ def area_matched_cog(
     to GDAL resampling with ``OVERVIEWS=IGNORE_EXISTING`` and the reason is
     recorded in the output's tags.
 
-    ``lerc_max_z_error`` opts into lossy LERC at that tolerance; the tolerance is
-    written into the artifact's tags so the loss travels with the file.  Never
-    set it on a raster whose values feed a downstream calculation.
+    Compression is lossy LERC by default at :data:`DEFAULT_LERC_MAX_Z_ERROR`,
+    applied to floating-point rasters only; the tolerance is written into the
+    artifact's tags so the loss travels with the file.  Pass
+    ``lerc_max_z_error=None`` (or set ``RAS2CNG_LERC_MAX_Z_ERROR=off``) for any
+    raster whose values feed a downstream calculation rather than a map.
     """
 
     from rasterio.shutil import copy as copy_raster
@@ -900,19 +967,27 @@ def area_matched_cog(
         # Continuous float -> 3 (measured 16-25% better); class data -> 2
         # (measured 2.4x better on float32, and the only legal choice on int).
         predictor = 2 if categorical else DEFAULT_PREDICTOR
+
+    import numpy as np
+    import rasterio
+
+    with rasterio.open(source_path) as probe:
+        factors = overview_factors(probe.width, probe.height, blocksize=blocksize)
+        floating_point = np.dtype(probe.dtypes[0]).kind == "f"
+
+    explicit_lerc = lerc_max_z_error is not _USE_DEFAULT_LERC
     compress, tolerance = resolve_compression(
-        compress, lerc_max_z_error=lerc_max_z_error, categorical=categorical
+        compress,
+        lerc_max_z_error=DEFAULT_LERC_MAX_Z_ERROR if not explicit_lerc else lerc_max_z_error,
+        categorical=categorical,
+        floating_point=floating_point,
+        explicit=explicit_lerc,
     )
     extra_options = dict(creation_options or {})
     if tolerance is not None:
         extra_options["MAX_Z_ERROR"] = tolerance
         # LERC does its own encoding; a byte predictor on top is meaningless.
         predictor = None
-
-    import rasterio
-
-    with rasterio.open(source_path) as probe:
-        factors = overview_factors(probe.width, probe.height, blocksize=blocksize)
 
     with tempfile.TemporaryDirectory(
         prefix="ras2cng-cog-",

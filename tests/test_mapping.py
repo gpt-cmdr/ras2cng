@@ -790,9 +790,11 @@ def test_convert_to_cog_uses_bundled_gdal_and_builds_overviews(tmp_path):
         assert source.is_tiled
         assert source.overviews(1)
         assert source.nodata == pytest.approx(-9999.0)
-        # DEFLATE, not ZSTD: a published result raster must open in any GDAL,
-        # including builds without libzstd, which fail hard rather than degrade.
-        assert source.compression.name == "deflate"
+        # LERC by default: result maps are delivery products, and at 0.01 ft the
+        # error is far below the accuracy of the inputs they were computed from.
+        # Set RAS2CNG_LERC_MAX_Z_ERROR=off for scientific use.
+        assert source.compression.name == "lerc_deflate"
+        assert source.tags(ns="IMAGE_STRUCTURE")["MAX_Z_ERROR"] == "0.01"
 
 
 def test_convert_to_cog_rejects_missing_source(tmp_path):

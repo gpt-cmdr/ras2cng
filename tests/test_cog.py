@@ -228,18 +228,27 @@ def test_creation_options_always_state_overviews() -> None:
     assert "OVERVIEWS=AUTO" not in options
 
 
-def test_published_cogs_default_to_universally_readable_settings(tmp_path: Path) -> None:
-    """DEFLATE + predictor 3 by default.
-
-    ZSTD-in-TIFF needs a GDAL built with libzstd, and a reader without it fails
-    hard rather than degrading -- an artifact that will not open is worse than
-    one that is slightly larger.  Measured cost of DEFLATE at the same
-    predictor: 2% on terrain, 6% on depth, 8% on WSE.
-    """
-
+def _defaults_overridden() -> bool:
     import os
 
-    if os.environ.get("RAS2CNG_COG_COMPRESS") or os.environ.get("RAS2CNG_COG_PREDICTOR"):
+    return bool(
+        os.environ.get("RAS2CNG_COG_COMPRESS")
+        or os.environ.get("RAS2CNG_COG_PREDICTOR")
+        or os.environ.get("RAS2CNG_LERC_MAX_Z_ERROR")
+    )
+
+
+def test_float_rasters_default_to_lerc_for_delivery(tmp_path: Path) -> None:
+    """LERC at 0.01 raster units is the shipping default for float surfaces.
+
+    These artifacts exist to be served. At 0.01 ft the error is one to two
+    orders of magnitude below the accuracy of the terrain and boundary
+    conditions the values were computed from, and it returns 73-95% of the file
+    size. It is nonetheless a lossy default, which is why the tolerance is
+    recorded on the artifact and why one env var turns it off.
+    """
+
+    if _defaults_overridden():
         pytest.skip("compression defaults are overridden in this environment")
 
     source = tmp_path / "depth.tif"
@@ -250,12 +259,36 @@ def test_published_cogs_default_to_universally_readable_settings(tmp_path: Path)
 
     with rasterio.open(output) as handle:
         structure = handle.tags(ns="IMAGE_STRUCTURE")
+        tags = handle.tags()
+    assert structure["COMPRESSION"] == "LERC_DEFLATE"
+    assert structure["MAX_Z_ERROR"] == "0.01"
+    assert structure["LAYOUT"] == "COG"
+    assert tags["compression_lossy"] == "true"
+    assert "COMPRESS=LERC_DEFLATE" in cog_creation_options()
+    assert "MAX_Z_ERROR=0.01" in cog_creation_options()
+
+
+def test_lossless_is_one_argument_away(tmp_path: Path) -> None:
+    """The scientific path: lossless, and back to the benchmarked predictor 3."""
+
+    if _defaults_overridden():
+        pytest.skip("compression defaults are overridden in this environment")
+
+    source = tmp_path / "depth.tif"
+    _flood_raster(source)
+    output = tmp_path / "depth_cog.tif"
+
+    report = area_matched_cog(source, output, blocksize=128, lerc_max_z_error=None)
+
+    with rasterio.open(output) as handle:
+        structure = handle.tags(ns="IMAGE_STRUCTURE")
+        assert "compression_lossy" not in handle.tags()
     assert structure["COMPRESSION"] == "DEFLATE"
     # Predictor 2 was 16-25% larger than 3 on every surface benchmarked,
     # including the smooth WSE case where it is reported to win.
     assert structure["PREDICTOR"] == "3"
-    assert structure["LAYOUT"] == "COG"
-    assert "COMPRESS=DEFLATE" in cog_creation_options()
+    assert report.lossy_max_z_error is None
+    assert "COMPRESS=DEFLATE" in cog_creation_options(lerc_max_z_error=None)
 
 
 def test_numeric_predictor_is_float_only_for_three() -> None:
@@ -459,15 +492,45 @@ def test_area_matched_overviews_are_deterministic(tmp_path: Path) -> None:
             assert np.array_equal(left.filled(0), right.filled(0))
 
 
-def test_area_matched_overviews_preserve_the_base_level(tmp_path: Path) -> None:
+def test_lossless_output_reproduces_the_base_level_exactly(tmp_path: Path) -> None:
     source = tmp_path / "depth.tif"
     _flood_raster(source)
     output = tmp_path / "depth_cog.tif"
 
-    area_matched_cog(source, output, compress="DEFLATE", predictor=2, blocksize=128)
+    area_matched_cog(
+        source, output, compress="DEFLATE", predictor=2, blocksize=128, lerc_max_z_error=None
+    )
 
     with rasterio.open(source) as original, rasterio.open(output) as converted:
         assert np.array_equal(original.read(1), converted.read(1))
+        assert converted.nodata == original.nodata
+        assert converted.crs == original.crs
+
+
+def test_default_output_reproduces_the_base_level_within_tolerance(tmp_path: Path) -> None:
+    """Under the lossy default the base level is bounded, not identical.
+
+    Worth stating explicitly: code that relied on byte-equality with the source
+    must ask for lossless.
+    """
+
+    if _defaults_overridden():
+        pytest.skip("compression defaults are overridden in this environment")
+
+    source = tmp_path / "depth.tif"
+    _flood_raster(source)
+    output = tmp_path / "depth_cog.tif"
+
+    area_matched_cog(source, output, blocksize=128)
+
+    with rasterio.open(source) as original, rasterio.open(output) as converted:
+        before = original.read(1, masked=True)
+        after = converted.read(1, masked=True)
+        valid = ~np.ma.getmaskarray(before)
+        assert not np.array_equal(before.data, after.data), "default is lossy"
+        assert np.abs(after.data[valid] - before.data[valid]).max() <= 0.0101
+        # The wet/dry edge is a hard boundary and must survive the codec intact.
+        assert np.array_equal(np.ma.getmaskarray(before), np.ma.getmaskarray(after))
         assert converted.nodata == original.nodata
         assert converted.crs == original.crs
 
@@ -576,7 +639,7 @@ def test_area_matched_cog_can_be_required(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lerc_is_opt_in_and_records_the_tolerance_it_cost(tmp_path: Path) -> None:
+def test_lerc_records_the_tolerance_it_cost(tmp_path: Path) -> None:
     """LERC is lossy, so the artifact must carry the tolerance it was built at."""
 
     source = tmp_path / "wse.tif"
@@ -584,7 +647,7 @@ def test_lerc_is_opt_in_and_records_the_tolerance_it_cost(tmp_path: Path) -> Non
     lossless = tmp_path / "lossless.tif"
     lossy = tmp_path / "lossy.tif"
 
-    area_matched_cog(source, lossless, blocksize=128)
+    area_matched_cog(source, lossless, blocksize=128, lerc_max_z_error=None)
     report = area_matched_cog(source, lossy, blocksize=128, lerc_max_z_error=0.01)
 
     assert report.compression == "LERC_DEFLATE"
@@ -614,11 +677,47 @@ def test_lossless_output_carries_no_lossy_tags(tmp_path: Path) -> None:
     _flood_raster(source)
     output = tmp_path / "depth_cog.tif"
 
-    report = area_matched_cog(source, output, blocksize=128)
+    report = area_matched_cog(source, output, blocksize=128, lerc_max_z_error=None)
 
     assert report.lossy_max_z_error is None
     with rasterio.open(output) as handle:
         assert "compression_lossy" not in handle.tags()
+
+
+def test_the_default_steps_aside_but_an_explicit_request_is_refused(tmp_path: Path) -> None:
+    """A default arriving on its own is not the same as a caller asking for it.
+
+    On class or integer data the default simply does not apply. An explicit
+    request for a lossy class raster is a mistake and says so.
+    """
+
+    from ras2cng.cog import resolve_compression
+
+    # Default arriving on its own -> quietly lossless.
+    assert resolve_compression("DEFLATE", lerc_max_z_error=0.01, categorical=True,
+                               explicit=False) == ("DEFLATE", None)
+    assert resolve_compression("DEFLATE", lerc_max_z_error=0.01, floating_point=False,
+                               explicit=False) == ("DEFLATE", None)
+    # Explicitly asked for -> refused.
+    with pytest.raises(ValueError, match="categorical"):
+        resolve_compression("DEFLATE", lerc_max_z_error=0.01, categorical=True, explicit=True)
+    with pytest.raises(ValueError, match="integer"):
+        resolve_compression("DEFLATE", lerc_max_z_error=0.01, floating_point=False, explicit=True)
+
+
+def test_the_lerc_default_can_be_switched_off_by_environment() -> None:
+    """The scientific escape hatch has to be one variable, and unambiguous."""
+
+    from ras2cng.cog import _parse_lerc_default
+
+    for text in ("off", "none", "0", "", "no", "false", "lossless"):
+        assert _parse_lerc_default(text) is None, text
+    assert _parse_lerc_default("0.01") == 0.01
+    assert _parse_lerc_default("0.5") == 0.5
+    # A typo must fail loudly rather than silently publishing lossy rasters.
+    for bad in ("yes", "true", "-1", "nan", "0.01ft"):
+        with pytest.raises(ValueError, match="RAS2CNG_LERC_MAX_Z_ERROR"):
+            _parse_lerc_default(bad)
 
 
 def test_lerc_is_refused_where_a_tolerance_is_meaningless(tmp_path: Path) -> None:
@@ -642,8 +741,19 @@ def test_lerc_reaches_the_gdal_translate_option_form_too() -> None:
 
     assert "COMPRESS=LERC_DEFLATE" in options
     assert "MAX_Z_ERROR=0.01" in options
-    assert "MAX_Z_ERROR=0.01" not in cog_creation_options()
-    assert "COMPRESS=DEFLATE" in cog_creation_options()
+    # LERC does its own encoding; GDAL rejects a byte predictor on top of it
+    # rather than ignoring it, so the option must not be emitted.
+    assert not any(o.startswith("PREDICTOR=") for o in options)
+
+    lossless = cog_creation_options(lerc_max_z_error=None)
+    assert "COMPRESS=DEFLATE" in lossless
+    assert "PREDICTOR=YES" in lossless
+    assert not any(o.startswith("MAX_Z_ERROR=") for o in lossless)
+
+    # Integer rasters stay lossless even under the default.
+    integral = cog_creation_options(floating_point=False)
+    assert "COMPRESS=DEFLATE" in integral
+    assert not any(o.startswith("MAX_Z_ERROR=") for o in integral)
 
 
 # ---------------------------------------------------------------------------
@@ -700,7 +810,9 @@ def test_terrain_footprint_does_not_creep_outward_with_zoom(tmp_path: Path) -> N
     for ratio in _wet_area_ratios(output, base_valid):
         assert ratio == pytest.approx(1.0, abs=0.01)
     with rasterio.open(source) as original, rasterio.open(output) as converted:
-        assert np.array_equal(original.read(1), converted.read(1))
+        before, after = original.read(1), converted.read(1)
+        keep = before != NODATA
+        assert np.abs(after[keep] - before[keep]).max() <= 0.0101
         assert converted.tags(ns="IMAGE_STRUCTURE")["LAYOUT"] == "COG"
 
 

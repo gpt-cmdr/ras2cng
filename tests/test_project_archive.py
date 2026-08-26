@@ -872,14 +872,23 @@ def test_terrain_cog_options_optimize_numeric_and_nodata_blocks():
     options = _terrain_cog_creation_options()
     option_pairs = list(zip(options[::2], options[1::2]))
 
-    # DEFLATE, not ZSTD: ZSTD-in-TIFF needs a GDAL built with libzstd, and a
-    # reader without it fails hard rather than degrading.  Measured cost at the
-    # same predictor is 2% on terrain.
-    assert ("-co", "COMPRESS=DEFLATE") in option_pairs
-    assert ("-co", "OVERVIEW_COMPRESS=DEFLATE") in option_pairs
-    assert ("-co", "PREDICTOR=YES") in option_pairs
-    assert ("-co", "OVERVIEW_PREDICTOR=YES") in option_pairs
+    # LERC over DEFLATE, not ZSTD: the lossy default is what makes delivery at
+    # scale affordable, and DEFLATE rather than ZSTD is the fallback because a
+    # reader without the codec fails hard rather than degrading.
+    assert ("-co", "COMPRESS=LERC_DEFLATE") in option_pairs
+    assert ("-co", "OVERVIEW_COMPRESS=LERC_DEFLATE") in option_pairs
+    assert ("-co", "MAX_Z_ERROR=0.01") in option_pairs
+    # LERC does its own encoding; GDAL rejects a predictor on top of it.
+    assert not any(key == "-co" and value.startswith("PREDICTOR=") for key, value in option_pairs)
     assert ("-co", "SPARSE_OK=YES") in option_pairs
+
+    # The same policy, asked for losslessly, is one argument away.
+    from ras2cng.cog import cog_creation_options
+
+    lossless = cog_creation_options(predictor="YES", level=9, lerc_max_z_error=None)
+    assert "COMPRESS=DEFLATE" in lossless
+    assert "PREDICTOR=YES" in lossless
+    assert not any(option.startswith("MAX_Z_ERROR=") for option in lossless)
     assert ("-co", "NUM_THREADS=ALL_CPUS") in option_pairs
     # AUTO would silently reuse a source pyramid and discard OVERVIEW_RESAMPLING,
     # and HEC-RAS terrain TIFFs routinely ship one.

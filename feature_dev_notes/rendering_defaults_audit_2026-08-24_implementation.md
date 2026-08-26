@@ -122,7 +122,7 @@ there first.
 | I2 DEFLATE default | **Shipped** | DEFLATE is now the default after benchmarking; `RAS2CNG_COG_COMPRESS=ZSTD` restores the old behaviour |
 | I3 predictor | **Measured; predictor 3 confirmed** | predictor 3 beat 2 on every surface tested, including smooth WSE. Expressed as `PREDICTOR=YES`, which resolves to 3 for float and 2 for integer — the literal `3` hard-fails an integer raster. `RAS2CNG_COG_PREDICTOR=2` available |
 | I4 predictor dropped in recipe copy | **Shipped** | the final COG copy now carries the predictor |
-| I5 LERC | **Shipped, opt-in** | `lerc_max_z_error=` on `area_matched_cog` / `cog_creation_options`; refused on categorical and on a non-positive tolerance; tolerance written into the artifact's tags |
+| I5 LERC | **Shipped, now the DEFAULT (0.9.0)** | `lerc_max_z_error=` on `area_matched_cog` / `cog_creation_options`; refused on categorical and on a non-positive tolerance; tolerance written into the artifact's tags |
 | I6 overview depth | **Shipped** | one policy in `cog.overview_factors`, terminating at the block size |
 | I7 legacy raster PMTiles | **Shipped** | `generate_raster_pmtiles` now routes through the `maplibre.py` pipeline |
 | I8 terrain footprint | **Shipped** | terrain COGs now build through `area_matched_cog`, so the terrain edge stops creeping outward with zoom |
@@ -344,3 +344,79 @@ policy for callers that do shell out.
 * No pipeline was run against real HEC-RAS output. The measurements above are
   from synthetic rasters built to the failure's shape. Before a fleet-wide
   rebuild, verify on a canary tile, per the RBFS process note.
+
+
+---
+
+# 0.9.0 — LERC becomes the default (2026-08-26)
+
+Shipped in 0.8.0 as opt-in on synthetic numbers. Re-measured on **full
+production rasters** from the LWI Region 6 catalogue and promoted to the
+default, because these artifacts exist to be served.
+
+| full production raster | lossless | LERC @ 0.01 | saving |
+|---|---|---|---|
+| `wse_100yr` (752 MB as published) | 313 MB | 35 MB | **−95.4%** |
+| `depth_100yr` (1068 MB as published) | 656 MB | 289 MB | **−72.9%** |
+
+Across the measured ~200 GB published catalogue that is roughly 164 GB against
+93 GB for the best lossless setting.
+
+## Why 0.01 is defensible for mapping
+
+The tolerance is in the raster's own vertical units. For HEC-RAS output in US
+survey feet, 0.01 ft is about an eighth of an inch — one to two orders of
+magnitude below the accuracy of the terrain, roughness and boundary conditions
+the value was computed from. For WSE, depth and velocity *mapping* it is inside
+the model's own noise floor.
+
+## What the default deliberately does not touch
+
+* **Integer rasters** — a sub-unit tolerance on a count buys nothing.
+* **Categorical rasters** — a class "within tolerance" is a different class.
+* **The nodata mask** — the wet/dry edge survives byte for byte; only values
+  inside the valid area move.
+
+`resolve_compression` distinguishes a default arriving on its own from a caller
+explicitly asking. On class or integer data the default steps aside quietly; an
+explicit request is refused, because that one is a mistake.
+
+## The consequence that must be stated
+
+Under the lossy default the base level is **no longer byte-identical** to the
+source — it is bounded, not exact. Anything relying on exact equality has to ask
+for lossless. `RAS2CNG_LERC_MAX_Z_ERROR=off` (or `lerc_max_z_error=None`) does
+that in one step, falling back to DEFLATE + predictor 3. A malformed value
+raises rather than silently publishing lossy rasters.
+
+Documented for users in `docs/user-guide/raster-delivery.md`.
+
+## I3 predictor — the RBFS claim is now refuted, not merely unproven
+
+0.8.0 recorded predictor 2 as "unproven, not wrong" because the counter-evidence
+was synthetic. Re-measured on the same production rasters:
+
+| real raster | DEFLATE p2 | DEFLATE p3 | result |
+|---|---|---|---|
+| `wse_100yr` (range 5.193–5.245 ft, maximally smooth) | 9.73 MB | **9.28 MB** | predictor 3 by 4.8% |
+| `depth_100yr` | 30.32 MB | **26.25 MB** | predictor 3 by 15.5% |
+
+The WSE window is a near-flat water surface — precisely the case the claim named
+as predictor 2's win. Predictor 3 still won. The claim does not reproduce on
+synthetic or real data, and its provenance traces to a consolidated brief that
+is not checked into any repository.
+
+## Independent production validation of the overview fix
+
+The LWI fleet rebuilt its catalogue on 2026-08-25 with its own implementation of
+the same algorithm, measuring "before" out of a pre-rebuild snapshot:
+
+| raster | wet area | mean error |
+|---|---|---|
+| `middle_red_coushatta/wse_100yr` | 169.8% → **100.0%** | 0.415 → **0.011** ft |
+| `saline_bayou/wse_10yr` | **224.0%** → **100.0%** | 0.290 → **0.015** ft |
+| `mckinney_posten_bayous/wse_5yr` | 176.4% → **100.0%** | 3.452 → **0.072** ft |
+
+224% inflation on real Louisiana models is worse than the 133–156% measured
+here synthetically, and sits inside the 113–326% band the original audit cited.
+Worst single-cell error found anywhere: 85.29 ft.
