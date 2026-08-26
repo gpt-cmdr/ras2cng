@@ -105,6 +105,7 @@ nav:
     - DuckDB Queries: user-guide/duckdb-queries.md
     - PMTiles Generation: user-guide/pmtiles.md
     - MapLibre Project Bundles: user-guide/maplibre.md
+    - Raster Delivery Defaults: user-guide/raster-delivery.md
     - Controlled Raster Recipes: user-guide/raster-recipes.md
     - Numeric Raster Service: user-guide/numeric-raster-service.md
     - PostGIS Sync: user-guide/postgis-sync.md
