@@ -14,7 +14,11 @@ Built on [`ras-commander`](https://github.com/gpt-cmdr/ras-commander) for HEC-RA
 # Install with all optional dependencies (creates/updates .venv and uv.lock)
 uv sync --all-extras
 
-# Run tests
+# Run tests -- ALWAYS after `uv sync --all-extras`.
+# Without the extras, tests/test_webgis_service.py cannot import (needs fastapi)
+# and tests/test_full_extraction.py cannot even be COLLECTED (needs duckdb), so
+# pytest reports green while silently skipping ~35 tests. Full suite with every
+# extra installed: 401 passed / 4 skipped (the 4 need the I: drive).
 uv run pytest
 
 # Run a single test
