@@ -63,7 +63,7 @@ be omitted only when the project registers exactly one terrain; ambiguous
 projects must select the exact RAS Mapper terrain name. The compatibility
 argument is scheduled for removal in ras2cng 1.1.
 
-This path requires a ras-commander release that exposes
+This path requires ras-commander 0.99.2 or newer, which exposes
 `RasTerrain.export_rasmapper_terrain()`. An older installation receives an
 explicit upgrade error instead of falling back to the numerically different
 row sampler.
