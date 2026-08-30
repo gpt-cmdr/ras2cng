@@ -441,18 +441,25 @@ of `--terrain` / `--terrain-hdf` must be given. The plan HDF must carry a
 ```
 Usage: ras2cng terrain-mod [OPTIONS] PROJECT OUTPUT
 
-  Export terrain with modifications (channels, levees, etc.) as GeoTIFF.
+  Export one registered terrain with native modifications as one GeoTIFF.
 
-  Samples the modified terrain surface at full raster resolution via
-  RasMapperLib. Requires HEC-RAS 6.6+ and pythonnet (Windows only).
+  RAS Mapper performs source consolidation, grid-aligned nearest-neighbor
+  downsampling, and vector-modification rasterization. Qualified on Windows
+  and Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1; stable 7.1 remains
+  forward-open behind ras-commander's managed-contract check.
 
 Arguments:
   PROJECT  HEC-RAS project directory or .prj file
   OUTPUT   Output GeoTIFF path
 
 Options:
-  -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
-  --terrain TEXT        Specific terrain name from rasmap
+  -g, --geometry TEXT           Deprecated and ignored; native terrain export
+                                does not use geometry HDF
+  --terrain TEXT                Exact registered terrain name (required if
+                                ambiguous)
+  --downsample-factor INTEGER   Exact source-derived downsampling factor: 1, 2,
+                                4, or 8  [default: 1]
+  --overwrite                   Replace an existing GeoTIFF and receipt
 ```
 
 ## ras2cng mannings

@@ -274,6 +274,24 @@ ras2cng terrain /path/to/project /output/terrain \
   --tiff-only
 ```
 
+### Export a registered terrain with modifications
+
+`terrain-mod` uses RAS Mapper's native single-TIFF export under Wine. It
+preserves the registered terrain's source order, stitches, masks, and vector
+modifications and can apply an exact source-derived downsampling factor:
+
+```bash
+ras2cng terrain-mod /path/to/project /output/modified-4x.tif \
+  --terrain "Registered Terrain" \
+  --downsample-factor 4
+```
+
+The command is qualified under Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1.
+Stable 7.1 remains forward-open behind ras-commander's managed-contract check.
+Use one task-local Wine prefix per active helper. The legacy `--geometry`
+option is deprecated and ignored because this export does not use a geometry
+HDF; it is scheduled for removal in ras2cng 1.1.
+
 ### Full-project archive with mapping
 
 ```bash

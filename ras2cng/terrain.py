@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import re
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -1118,88 +1119,90 @@ def export_modified_terrain(
     *,
     geometry: Optional[str] = None,
     terrain_name: Optional[str] = None,
+    downsample_factor: int = 1,
+    overwrite: bool = False,
 ) -> Path:
-    """Export terrain with modifications applied as a GeoTIFF.
+    """Export a registered terrain with modifications applied as one GeoTIFF.
 
-    Reads the original terrain raster grid, then samples the modified terrain
-    (channels, levees, polygon overrides, etc.) at each cell center via
-    RasMapperLib and writes the result.
+    Delegates consolidation, grid alignment, nearest-neighbor downsampling, and
+    vector-modification rasterization to RAS Mapper's native terrain export.
+    Registered source priority, stitches, and masks are therefore preserved.
 
-    Requires HEC-RAS 6.6+ installed and pythonnet (Windows only).
+    HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1 are qualified on Windows and Wine.
+    Stable 7.1 is forward-open subject to ras-commander's managed-contract
+    check. Unsupported project/runtime versions fail before native execution.
 
     Args:
         project_path: Path to .prj file or project directory
         output_tif: Output GeoTIFF path
-        geometry: Geometry number (e.g. "g01"). None = first geometry
-        terrain_name: Specific terrain to use. None = first terrain from rasmap
+        geometry: Deprecated compatibility argument. Native registered-terrain
+            export does not use a geometry HDF, so any supplied value is ignored.
+        terrain_name: Exact registered terrain name. May be omitted only when
+            the project registers exactly one terrain.
+        downsample_factor: Exact source-derived factor: 1, 2, 4, or 8.
+        overwrite: Replace an existing output and receipt when true.
 
     Returns:
         Path to the output GeoTIFF
+
+    Raises:
+        RuntimeError: If ras-commander lacks native terrain export support or
+            RAS Mapper reports an operational failure.
     """
-    from ras_commander import init_ras_project
-    from ras_commander.terrain import RasTerrainMod
+    from ras_commander import RasTerrain, init_ras_project
     from ras2cng.project import resolve_project_path
 
-    project_dir, prj_file = resolve_project_path(Path(project_path))
-    ras = init_ras_project(project_dir, ras_object="new", load_results_summary=False)
+    _, prj_file = resolve_project_path(Path(project_path))
+    if geometry is not None:
+        warnings.warn(
+            "export_modified_terrain(..., geometry=...) is deprecated because "
+            "native registered-terrain export does not use a geometry HDF; the "
+            "argument is ignored and will be removed in ras2cng 1.1.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
-    # Resolve rasmap path
-    rasmap_path = project_dir / f"{prj_file.stem}.rasmap"
-    if not rasmap_path.exists():
-        rasmap_files = list(project_dir.glob("*.rasmap"))
-        if not rasmap_files:
-            raise FileNotFoundError("No .rasmap file found in project")
-        rasmap_path = rasmap_files[0]
+    export_native = getattr(RasTerrain, "export_rasmapper_terrain", None)
+    if not callable(export_native):
+        raise RuntimeError(
+            "The installed ras-commander does not provide native registered-terrain "
+            "export. Upgrade to a release containing "
+            "RasTerrain.export_rasmapper_terrain()."
+        )
 
-    # Resolve geometry HDF
-    if geometry:
-        geom_num = geometry.replace("g", "").zfill(2)
-    else:
-        geom_num = "01"
-    geom_hdf = project_dir / f"{ras.project_name}.g{geom_num}.hdf"
-    if not geom_hdf.exists():
-        raise FileNotFoundError(f"Geometry HDF not found: {geom_hdf}")
-
-    # Discover terrain TIF
-    terrains = discover_terrains(project_path)
-    if not terrains:
-        raise ValueError("No terrain data found in project")
-
-    if terrain_name:
-        matches = [t for t in terrains if t.name == terrain_name]
-        if not matches:
-            raise ValueError(f"Terrain '{terrain_name}' not found. Available: {[t.name for t in terrains]}")
-        terrain_info = matches[0]
-    else:
-        terrain_info = terrains[0]
-
-    if not terrain_info.tif_files:
-        raise ValueError(f"No TIF files found for terrain '{terrain_info.name}'")
-
-    terrain_tif = terrain_info.tif_files[0]
+    ras = init_ras_project(
+        prj_file,
+        ras_object="new",
+        load_results_summary=False,
+    )
 
     console.print(f"\n[bold cyan]ras2cng terrain-mod[/bold cyan] -> {output_tif}")
     console.print(f"  Project  : {prj_file.name}")
-    console.print(f"  Geometry : g{geom_num}")
-    console.print(f"  Terrain  : {terrain_info.name} ({terrain_tif.name})")
+    console.print(f"  Terrain  : {terrain_name or '[auto: single registered terrain]'}")
+    console.print(f"  Scale    : {downsample_factor}x source resolution")
+    console.print("  Exporting through native RAS Mapper...")
 
-    # One-time setup for RasMapperLib
-    console.print("  Setting up GDAL bridge...")
-    RasTerrainMod.setup_gdal_bridge()
-
-    console.print("  Sampling modified terrain (this may take a while)...")
-    output_tif = Path(output_tif)
-    output_tif.parent.mkdir(parents=True, exist_ok=True)
-
-    RasTerrainMod.compute_modified_terrain_raster(
-        rasmap_path=str(rasmap_path),
-        geom_hdf_path=str(geom_hdf),
-        terrain_tif_path=str(terrain_tif),
-        output_tif_path=str(output_tif),
+    result = export_native(
+        ras_project_path=prj_file,
+        output_tif=Path(output_tif),
+        terrain_name=terrain_name,
+        downsample_factor=downsample_factor,
+        rasterize_modifications=True,
+        overwrite=overwrite,
+        ras_object=ras,
     )
+    if not result:
+        detail = getattr(result, "error", None) or "RAS Mapper terrain export failed"
+        receipt = getattr(result, "receipt_path", None)
+        if receipt:
+            detail = f"{detail} (receipt: {receipt})"
+        raise RuntimeError(detail)
 
-    console.print(f"[green]OK[/green] Modified terrain raster: {output_tif}")
-    return output_tif
+    committed_output = Path(result.output_path)
+    console.print(f"  Terrain  : {result.terrain_name}")
+    console.print(f"  Receipt  : {result.receipt_path}")
+    console.print(f"[green]OK[/green] Modified terrain raster: {committed_output}")
+    return committed_output
 
 
 def export_mannings_raster(
