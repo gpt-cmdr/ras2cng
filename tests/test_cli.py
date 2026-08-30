@@ -718,7 +718,7 @@ def test_map_performance_overrides_are_typed():
     assert performance.gdal_num_threads_per_helper == 1
 
 
-def test_terrain_mod_passes_geometry_and_terrain(monkeypatch, tmp_path: Path):
+def test_terrain_mod_passes_native_export_options(monkeypatch, tmp_path: Path):
     calls = []
     install_command_backend(monkeypatch, "terrain-mod", calls)
     output = tmp_path / "modified.tif"
@@ -733,15 +733,24 @@ def test_terrain_mod_passes_geometry_and_terrain(monkeypatch, tmp_path: Path):
             "g02",
             "--terrain",
             "Terrain A",
+            "--downsample-factor",
+            "4",
+            "--overwrite",
         ],
     )
 
     assert result.exit_code == 0, result.output
+    assert "--geometry is deprecated and ignored" in result.output
     assert calls == [
         {
             "name": "export_modified_terrain",
             "args": (Path("model.prj"), output),
-            "kwargs": {"geometry": "g02", "terrain_name": "Terrain A"},
+            "kwargs": {
+                "geometry": "g02",
+                "terrain_name": "Terrain A",
+                "downsample_factor": 4,
+                "overwrite": True,
+            },
         }
     ]
 

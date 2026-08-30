@@ -1458,26 +1458,49 @@ def terrain_mod_command(
         ..., help="Output GeoTIFF path"
     ),
     geometry: Optional[str] = typer.Option(
-        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: first"
+        None,
+        "--geometry",
+        "-g",
+        help="Deprecated and ignored; native terrain export does not use geometry HDF",
     ),
     terrain_name: Optional[str] = typer.Option(
-        None, "--terrain", help="Specific terrain name from rasmap"
+        None, "--terrain", help="Exact registered terrain name (required if ambiguous)"
+    ),
+    downsample_factor: int = typer.Option(
+        1,
+        "--downsample-factor",
+        help="Exact source-derived downsampling factor: 1, 2, 4, or 8",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Replace an existing GeoTIFF and receipt",
     ),
 ):
-    """Export terrain with modifications (channels, levees, etc.) as GeoTIFF.
+    """Export one registered terrain with native modifications as one GeoTIFF.
 
-    Samples the modified terrain surface at full raster resolution via
-    RasMapperLib. Requires HEC-RAS 6.6+ and pythonnet (Windows only).
+    RAS Mapper performs source consolidation, grid-aligned nearest-neighbor
+    downsampling, and vector-modification rasterization. Qualified on Windows
+    and Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1; stable 7.1 remains
+    forward-open behind ras-commander's managed-contract check.
     """
 
     from ras2cng.terrain import export_modified_terrain
 
     try:
+        if geometry is not None:
+            Console().print(
+                "[yellow]WARNING:[/yellow] --geometry is deprecated and ignored; "
+                "native registered-terrain export does not use a geometry HDF. "
+                "The option will be removed in ras2cng 1.1."
+            )
         export_modified_terrain(
             project,
             output,
             geometry=geometry,
             terrain_name=terrain_name,
+            downsample_factor=downsample_factor,
+            overwrite=overwrite,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")

@@ -22,6 +22,7 @@ from ras2cng.terrain import (
     consolidate_terrain_files,
     consolidate_project_terrains,
     extract_terrain_modification_layers,
+    export_modified_terrain,
     export_terrain_modifications,
     extract_terrain_source_footprints,
     export_terrain_source_footprints,
@@ -56,6 +57,124 @@ def _make_fake_ras(tmp_path, terrain_names=None, rasmap_df=None):
     ras.rasmap_df = rasmap_df
 
     return ras, project_dir, prj
+
+
+def _native_export_result(output: Path, *, success: bool = True):
+    """Build a bool-compatible native result without importing new API types."""
+    result = MagicMock()
+    result.__bool__.return_value = success
+    result.output_path = output
+    result.receipt_path = Path(str(output) + ".receipt.json")
+    result.terrain_name = "Registered Terrain"
+    result.error = None if success else "native helper failed"
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Native registered-terrain export
+# ---------------------------------------------------------------------------
+
+def test_export_modified_terrain_uses_native_registered_terrain_api(
+    monkeypatch,
+    tmp_path,
+):
+    import ras_commander
+
+    project = tmp_path / "Model.prj"
+    project.write_text("Proj Title=Model\n", encoding="utf-8")
+    output = tmp_path / "out" / "modified.tif"
+    ras = MagicMock(ras_version="6.6")
+    init_project = MagicMock(return_value=ras)
+    native_export = MagicMock(return_value=_native_export_result(output))
+    monkeypatch.setattr(ras_commander, "init_ras_project", init_project)
+    monkeypatch.setattr(
+        ras_commander.RasTerrain,
+        "export_rasmapper_terrain",
+        native_export,
+        raising=False,
+    )
+
+    result = export_modified_terrain(
+        project,
+        output,
+        terrain_name="Registered Terrain",
+        downsample_factor=4,
+        overwrite=True,
+    )
+
+    assert result == output
+    init_project.assert_called_once_with(
+        project,
+        ras_object="new",
+        load_results_summary=False,
+    )
+    native_export.assert_called_once_with(
+        ras_project_path=project,
+        output_tif=output,
+        terrain_name="Registered Terrain",
+        downsample_factor=4,
+        rasterize_modifications=True,
+        overwrite=True,
+        ras_object=ras,
+    )
+
+
+def test_export_modified_terrain_warns_and_ignores_geometry(monkeypatch, tmp_path):
+    import ras_commander
+
+    project = tmp_path / "Model.prj"
+    project.write_text("Proj Title=Model\n", encoding="utf-8")
+    output = tmp_path / "modified.tif"
+    monkeypatch.setattr(ras_commander, "init_ras_project", MagicMock())
+    native_export = MagicMock(return_value=_native_export_result(output))
+    monkeypatch.setattr(
+        ras_commander.RasTerrain,
+        "export_rasmapper_terrain",
+        native_export,
+        raising=False,
+    )
+
+    with pytest.warns(DeprecationWarning, match="argument is ignored") as caught:
+        export_modified_terrain(project, output, geometry="g02")
+
+    assert caught[0].filename == __file__
+    assert "geometry" not in native_export.call_args.kwargs
+
+
+def test_export_modified_terrain_requires_native_ras_commander_api(
+    monkeypatch,
+    tmp_path,
+):
+    import ras_commander
+
+    project = tmp_path / "Model.prj"
+    project.write_text("Proj Title=Model\n", encoding="utf-8")
+    monkeypatch.delattr(
+        ras_commander.RasTerrain,
+        "export_rasmapper_terrain",
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="Upgrade.*export_rasmapper_terrain"):
+        export_modified_terrain(project, tmp_path / "modified.tif")
+
+
+def test_export_modified_terrain_raises_with_failure_receipt(monkeypatch, tmp_path):
+    import ras_commander
+
+    project = tmp_path / "Model.prj"
+    project.write_text("Proj Title=Model\n", encoding="utf-8")
+    output = tmp_path / "modified.tif"
+    monkeypatch.setattr(ras_commander, "init_ras_project", MagicMock())
+    monkeypatch.setattr(
+        ras_commander.RasTerrain,
+        "export_rasmapper_terrain",
+        MagicMock(return_value=_native_export_result(output, success=False)),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match=r"native helper failed.*receipt"):
+        export_modified_terrain(project, output)
 
 
 # ---------------------------------------------------------------------------

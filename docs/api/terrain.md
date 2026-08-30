@@ -12,6 +12,7 @@ The `terrain` module discovers named terrain layers from a HEC-RAS project's ras
 - **Recovering relocated projects**: Consolidate an explicit, priority-ordered TIFF list when stored RASMapper paths cannot be resolved on the processing host
 - **Publishing source construction**: Export source TIFF footprints and terrain-modification vectors
 - **Creating HEC-RAS terrain HDFs**: Generate new terrain HDF files via RasProcess.exe (required for result mapping)
+- **Native modification-aware export**: Ask RAS Mapper to consolidate a registered terrain into one validated GeoTIFF while preserving source priority, stitches, masks, and vector modifications
 
 ## How Terrain Discovery Works
 
@@ -43,6 +44,35 @@ TIF files are associated with a terrain by matching the file stem against the te
 
 Steps 5-6 require RasProcess.exe (Windows or Wine). Steps 1-4 are pure Python (rasterio).
 
+## Native Registered-Terrain Export
+
+`export_modified_terrain()` is the production path for a single,
+modification-aware terrain TIFF. It delegates to
+`RasTerrain.export_rasmapper_terrain()` rather than selecting the first source
+TIFF or reconstructing terrain-modification mathematics in Python. RAS Mapper
+performs the consolidation and nearest-neighbor resampling on the authoritative
+source grid. Exact source-derived scale factors are `1`, `2`, `4`, and `8`.
+
+The output is committed only after ras-commander semantically validates it; a
+JSON receipt is written beside the TIFF. Existing output and receipt files are
+protected unless `overwrite=True` (or `--overwrite` in the CLI).
+
+The optional `geometry` argument is deprecated and ignored because native
+registered-terrain export does not consume a geometry HDF. `terrain_name` may
+be omitted only when the project registers exactly one terrain; ambiguous
+projects must select the exact RAS Mapper terrain name. The compatibility
+argument is scheduled for removal in ras2cng 1.1.
+
+This path requires a ras-commander release that exposes
+`RasTerrain.export_rasmapper_terrain()`. An older installation receives an
+explicit upgrade error instead of falling back to the numerically different
+row sampler.
+
+Qualified runtimes are HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1 on native Windows
+and Wine. HEC-RAS 6.3, 6.4.0, 6.7 beta builds, and 7.0.0 are rejected. Stable
+7.1 is forward-open: ras-commander will accept it only when the installed
+binary satisfies the exact managed API contract.
+
 ## API Reference
 
 ::: ras2cng.terrain.TerrainInfo
@@ -62,6 +92,10 @@ Steps 5-6 require RasProcess.exe (Windows or Wine). Steps 1-4 are pure Python (r
       show_source: true
 
 ::: ras2cng.terrain.consolidate_project_terrains
+    options:
+      show_source: true
+
+::: ras2cng.terrain.export_modified_terrain
     options:
       show_source: true
 
