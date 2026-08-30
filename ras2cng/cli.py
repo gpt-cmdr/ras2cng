@@ -1515,5 +1515,96 @@ def mannings_command(
         raise typer.Exit(1)
 
 
+
+@app.command("audit-overviews")
+def audit_overviews_command(
+    raster: Path = typer.Argument(
+        ..., help="Raster to audit (depth COG, terrain, any GDAL raster)"
+    ),
+    threshold: float = typer.Option(
+        ...,
+        "--threshold",
+        "-t",
+        help=(
+            "Wet cutoff in the raster's own units: feet for a float depth "
+            "grid, centi-feet (50) for an Int16 grid"
+        ),
+    ),
+    band: int = typer.Option(1, "--band", "-b", help="1-based band index"),
+    as_json: bool = typer.Option(
+        False, "--json", help="Output as JSON instead of a table"
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit non-zero unless the verdict is stable (for CI gates)",
+    ),
+):
+    """Check whether a raster's overviews preserve wet extent.
+
+    A depth grid thresholded so dry becomes nodata, then given AVERAGE
+    overviews, inflates: GDAL skips nodata children, so a coarse cell covering
+    one wet child is fully wet rather than a quarter wet. The map looks right
+    at full zoom and floods the basin when zoomed out.
+
+    This reads whatever overviews the file actually stores, so it works on
+    rasters ras2cng did not write.
+    """
+
+    import json as _json
+
+    from ras2cng.cog import audit_overview_extent, format_overview_audit
+
+    console = Console()
+    try:
+        audit = audit_overview_extent(raster, threshold=threshold, band=band)
+    except Exception as e:
+        console.print(f"[red]ERROR:[/red] {e}")
+        raise typer.Exit(1)
+
+    if as_json:
+        console.print_json(
+            _json.dumps(
+                {
+                    "path": str(audit.path),
+                    "threshold": audit.threshold,
+                    "band": audit.band,
+                    "verdict": audit.verdict,
+                    "detail": audit.detail,
+                    "maxAreaRatio": round(audit.max_area_ratio, 6),
+                    "minAreaRatio": round(audit.min_area_ratio, 6),
+                    "levels": [
+                        {
+                            "level": lv.level,
+                            "wetPixels": lv.wet_pixels,
+                            "totalPixels": lv.total_pixels,
+                            "wetFraction": round(lv.wet_fraction, 6),
+                            "areaRatio": round(lv.area_ratio, 6),
+                        }
+                        for lv in audit.levels
+                    ],
+                }
+            )
+        )
+    else:
+        colour = {
+            "stable": "green",
+            "empty": "yellow",
+            "eroding": "yellow",
+            "inflating": "yellow",
+            "broken": "red",
+        }.get(audit.verdict, "white")
+        # format_overview_audit() already carries the verdict line; colour it
+        # in place rather than printing the same sentence twice.
+        rendered = format_overview_audit(audit)
+        stamp = f"VERDICT: {audit.verdict.upper()}"
+        console.print(
+            rendered.replace(stamp, f"VERDICT: [{colour}]{audit.verdict.upper()}[/{colour}]")
+        )
+
+    # `eroding` is a deliberate trade-off, not a pass, so --strict fails it too.
+    if strict and not audit.ok:
+        raise typer.Exit(1)
+
 if __name__ == "__main__":
     app()
