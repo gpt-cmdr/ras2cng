@@ -2417,7 +2417,8 @@
 <h1 id="mapping">mapping<a class="headerlink" href="#mapping" title="Permanent link">&para;</a></h1>
 <p>Result raster generation for HEC-RAS projects using the RASMapper engine.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The <code>mapping</code> module generates georeferenced raster files (GeoTIFF) from completed HEC-RAS plan results. With ras-commander 0.99.0 or newer it drives the canonical <code>RasMap.store_all_maps(mode="selected")</code> API, which deploys isolated <code>RasStoreMapHelper.exe</code> processes and preserves the correct water-surface render mode. ras-commander 0.98.2 remains supported through the serial compatibility path.</p>
+<p>The <code>mapping</code> module generates georeferenced raster files (GeoTIFF) from completed HEC-RAS plan results. It uses a private compatibility adapter around ras-commander's stored-map APIs so profile selection is explicit and validated before map generation mutates the project.</p>
+<p><code>Max</code> and <code>Min</code> remain explicit summary selections. An exact named steady profile is resolved from the plan HDF and sent through <code>RasMap.store_all_maps(mode="steady_profiles")</code>; a missing or duplicate name raises an error instead of silently producing <code>Max</code>. Unsteady timestamps are likewise validated exactly. Whole-simulation products such as arrival time are generated separately because they do not have a profile dimension.</p>
 <p>On Linux, RasProcess.exe runs under Wine. See the <a href="../../user-guide/linux-wine-setup/">Linux/Wine Setup</a> guide.</p>
 <h2 id="supported-map-types">Supported Map Types<a class="headerlink" href="#supported-map-types" title="Permanent link">&para;</a></h2>
 <table>
@@ -3803,7 +3804,7 @@ for the legacy serial execution policy.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 21, 2026 14:15:39 UTC">July 21, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="September 15, 2026 16:42:02 UTC">September 15, 2026</span>
   </span>
 
     
@@ -3852,11 +3853,6 @@ for the legacy serial execution policy.</p>
       Copyright &copy; 2024-2026 CLB Engineering Corporation
     </div>
   
-  
-    Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
-    </a>
   
 </div>
       
