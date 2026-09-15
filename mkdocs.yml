@@ -38,12 +38,11 @@ theme:
 
 copyright: Copyright &copy; 2024-2026 CLB Engineering Corporation
 
-generator: false
-
 extra_css:
   - stylesheets/clb-branding.css
 
 extra:
+  generator: false
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/gpt-cmdr/ras2cng

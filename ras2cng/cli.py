@@ -1169,7 +1169,9 @@ def map_command(
         None, "--plans", help="Comma-separated plan IDs (default: all with results)"
     ),
     profile: str = typer.Option(
-        "Max", "--profile", help="Max, Min, or timestamp (default: Max)"
+        "Max",
+        "--profile",
+        help="Max, Min, exact steady profile, or timestamp (default: Max)",
     ),
     wse: bool = typer.Option(True, "--wse/--no-wse", help="Water Surface Elevation (default: on)"),
     depth: bool = typer.Option(True, "--depth/--no-depth", help="Depth (default: on)"),
@@ -1305,7 +1307,9 @@ def map_hdf_command(
         False, "--rm-scaffold", help="Delete the scaffold directory after the run"
     ),
     profile: str = typer.Option(
-        "Max", "--profile", help="Max, Min, or timestamp (default: Max)"
+        "Max",
+        "--profile",
+        help="Max, Min, exact steady profile, or timestamp (default: Max)",
     ),
     wse: bool = typer.Option(True, "--wse/--no-wse", help="Water Surface Elevation (default: on)"),
     depth: bool = typer.Option(True, "--depth/--no-depth", help="Depth (default: on)"),
