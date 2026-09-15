@@ -421,7 +421,10 @@ def test_generate_plan_maps_uses_canonical_store_all_maps(tmp_path):
 
     with patch(
         "ras2cng.mapping._supports_optimized_store_maps", return_value=True
-    ), patch("ras2cng.mapping.RasMap.store_all_maps", return_value=summary) as store:
+    ), patch(
+        "ras2cng._ras_commander_maps.RasMap.store_all_maps",
+        return_value=summary,
+    ) as store:
         result = _generate_plan_maps(
             ras=ras,
             plan_number="01",
@@ -453,7 +456,7 @@ def test_generate_plan_maps_requires_plan_summary(tmp_path):
     with patch(
         "ras2cng.mapping._supports_optimized_store_maps", return_value=True
     ), patch(
-        "ras2cng.mapping.RasMap.store_all_maps",
+        "ras2cng._ras_commander_maps.RasMap.store_all_maps",
         return_value={"success": False, "plans": {}},
     ), pytest.raises(RuntimeError, match="did not contain plan 01"):
         _generate_plan_maps(

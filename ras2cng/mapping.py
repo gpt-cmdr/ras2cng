@@ -19,7 +19,12 @@ from typing import Optional
 
 from rich.console import Console
 
-from ras_commander import RasMap, RasProcess, init_ras_project
+from ras_commander import RasProcess, init_ras_project
+
+from ras2cng._ras_commander_maps import (
+    generate_plan_maps as _generate_adapted_plan_maps,
+    supports_optimized_store_maps as _supports_optimized_store_maps,
+)
 
 try:
     from ras_commander import StoreMapPerformanceOptions
@@ -51,17 +56,6 @@ class MapResult:
     map_types: dict[str, list[Path]] = field(default_factory=dict)  # {"depth": [Path(...)]}
     output_dir: Path = field(default_factory=lambda: Path("."))
     errors: list[str] = field(default_factory=list)
-
-
-def _supports_optimized_store_maps() -> bool:
-    """Return whether the installed ras-commander has the canonical API."""
-    if StoreMapPerformanceOptions is None:
-        return False
-    try:
-        parameters = inspect.signature(RasMap.store_all_maps).parameters
-    except (TypeError, ValueError, AttributeError):
-        return False
-    return {"mode", "performance", "output_path"}.issubset(parameters)
 
 
 # Map type names to RasProcess store_maps variable names
@@ -685,43 +679,28 @@ def _generate_plan_maps(
     Returns:
         Dict mapping our type names to lists of output TIFF paths
     """
-    if _supports_optimized_store_maps():
-        effective_performance = performance or DEFAULT_LOCAL_MAP_PERFORMANCE
-        selected_types = [
-            map_type
-            for map_type in MAP_TYPE_VARIABLES
-            if type_flags.get(map_type, False) and map_type != "recession"
-        ]
-        summary = RasMap.store_all_maps(
-            plan_number=plan_number,
-            mode="selected",
-            output_path=output_dir,
-            profile=profile,
-            map_types=selected_types,
-            render_mode=render_mode,
-            terrain_name=terrain_name,
-            arrival_depth=arrival_depth,
-            ras_version=ras_version,
-            timeout=timeout,
-            ras_object=ras,
-            performance=effective_performance,
-            raise_on_error=True,
-        )
-        normalized_plan = str(plan_number).zfill(2)
-        plan_summary = summary.get("plans", {}).get(normalized_plan)
-        if not isinstance(plan_summary, dict):
-            raise RuntimeError(
-                f"StoreMap summary did not contain plan {normalized_plan}"
-            )
-        if not plan_summary.get("success", False):
-            raise RuntimeError(
-                plan_summary.get("error")
-                or f"StoreMap generation failed for plan {normalized_plan}"
-            )
-        return {
-            map_type: [Path(path) for path in paths if Path(path).exists()]
-            for map_type, paths in plan_summary.get("files_by_type", {}).items()
-        }
+    optimized_available = _supports_optimized_store_maps()
+    selected_types = [
+        map_type
+        for map_type in MAP_TYPE_VARIABLES
+        if type_flags.get(map_type, False) and map_type != "recession"
+    ]
+    adapted_result = _generate_adapted_plan_maps(
+        ras=ras,
+        plan_number=plan_number,
+        profile=profile,
+        output_dir=output_dir,
+        map_types=selected_types,
+        render_mode=render_mode,
+        terrain_name=terrain_name,
+        arrival_depth=arrival_depth,
+        ras_version=ras_version,
+        timeout=timeout,
+        performance=performance or DEFAULT_LOCAL_MAP_PERFORMANCE,
+        optimized_available=optimized_available,
+    )
+    if adapted_result is not None:
+        return adapted_result
 
     if performance is not None:
         raise RuntimeError(
