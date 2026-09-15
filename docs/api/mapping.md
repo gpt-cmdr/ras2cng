@@ -4,7 +4,9 @@ Result raster generation for HEC-RAS projects using the RASMapper engine.
 
 ## Overview
 
-The `mapping` module generates georeferenced raster files (GeoTIFF) from completed HEC-RAS plan results. With ras-commander 0.99.0 or newer it drives the canonical `RasMap.store_all_maps(mode="selected")` API, which deploys isolated `RasStoreMapHelper.exe` processes and preserves the correct water-surface render mode. ras-commander 0.98.2 remains supported through the serial compatibility path.
+The `mapping` module generates georeferenced raster files (GeoTIFF) from completed HEC-RAS plan results. It uses a private compatibility adapter around ras-commander's stored-map APIs so profile selection is explicit and validated before map generation mutates the project.
+
+`Max` and `Min` remain explicit summary selections. An exact named steady profile is resolved from the plan HDF and sent through `RasMap.store_all_maps(mode="steady_profiles")`; a missing or duplicate name raises an error instead of silently producing `Max`. Unsteady timestamps are likewise validated exactly. Whole-simulation products such as arrival time are generated separately because they do not have a profile dimension.
 
 On Linux, RasProcess.exe runs under Wine. See the [Linux/Wine Setup](../user-guide/linux-wine-setup.md) guide.
 

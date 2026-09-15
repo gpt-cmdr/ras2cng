@@ -322,7 +322,7 @@ Arguments:
 
 Options:
   --plans TEXT                   Comma-separated plan IDs (default: all with results)
-  --profile TEXT                 Max, Min, or timestamp  [default: Max]
+  --profile TEXT                 Max, Min, exact steady profile, or timestamp  [default: Max]
   --wse / --no-wse              Water Surface Elevation  [default: on]
   --depth / --no-depth          Depth  [default: on]
   --velocity / --no-velocity    Velocity  [default: on]
@@ -360,7 +360,7 @@ version: newer versions generate these natively; older versions are handled by
 a rasmap pre-injection shim inside ras2cng. `--recession` is accepted but
 ignored with a warning — RasMapperLib has no recession map type.
 
-With ras-commander 0.99.0 or newer, omitted performance options use
+With the supported ras-commander 0.100.0 or newer, omitted performance options use
 memory-aware local auto selection. Independent WSE, Depth, and Velocity maps
 may run in separate helpers when the terrain-based estimate fits available
 physical and committed memory. Unsupported combinations automatically retain
@@ -391,7 +391,7 @@ Options:
   --workdir PATH                Scaffold directory (default: OUTPUT/_scaffold;
                                 reused across reruns)
   --rm-scaffold                 Delete the scaffold directory after the run
-  --profile TEXT                Max, Min, or timestamp  [default: Max]
+  --profile TEXT                Max, Min, exact steady profile, or timestamp  [default: Max]
   --wse / --no-wse              Water Surface Elevation  [default: on]
   --depth / --no-depth          Depth  [default: on]
   --velocity / --no-velocity    Velocity  [default: on]

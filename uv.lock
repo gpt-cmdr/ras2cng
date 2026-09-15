@@ -4050,7 +4050,7 @@ wheels = [
 
 [[package]]
 name = "ras-commander"
-version = "0.99.2"
+version = "0.100.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
@@ -4059,9 +4059,9 @@ dependencies = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/9c/952339fcc67b449d434c3b386b39ab78d94d0b55b760aaf65968f607ec41/ras_commander-0.99.2.tar.gz", hash = "sha256:c20b7c0e29c5fc913cc7feef76ef348851f42dd62a3212c7fe7f609ef39008ed", size = 2266654, upload-time = "2026-08-30T20:32:58Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/28/ecb36247a47b1336d3ea8204514ccc01e07a06a7c7583da793401b4b2b8c/ras_commander-0.100.0.tar.gz", hash = "sha256:48275518eef5b55ccade1dc0b481a394eba2243321f55007c9c9b9dbe5543b34", size = 2815476, upload-time = "2026-09-15T20:46:15.524Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/dc/dc0e0f8e1af93209252ec8e9d751d3df73a67c1b68d9f186de80658e74a8/ras_commander-0.99.2-py3-none-any.whl", hash = "sha256:42049fb48d3b8c054671fcbadd3e39c4d183a40436087c7403bbb51c2192b68a", size = 1931448, upload-time = "2026-08-30T20:32:56.501Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/c3/06acd019fbe3a7ff479ce673ed9e60310ca0f22e857e6ba86c594838b411/ras_commander-0.100.0-py3-none-any.whl", hash = "sha256:cf32f97220286225cadd8bcac3631040626bae201f268ebbcf298c905afb0760", size = 2294474, upload-time = "2026-09-15T20:46:13.794Z" },
 ]
 
 [package.optional-dependencies]
@@ -4092,7 +4092,7 @@ full = [
 
 [[package]]
 name = "ras2cng"
-version = "0.10.0"
+version = "0.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "geopandas" },
@@ -4172,7 +4172,7 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgis'", specifier = ">=2.9.0" },
     { name = "pyarrow", specifier = ">=14.0.0" },
-    { name = "ras-commander", extras = ["full"], specifier = ">=0.99.2" },
+    { name = "ras-commander", extras = ["full"], specifier = ">=0.100.0" },
     { name = "rasterio", marker = "extra == 'all'", specifier = ">=1.3.0" },
     { name = "rasterio", marker = "extra == 'pmtiles'", specifier = ">=1.3.0" },
     { name = "rich", specifier = ">=13.0.0" },

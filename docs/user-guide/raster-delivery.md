@@ -1,7 +1,7 @@
 # Raster Delivery Defaults
 
 Every Cloud Optimized GeoTIFF `ras2cng` writes goes through one module,
-[`ras2cng.cog`][], so the overview method, compression, CRS handling, validation
+`ras2cng.cog`, so the overview method, compression, CRS handling, validation
 and atomic replacement are decided in one place. Downstream pipelines import the
 same helpers rather than re-deriving them:
 
