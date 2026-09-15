@@ -159,7 +159,8 @@ def generate_result_maps(
         project_path: Path to .prj file or project directory
         output_dir: Directory for output raster files
         plans: Plan IDs to process (e.g. ["p01", "p02"]). None = all with results
-        profile: Output profile: "Max", "Min", or timestamp
+        profile: Output profile: "Max", "Min", an exact named steady profile,
+            or an exact unsteady timestamp
         wse: Generate Water Surface Elevation rasters
         depth: Generate Depth rasters
         velocity: Generate Velocity rasters
@@ -666,7 +667,8 @@ def _generate_plan_maps(
     Args:
         ras: Initialized RAS project object
         plan_number: Plan number (e.g., "01")
-        profile: Profile to map ("Max", "Min", or timestamp)
+        profile: Profile to map ("Max", "Min", an exact named steady profile,
+            or an exact unsteady timestamp)
         output_dir: Directory for output rasters
         terrain_name: Specific terrain name (optional)
         render_mode: Water surface render mode ("horizontal", "sloping", or

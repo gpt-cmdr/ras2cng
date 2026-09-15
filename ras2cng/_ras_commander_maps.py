@@ -22,6 +22,7 @@ STEADY_PROFILE_MAP_TYPES = (
     "depth_x_velocity",
     "depth_x_velocity_sq",
 )
+BOUNDARY_SUPPORT_MAP_TYPE = "depth"
 
 
 def supports_optimized_store_maps() -> bool:
@@ -325,11 +326,12 @@ def generate_plan_maps(
             if map_type != "inundation_boundary"
         ]
         boundary_requested = "inundation_boundary" in profile_dependent
+        synthetic_types: set[str] = set()
         if not steady_types:
-            raise ValueError(
-                "Named steady-profile mapping requires at least one raster "
-                "product in addition to inundation_boundary"
-            )
+            # ras-commander's steady-profile facade requires a raster product
+            # to derive a boundary. Depth is its least-cost supporting product.
+            steady_types = [BOUNDARY_SUPPORT_MAP_TYPE]
+            synthetic_types.add(BOUNDARY_SUPPORT_MAP_TYPE)
         result = _run_exact_steady_maps(
             ras=ras,
             plan_number=plan_number,
@@ -342,6 +344,8 @@ def generate_plan_maps(
             timeout=timeout,
             inundation_boundary=boundary_requested,
         )
+        for map_type in synthetic_types:
+            result.pop(map_type, None)
         if whole_simulation:
             whole_result = _run_selected_maps(
                 ras=ras,

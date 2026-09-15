@@ -145,6 +145,47 @@ def test_named_steady_profile_routes_exactly_without_boundary(tmp_path):
     assert "inundation_boundary" not in result
 
 
+def test_boundary_only_named_steady_uses_unreported_depth_support(tmp_path):
+    ras = _ras(tmp_path)
+    summary = _steady_summary(tmp_path, "Q100", boundary=True)
+
+    with (
+        patch(
+            "ras2cng._ras_commander_maps.HdfResultsPlan.is_steady_plan",
+            return_value=True,
+        ),
+        patch(
+            "ras2cng._ras_commander_maps.HdfResultsPlan.get_steady_profile_names",
+            return_value=["Q10", "Q100"],
+        ),
+        patch(
+            "ras2cng._ras_commander_maps.supports_exact_steady_profiles",
+            return_value=True,
+        ),
+        patch(
+            "ras2cng._ras_commander_maps.RasMap.store_all_maps",
+            return_value=summary,
+        ) as store,
+    ):
+        result = _generate(
+            ras,
+            tmp_path,
+            profile="Q100",
+            map_types=["inundation_boundary"],
+        )
+
+    kwargs = store.call_args.kwargs
+    assert kwargs["mode"] == "steady_profiles"
+    assert kwargs["profiles"] == ["Q100"]
+    assert kwargs["depth"] is True
+    assert kwargs["wse"] is False
+    assert kwargs["inundation_boundary"] is True
+    assert set(result) == {"inundation_boundary"}
+    assert [path.name for path in result["inundation_boundary"]] == [
+        "Inundation Boundary (Q100).shp"
+    ]
+
+
 @pytest.mark.parametrize(
     ("available", "message"),
     [
