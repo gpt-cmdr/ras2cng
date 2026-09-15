@@ -421,7 +421,10 @@ def test_generate_plan_maps_uses_canonical_store_all_maps(tmp_path):
 
     with patch(
         "ras2cng.mapping._supports_optimized_store_maps", return_value=True
-    ), patch("ras2cng.mapping.RasMap.store_all_maps", return_value=summary) as store:
+    ), patch(
+        "ras2cng._ras_commander_maps.RasMap.store_all_maps",
+        return_value=summary,
+    ) as store:
         result = _generate_plan_maps(
             ras=ras,
             plan_number="01",
@@ -453,7 +456,7 @@ def test_generate_plan_maps_requires_plan_summary(tmp_path):
     with patch(
         "ras2cng.mapping._supports_optimized_store_maps", return_value=True
     ), patch(
-        "ras2cng.mapping.RasMap.store_all_maps",
+        "ras2cng._ras_commander_maps.RasMap.store_all_maps",
         return_value={"success": False, "plans": {}},
     ), pytest.raises(RuntimeError, match="did not contain plan 01"):
         _generate_plan_maps(
@@ -632,6 +635,47 @@ def test_generate_result_maps_error_handling(mock_init, mock_config, mock_gen, t
     assert len(results) == 1
     assert len(results[0].errors) == 1
     assert "RasProcess failed" in results[0].errors[0]
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+def test_named_profile_error_continues_to_next_plan(
+    mock_init,
+    mock_config,
+    mock_gen,
+    tmp_path,
+):
+    """A missing named profile should respect the public skip_errors policy."""
+    ras, project_dir, prj = _make_fake_ras(tmp_path, plan_count=2)
+    mock_init.return_value = ras
+    output_dir = tmp_path / "maps"
+    second_depth = output_dir / "p02" / "Depth (Q100).Terrain.tif"
+    second_depth.parent.mkdir(parents=True, exist_ok=True)
+    second_depth.write_bytes(b"fake tif")
+    mock_gen.side_effect = [
+        ValueError("Steady profile 'Q100' was not found"),
+        {"depth": [second_depth]},
+    ]
+
+    results = generate_result_maps(
+        project_dir,
+        output_dir,
+        profile="Q100",
+        wse=False,
+        depth=True,
+        velocity=False,
+        skip_errors=True,
+    )
+
+    assert len(results) == 2
+    assert "was not found" in results[0].errors[0]
+    assert results[1].errors == []
+    assert results[1].map_types == {"depth": [second_depth]}
+    assert [call.kwargs["profile"] for call in mock_gen.call_args_list] == [
+        "Q100",
+        "Q100",
+    ]
 
 
 @patch("ras2cng.mapping._generate_plan_maps")
