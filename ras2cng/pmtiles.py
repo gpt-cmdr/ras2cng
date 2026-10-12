@@ -2,14 +2,17 @@
 
 Vector tiles:
 - GeoParquet -> reproject to EPSG:4326 -> newline-delimited GeoJSON ->
-  tippecanoe -> PMTiles
+  tippecanoe -> PMTiles, or GeoParquet -> freestiler -> PMTiles when
+  ``RAS2CNG_VECTOR_TILER`` resolves to freestiler (see
+  :mod:`ras2cng.vector_tiles`)
 
 Raster tiles:
 - delegated to :mod:`ras2cng.maplibre`, which colorizes at native resolution,
   warps to an exact Web Mercator zoom, and builds the tile pyramid.
 
 Note: tippecanoe, gdal, and pmtiles are command-line tools and must be
-installed separately and available on PATH.
+installed separately and available on PATH.  freestiler is the optional
+``ras2cng[freestiler]`` extra.
 
 :mod:`ras2cng.maplibre` is the maintained implementation of both jobs and
 streams its inputs; this module is the older single-file CLI surface kept for
@@ -114,6 +117,12 @@ def _to_wgs84(gdf: gpd.GeoDataFrame, source: Path) -> gpd.GeoDataFrame:
     return gdf.to_crs("EPSG:4326")
 
 
+# Zoom range when the caller gives none and the backend cannot guess one
+# (freestiler has no equivalent of tippecanoe's ``-zg``).
+_DEFAULT_MIN_ZOOM = 0
+_DEFAULT_MAX_ZOOM = 14
+
+
 def generate_vector_pmtiles(
     input_file: Path,
     output: Path,
@@ -121,12 +130,31 @@ def generate_vector_pmtiles(
     min_zoom: Optional[int] = None,
     max_zoom: Optional[int] = None,
 ):
-    _require_cli("tippecanoe")
+    from ras2cng import vector_tiles
+
+    backend = vector_tiles.vector_tiler_backend(
+        required_commands=(vector_tiles.tippecanoe_command(),)
+    )
+    if backend == vector_tiles.FREESTILER:
+        vector_tiles.require_freestiler()
+    else:
+        _require_cli(vector_tiles.tippecanoe_command())
 
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
 
     gdf = _to_wgs84(gpd.read_parquet(input_file), Path(input_file))
+
+    if backend == vector_tiles.FREESTILER:
+        if gdf.empty:
+            raise ValueError(f"No features to tile in {input_file}")
+        vector_tiles.run_freestiler(
+            output,
+            {layer_name: gdf},
+            _DEFAULT_MIN_ZOOM if min_zoom is None else min_zoom,
+            _DEFAULT_MAX_ZOOM if max_zoom is None else max_zoom,
+        )
+        return
 
     from ras2cng.cog import atomic_output
 
@@ -140,7 +168,7 @@ def generate_vector_pmtiles(
         # truncated tileset at the published path.
         with atomic_output(output) as staged:
             cmd = [
-                "tippecanoe",
+                vector_tiles.tippecanoe_command(),
                 "-o",
                 str(staged),
                 "--layer",

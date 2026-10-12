@@ -1006,6 +1006,37 @@ wheels = [
 ]
 
 [[package]]
+name = "freestiler"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "geopandas" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pyproj", version = "3.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pyproj", version = "3.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "shapely" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/9e/dd39b1bf684e7fd94be04707b3c00d05ae4a1d3630183e6b8c6c037775a2/freestiler-0.3.0.tar.gz", hash = "sha256:7dae0aa1c5a15ed66da0026ff81b32b172f68c7aff849db078b5480d1bd72d5a", size = 819803, upload-time = "2026-10-02T20:26:36.077Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/52/13c3b09e58ef5be21b551833fa71677cc0814fa046f37673509788f23edf/freestiler-0.3.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:0a2f2193446400453edcaccc479a52b4f4e5707c0f61b7ee9ae7999323b67600", size = 14633003, upload-time = "2026-10-02T20:25:51.251Z" },
+    { url = "https://files.pythonhosted.org/packages/04/16/fbc2614b5de650a92230eda8841b288b5b580179c240e488ebd751ff9e17/freestiler-0.3.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:7a51b9a2f3de6c967d1de9b2cbb83a641d34a54e44c97abfef669da7bd293538", size = 18274548, upload-time = "2026-10-02T20:25:54.521Z" },
+    { url = "https://files.pythonhosted.org/packages/17/1f/3740329bd70ba9af7a9b2f8790cb3bcb6f09f584fdaa7b234fc87cacd737/freestiler-0.3.0-cp310-cp310-win_amd64.whl", hash = "sha256:acb92c7df3440d94eff77e05b9be2939eb9a2bc60d21b7df23e7dc38aab20dd4", size = 13295838, upload-time = "2026-10-02T20:25:56.892Z" },
+    { url = "https://files.pythonhosted.org/packages/11/66/107b4587985d1da903c1da3b2d96be8b48ccd5800635ca56fe35e7ddc2c8/freestiler-0.3.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:60a6c262800d1a6f8516c3871c8dc0388af936436b5378f04cfc9d8720cb2529", size = 14633878, upload-time = "2026-10-02T20:25:59.257Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/af/e11490bca6de6c3310496616b64a1d2494a336f1802a5ae80030e79b9152/freestiler-0.3.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:419bf5a8c396ee03f14cffff8a7ba1cae64a2c5badb7083551b06f02aa381d5e", size = 18274283, upload-time = "2026-10-02T20:26:01.548Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/8b/423dd1c2b02d3cb2e848933019d8e653af390c3550aeddf60726c18a9bf9/freestiler-0.3.0-cp311-cp311-win_amd64.whl", hash = "sha256:10f54497578e8aceab3cc8bb65947a511dfe89f832523e45a3538f982d9edcbe", size = 13295594, upload-time = "2026-10-02T20:26:03.875Z" },
+    { url = "https://files.pythonhosted.org/packages/11/3d/8ae3a7ab6b038b4efdc6abc607a92aea40305f6c1b348b8c99d7196b3579/freestiler-0.3.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:2d74937edaa26b29a163d7ba1d8adf61d95f856b6a416d42f064ff2b7897c628", size = 14632810, upload-time = "2026-10-02T20:26:06.059Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/16/54c06770d35f3f81a0b3bce88784734b37088d77b5e9c6f3442fa2053e21/freestiler-0.3.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:94cec35db203e811764419f7ab0b2d99519acb3e07099046b2104a81e2c34f98", size = 18273773, upload-time = "2026-10-02T20:26:08.804Z" },
+    { url = "https://files.pythonhosted.org/packages/36/4a/0cd165195c4dfc3c59906e2c6c8a4cf2a23ca00a09faa448466f5fcd7663/freestiler-0.3.0-cp312-cp312-win_amd64.whl", hash = "sha256:876c190a4133328d6929f359b492b8bf98947319c4df72a64c584725becf7d9d", size = 13293867, upload-time = "2026-10-02T20:26:11.299Z" },
+    { url = "https://files.pythonhosted.org/packages/81/92/5d3597014cc64a82e651209823c8c04758bc49fbf070eb5699d8ec1f594f/freestiler-0.3.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:f571c1c6e01c28bfac4377f3776ae2dafea4c07629020daee1514d42411d513e", size = 14632055, upload-time = "2026-10-02T20:26:13.643Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/1e/899c8bb0effb07d5b017ff40d1c53e54f80d27c6005115fb5dd40b274242/freestiler-0.3.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:5ea87778d4569c76ffc3eeb6a5a00859b4da9a386e79d4d97147fdf62741dadc", size = 18273607, upload-time = "2026-10-02T20:26:16.457Z" },
+    { url = "https://files.pythonhosted.org/packages/80/21/b28a916dea6872366dad6faf7bd002b3aa5cfe1ad871e8b06c82f02fbc1a/freestiler-0.3.0-cp313-cp313-win_amd64.whl", hash = "sha256:8bbd67a35cf7300264481b4243cea20129ef563fef4a9c0077fbdd2dad689f84", size = 13293852, upload-time = "2026-10-02T20:26:18.733Z" },
+    { url = "https://files.pythonhosted.org/packages/23/99/198e20614163bba10c64245b66a65e8fa97eab09938da8ae721792d805dc/freestiler-0.3.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:9f829cc6a90609349b30c1ddb8e6421698e9ed42d99d705192d2b889cbf8783b", size = 14632341, upload-time = "2026-10-02T20:26:21.11Z" },
+    { url = "https://files.pythonhosted.org/packages/76/ec/80a56876c8117b20a9c7438fdfb38733d5d3181af7fef6b15005db20fa9d/freestiler-0.3.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:cb2c97743f06a4a03d296c9e50682181fc3e4196b1d989d71e3961683d2c1505", size = 18273553, upload-time = "2026-10-02T20:26:23.474Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/69/50075d112519365e6f03752bfd47d41e6435fce8c70290b2871f30ace6a9/freestiler-0.3.0-cp314-cp314-win_amd64.whl", hash = "sha256:e1cc09bf6d95e87974efb96ec59bffabd5c314683f0cf540abdbdf55c251d05b", size = 13293790, upload-time = "2026-10-02T20:26:25.958Z" },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4092,7 +4123,7 @@ full = [
 
 [[package]]
 name = "ras2cng"
-version = "0.11.0"
+version = "0.12.0"
 source = { editable = "." }
 dependencies = [
     { name = "geopandas" },
@@ -4109,6 +4140,7 @@ dependencies = [
 all = [
     { name = "duckdb" },
     { name = "fastapi" },
+    { name = "freestiler", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "geoalchemy2" },
     { name = "psycopg2-binary" },
     { name = "rasterio", version = "1.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -4121,6 +4153,9 @@ all = [
 ]
 duckdb = [
     { name = "duckdb" },
+]
+freestiler = [
+    { name = "freestiler" },
 ]
 gpio = [
     { name = "geoparquet-io" },
@@ -4163,6 +4198,8 @@ requires-dist = [
     { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=1.0.0" },
     { name = "fastapi", marker = "extra == 'all'", specifier = ">=0.115,<1" },
     { name = "fastapi", marker = "extra == 'webgis'", specifier = ">=0.115,<1" },
+    { name = "freestiler", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'all') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'all') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'all')", specifier = ">=0.3.0" },
+    { name = "freestiler", marker = "extra == 'freestiler'", specifier = ">=0.3.0" },
     { name = "geoalchemy2", marker = "extra == 'all'", specifier = ">=0.14.0" },
     { name = "geoalchemy2", marker = "extra == 'postgis'", specifier = ">=0.14.0" },
     { name = "geopandas", specifier = ">=0.14.0" },
@@ -4187,7 +4224,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'all'", specifier = ">=0.34,<1" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'webgis'", specifier = ">=0.34,<1" },
 ]
-provides-extras = ["duckdb", "postgis", "pmtiles", "gpio", "webgis", "all"]
+provides-extras = ["duckdb", "postgis", "pmtiles", "gpio", "freestiler", "webgis", "all"]
 
 [package.metadata.requires-dev]
 dev = [

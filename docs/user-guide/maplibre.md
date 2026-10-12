@@ -61,12 +61,29 @@ will be rejected with a clear error.
 
 For large 2D models, pass `--scratch-dir` on a local volume with substantially more free
 space than the system temporary directory. ras2cng writes temporary NDGeoJSON there and
-directs Tippecanoe's own workspace beneath it; no source features are simplified or dropped.
+directs the vector tiler's own workspace beneath it; no source features are dropped.
 
 Some legacy HDF files omit their projection while the archive's sibling `project.json`
 records a verified CRS from packaged projection material. In that case the command uses
 the archive CRS. A validated CRS can be supplied explicitly with `--crs`; an unknown CRS
 remains a hard error.
+
+## Vector Tiler
+
+Vector PMTiles are built by one of two interchangeable backends, chosen with
+`RAS2CNG_VECTOR_TILER`:
+
+| Value | Backend | Notes |
+|---|---|---|
+| `auto` (default) | tippecanoe when `tippecanoe` and `pmtiles` are on PATH, otherwise freestiler | Windows without tippecanoe gets freestiler automatically |
+| `tippecanoe` | `tippecanoe` + `pmtiles` CLIs | Smallest archives |
+| `freestiler` | In-process Rust tiler, `pip install ras2cng[freestiler]` | No external tools; 8-20x faster; archives about 40-50% larger; holds every layer of a tileset in memory |
+
+Both keep every feature at every zoom of a tileset and keep shared mesh edges
+coincident. Neither ever drops features to cap tile size: thinning a uniform
+mesh renders as stripes. Tile weight is bounded by each tileset's minimum zoom
+instead (see below). The comparison behind this choice is in
+`feature_dev_notes/vector_tiler_evaluation_2026-10-12.md`.
 
 ## Layer Behavior
 
@@ -83,11 +100,18 @@ remains a hard error.
   to 2D before reprojection so it cannot invalidate a PMTiles layer; the archived
   GeoParquet remains unchanged.
 - Dense `2D Mesh Cells` and `2D Mesh Faces` are delivered in a separate PMTiles source
-  with a minimum zoom of 13. This preserves full mesh fidelity without forcing a large
-  cell layer into the initial overview request.
-- `--vector-results` creates a separate source, grouped by plan. Each result is raw HDF
+  that starts at the *detail floor*: zoom 13, or higher for a fine mesh -- the first zoom
+  where the median cell is at least two screen pixels across. Every cell is present at
+  every zoom where the layer is drawn. Below the floor, complete mesh tiles are
+  multi-megabyte (measured 1.2-1.6 MB at z12 and 4-9 MB at z10), and thinning them to
+  fit renders as stripes, so the layer is simply not drawn there.
+- `--vector-results` creates separate sources, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
-  record identifies its raw HDF source and geometry join key.
+  record identifies its raw HDF source and geometry join key. Results joined to sparse
+  features (cross sections, reference lines and points) go in `results.pmtiles` at every
+  zoom; results joined to mesh cells or faces are as dense as the mesh and go in
+  `results-detail.pmtiles`, which shares the detail floor. Use the published stored-map
+  rasters for the overview zooms.
 - Steady 1D cross-section results are split into one layer per HDF profile. Each layer joins
   to its source cross section on `River`, `Reach`, and `RS`, so a profile selection does not
   create duplicate coincident features. The records remain raw HDF element values, not an
@@ -103,8 +127,9 @@ viewer/
 ├── model_extent.geojson
 └── tiles/
     ├── geometry.pmtiles
-    ├── geometry-detail.pmtiles  # Dense mesh cells/faces, zoom 13+
-    └── results.pmtiles       # Only with --vector-results
+    ├── geometry-detail.pmtiles  # Dense mesh cells/faces, from the detail floor (z13+)
+    ├── results.pmtiles          # --vector-results joined to sparse features
+    └── results-detail.pmtiles   # --vector-results joined to mesh cells/faces, detail floor
 ```
 
 The output directory must be empty. This prevents a failed or partial run from silently

@@ -1,0 +1,46 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tiler comparison</title>
+<link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@4/dist/pmtiles.js"></script>
+<style>
+ body{margin:0;font:13px system-ui;background:#111}
+ #grid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;height:100vh}
+ .cell{position:relative}.map{position:absolute;inset:0}
+ .lbl{position:absolute;z-index:2;left:6px;top:6px;background:rgba(255,255,255,.92);padding:4px 7px;border-radius:4px;line-height:1.35}
+ .lbl b{font-size:14px}#zoom{position:fixed;z-index:3;left:50%;transform:translateX(-50%);bottom:8px;background:#000c;color:#fff;padding:4px 12px;border-radius:12px;font-size:15px}
+</style></head><body>
+<div id="grid"></div><div id="zoom"></div>
+<script>
+const DS = new URLSearchParams(location.search).get("ds") || "mesh_cells";
+const RUNS = [
+ ["tippecanoe-unbounded","tippecanoe — keep everything","current default"],
+ ["tippecanoe-bounded","tippecanoe — bounded","--drop-densest-as-needed"],
+ ["freestiler","freestiler","default (no drop)"],
+ ["tylertoo-verbatim","tylertoo","thinning off"],
+];
+RUNS.push(["freestiler-drop","freestiler — drop_rate=2.5","closest to bounded"]);
+const protocol = new pmtiles.Protocol(); maplibregl.addProtocol("pmtiles", protocol.tile);
+const maps = []; let syncing = false;
+const ramp = ["interpolate",["linear"],["get","max_depth"],0,"#c6dbef",3,"#6baed6",6,"#2171b5",10,"#08306b"];
+for (const [key,title,sub] of RUNS) {
+  const cell = document.createElement("div"); cell.className = "cell";
+  cell.innerHTML = `<div class="map"></div><div class="lbl"><b>${title}</b><br>${sub}<br><span class="cnt"></span></div>`;
+  document.getElementById("grid").appendChild(cell);
+  const url = `pmtiles://${location.origin}/out/${DS}.${key}.pmtiles`;
+  const map = new maplibregl.Map({container: cell.querySelector(".map"), center:[-77.48,41.115], zoom:10,
+    attributionControl:false, fadeDuration:0, preserveDrawingBuffer:true,
+    style:{version:8, sources:{t:{type:"vector",url}}, layers:[
+      {id:"bg",type:"background",paint:{"background-color":"#f4f1ea"}},
+      {id:"fill",type:"fill",source:"t","source-layer":"mesh_cells",paint:{"fill-color":ramp,"fill-antialias":false}},
+      {id:"line",type:"line",source:"t","source-layer":"mesh_cells",minzoom:13,paint:{"line-color":"#0b1d33","line-width":0.4,"line-opacity":0.55}}]}});
+  map._cnt = cell.querySelector(".cnt"); maps.push(map);
+  map.on("move", () => { if (syncing) return; syncing = true;
+    for (const m of maps) if (m !== map) m.jumpTo({center: map.getCenter(), zoom: map.getZoom()}); syncing = false; });
+  map.on("idle", () => { const n = map.queryRenderedFeatures({layers:["fill"]}).length; map._cnt.textContent = `${n.toLocaleString()} cells drawn`;
+    document.getElementById("zoom").textContent = `zoom ${map.getZoom().toFixed(1)}`; });
+}
+window.setView = (z, lng=-77.48, lat=41.115) => new Promise(res => {
+  maps[0].jumpTo({center:[lng,lat], zoom:z});
+  let left = maps.length; for (const m of maps) m.once("idle", () => { if (--left === 0) setTimeout(res, 300); });
+});
+</script></body></html>
