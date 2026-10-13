@@ -2298,7 +2298,10 @@
 PMTiles is a single-file archive format that enables serverless HTTP range requests —
 serve flood map tiles directly from S3, Cloudflare R2, or GitHub Pages with no tile server.</p>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
-<p>External CLI tools must be on <code>PATH</code>:</p>
+<p>Vector tiles need either the <code>tippecanoe</code> + <code>pmtiles</code> CLIs or the in-process
+freestiler tiler (<code>pip install ras2cng[freestiler]</code>); <code>RAS2CNG_VECTOR_TILER</code>
+chooses between them (<code>auto</code>, the default, uses tippecanoe when it is on PATH).
+See <a href="../maplibre/#vector-tiler">MapLibre delivery</a>. External CLI tools:</p>
 <table>
 <thead>
 <tr>
@@ -2326,8 +2329,11 @@ serve flood map tiles directly from S3, Cloudflare R2, or GitHub Pages with no t
 </tbody>
 </table>
 <h2 id="vector-pipeline-geoparquet-pmtiles">Vector Pipeline (GeoParquet → PMTiles)<a class="headerlink" href="#vector-pipeline-geoparquet-pmtiles" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>GeoParquet → GeoJSON (temp) → tippecanoe → MBTiles (temp) → pmtiles convert → PMTiles
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>GeoParquet → GeoJSON (temp) → tippecanoe → PMTiles
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>GeoParquet → freestiler → PMTiles                      (RAS2CNG_VECTOR_TILER=freestiler)
 </code></pre></div>
+<p>Without <code>--min-zoom</code>/<code>--max-zoom</code>, tippecanoe guesses the zoom range (<code>-zg</code>);
+freestiler cannot guess and uses 0-14.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ras2cng<span class="w"> </span>pmtiles<span class="w"> </span>max_depth.parquet<span class="w"> </span>flood_depth.pmtiles<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--layer<span class="w"> </span>flood_depth<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--min-zoom<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
@@ -2384,7 +2390,7 @@ serve flood map tiles directly from S3, Cloudflare R2, or GitHub Pages with no t
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="March 4, 2026 17:45:25 UTC">March 4, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 12, 2026 21:17:49 UTC">October 12, 2026</span>
   </span>
 
     
