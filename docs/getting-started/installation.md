@@ -39,7 +39,15 @@ uv run ras2cng --help
 
 ## PMTiles External CLI Tools
 
-The `ras2cng pmtiles` command for vector tiles requires two external CLI tools (not available via pip):
+Vector tiles can be built without any external tools by installing the
+freestiler extra, which is chosen automatically when tippecanoe is not on PATH
+(for example on Windows):
+
+```bash
+pip install "ras2cng[freestiler]"
+```
+
+Otherwise, vector tiles use two external CLI tools (not available via pip):
 
 - **tippecanoe** — Generates vector tiles from GeoJSON
 - **pmtiles** — go-pmtiles CLI for MBTiles → PMTiles conversion

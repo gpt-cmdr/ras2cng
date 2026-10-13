@@ -21,6 +21,7 @@ import tempfile
 from typing import Any, Iterable, Mapping, Sequence
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -33,6 +34,7 @@ from ras2cng.cog import (
     describe_crs,
     overview_factors,
 )
+from ras2cng import vector_tiles
 from ras2cng.pmtiles import _require_cli
 from ras2cng.viewer_manifest import apply_manifest_v2
 
@@ -144,6 +146,10 @@ class PackageSummary:
     geometry_layer_count: int
     result_layer_count: int
     bounds: tuple[float, float, float, float]
+    #: Results joined to mesh cells/faces, which start at ``detail_min_zoom``.
+    result_detail_pmtiles: Path | None = None
+    #: First zoom of the dense geometry-detail / results-detail tilesets.
+    detail_min_zoom: int | None = None
 
 
 @dataclass(frozen=True)
@@ -311,20 +317,15 @@ def _slug(value: str) -> str:
 
 
 def _tippecanoe_command() -> str:
-    """Return the executable used for vector tile generation.
+    """Return the executable used for tippecanoe vector tile generation."""
 
-    ``tippecanoe`` is the portable default. Windows hosts that bridge to a
-    Linux Tippecanoe installation can provide the full wrapper path through
-    ``RAS2CNG_TIPPECANOE``.
-    """
-
-    return os.environ.get("RAS2CNG_TIPPECANOE", "tippecanoe")
+    return vector_tiles.tippecanoe_command()
 
 
 def _pmtiles_command() -> str:
     """Return the PMTiles conversion executable for vector tile delivery."""
 
-    return os.environ.get("RAS2CNG_PMTILES", "pmtiles")
+    return vector_tiles.pmtiles_command()
 
 
 def _gdal_command(name: str) -> str:
@@ -448,8 +449,13 @@ def _stream_dense_layer_ndgeojson(
     path: Path,
     fallback_crs: str | None,
     batch_size: int = 20_000,
+    pixel_sizes: list[np.ndarray] | None = None,
 ) -> tuple[int, list[str], list[float]]:
-    """Write a dense delivery layer without loading its full mesh into memory."""
+    """Write a dense delivery layer without loading its full mesh into memory.
+
+    When ``pixel_sizes`` is given, a sample of feature sizes (see
+    :func:`_feature_pixel_sizes`) is appended for choosing the tileset floor.
+    """
 
     parquet = pq.ParquetFile(source)
     available_columns = set(parquet.schema_arrow.names)
@@ -489,26 +495,94 @@ def _stream_dense_layer_ndgeojson(
             count += len(cleaned)
             geometry_types.update(cleaned.geom_type.dropna())
             bounds.append(_bounds(cleaned))
+            if pixel_sizes is not None:
+                pixel_sizes.append(_feature_pixel_sizes(cleaned.geometry.values[::10]))
 
     if not count:
         raise ValueError(f"No {kind} features were written from {source}")
     return count, sorted(geometry_types), _merge_bounds(bounds)
 
 
-def _bounded_tiles_requested() -> bool:
-    """Whether to cap tile size instead of choosing fidelity unconditionally.
+# Lowest zoom of a dense (mesh cell / face) tileset.  Below it, complete mesh
+# tiles are multi-megabyte (measured 1.2-1.6 MB at z12 and 4-9 MB at z10 for
+# 87k- and 1M-cell meshes, versus 0.6-0.8 MB at z13), and thinning them to fit
+# -- tippecanoe --drop-densest-as-needed -- renders as stripes.  The floor
+# keeps every feature wherever the layer is drawn.
+_DETAIL_MIN_ZOOM = 13
 
-    ``--no-tile-size-limit --no-feature-limit`` keeps every feature at every
-    zoom, which is the right call for an engineering deliverable but produces
-    multi-megabyte individual tiles from a dense RAS mesh -- MapLibre stalls on
-    them and the CDN pays for them.  The bounded policy is opt-in rather than
-    default because dropping features from a published hydraulic tileset is a
-    decision for the publisher, not a silent default.
+# A dense layer starts no lower than the zoom where its median feature spans
+# this many CSS pixels, so a finer mesh starts at a higher zoom.
+_DETAIL_LEGIBLE_PIXELS = 2.0
+
+# MapLibre renders 512 CSS-pixel tiles, so the world is 512 px wide at z0.
+_WORLD_PIXELS_Z0 = 512.0
+
+
+def _feature_pixel_sizes(geometries: Any) -> np.ndarray:
+    """Return each WGS84 feature's larger bbox side in Web Mercator z0 pixels.
+
+    The larger side, rather than area, keeps axis-aligned mesh faces (lines
+    with a zero-height bbox) measured at their length.
     """
 
-    return os.environ.get("RAS2CNG_TIPPECANOE_BOUNDED", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
+    extents = shapely.bounds(np.asarray(geometries, dtype=object))
+    if not len(extents):
+        return np.empty(0)
+    latitude = np.radians(np.clip((extents[:, 1] + extents[:, 3]) / 2.0, -85.0, 85.0))
+    width = extents[:, 2] - extents[:, 0]
+    height = (extents[:, 3] - extents[:, 1]) / np.cos(latitude)
+    return np.maximum(width, height) * _WORLD_PIXELS_Z0 / 360.0
+
+
+def _detail_min_zoom(
+    pixel_sizes: Sequence[np.ndarray],
+    min_zoom: int,
+    max_zoom: int,
+) -> int:
+    """Choose the first zoom of a dense tileset from its median feature size."""
+
+    floor = max(int(min_zoom), _DETAIL_MIN_ZOOM)
+    sizes = np.concatenate(list(pixel_sizes)) if pixel_sizes else np.empty(0)
+    sizes = sizes[np.isfinite(sizes) & (sizes > 0)]
+    if sizes.size:
+        median = float(np.median(sizes))
+        floor = max(floor, math.ceil(math.log2(_DETAIL_LEGIBLE_PIXELS / median)))
+    return min(floor, int(max_zoom))
+
+
+def _require_vector_tiler() -> str:
+    """Resolve the vector tiler and fail before any expensive work if absent."""
+
+    backend = vector_tiles.vector_tiler_backend()
+    if backend == vector_tiles.FREESTILER:
+        vector_tiles.require_freestiler()
+    else:
+        _require_cli(_tippecanoe_command())
+        _require_cli(_pmtiles_command())
+    return backend
+
+
+def _run_vector_tiler(
+    output: Path,
+    layers: Sequence[tuple[str, Path]],
+    min_zoom: int,
+    max_zoom: int,
+    temporary_directory: Path | None = None,
+) -> None:
+    """Tile newline-delimited GeoJSON sources into one PMTiles archive.
+
+    Dispatches on ``RAS2CNG_VECTOR_TILER`` (see :mod:`ras2cng.vector_tiles`).
+    Every backend keeps every feature at every zoom of the tileset.
+    """
+
+    if not layers:
+        raise ValueError("A vector tileset needs at least one non-empty source layer.")
+    if vector_tiles.vector_tiler_backend() == vector_tiles.FREESTILER:
+        # freestiler tiles every layer of the archive in one in-memory pass.
+        frames = {name: vector_tiles.read_ndgeojson(path) for name, path in layers}
+        vector_tiles.run_freestiler(output, frames, min_zoom, max_zoom)
+        return
+    _run_tippecanoe(output, layers, min_zoom, max_zoom, temporary_directory)
 
 
 def _log_tippecanoe_output(stderr: str | None) -> None:
@@ -534,14 +608,10 @@ def _run_tippecanoe(
     min_zoom: int,
     max_zoom: int,
     temporary_directory: Path | None = None,
-    *,
-    bounded: bool | None = None,
 ) -> None:
     if not layers:
         raise ValueError("Tippecanoe needs at least one non-empty source layer.")
     output.parent.mkdir(parents=True, exist_ok=True)
-    if bounded is None:
-        bounded = _bounded_tiles_requested()
     if temporary_directory is not None:
         temporary_directory.mkdir(parents=True, exist_ok=True)
 
@@ -559,15 +629,12 @@ def _run_tippecanoe(
             _tippecanoe_command(),
             "--force",
             "--read-parallel",
-        ]
-        if bounded:
-            command.append("--drop-densest-as-needed")
-        else:
-            command.extend(["--no-tile-size-limit", "--no-feature-limit"])
-        command.extend([
-            # Only acts when features are being dropped, so it is inert under
-            # the unbounded policy above and load-bearing under the bounded one.
-            "--extend-zooms-if-still-dropping",
+            # Every feature at every zoom.  Tile weight is bounded by each
+            # tileset's minimum zoom, never by dropping: --drop-densest-as-needed
+            # thins a uniform mesh into visible stripes, and
+            # --drop-fraction-as-needed crashes on mixed dense layers.
+            "--no-tile-size-limit",
+            "--no-feature-limit",
             # Adjacent RAS mesh cells share edges.  Simplified independently,
             # those edges diverge and open visible slivers between cells at low
             # zoom.
@@ -578,7 +645,7 @@ def _run_tippecanoe(
             str(mbtiles_path),
             "--temporary-directory",
             str(scratch_dir),
-        ])
+        ]
         for source_layer, source_path in layers:
             command.extend(["-L", f"{source_layer}:{source_path}"])
 
@@ -1180,8 +1247,7 @@ def package_maplibre_stored_vector(
             f"Viewer already has vector layer {layer_id}; pass overwrite=True to replace it."
         )
 
-    _require_cli(_tippecanoe_command())
-    _require_cli(_pmtiles_command())
+    _require_vector_tiler()
     if vector_path.suffix.lower() in {".parquet", ".geoparquet"}:
         frame = gpd.read_parquet(vector_path)
     else:
@@ -1203,7 +1269,7 @@ def package_maplibre_stored_vector(
         work_dir = Path(temporary)
         ndgeojson = work_dir / f"{layer_id}.ndgeojson"
         feature_count, geometry_types, bounds = _write_ndgeojson(frame, ndgeojson)
-        _run_tippecanoe(
+        _run_vector_tiler(
             output,
             [(layer_id, ndgeojson)],
             min_zoom,
@@ -1730,8 +1796,7 @@ def package_maplibre_viewer(
 
     metadata = _project_metadata(archive_dir)
     project_crs = crs or metadata.get("crs") or archive.get("project", {}).get("crs")
-    _require_cli(_tippecanoe_command())
-    _require_cli(_pmtiles_command())
+    _require_vector_tiler()
     output_dir.mkdir(parents=True, exist_ok=True)
     tiles_dir = output_dir / "tiles"
     viewer_title = title or metadata.get("title") or archive.get("project", {}).get("name") or archive_dir.name
@@ -1757,6 +1822,7 @@ def package_maplibre_viewer(
     groups: list[dict[str, Any]] = []
     extent_features: list[dict[str, Any]] = []
     all_bounds: list[Sequence[float]] = []
+    detail_pixel_sizes: list[np.ndarray] = []
 
     with tempfile.TemporaryDirectory(
         prefix="ras2cng-maplibre-",
@@ -1821,6 +1887,7 @@ def package_maplibre_viewer(
                         kind,
                         source_path,
                         project_crs,
+                        pixel_sizes=detail_pixel_sizes,
                     )
                 else:
                     gdf = _to_wgs84(
@@ -1832,6 +1899,8 @@ def package_maplibre_viewer(
                         continue
                     if cache_geometry:
                         geometry_cache[(geom_id, kind)] = gdf
+                    if _is_detail_geometry(kind):
+                        detail_pixel_sizes.append(_feature_pixel_sizes(gdf.geometry.values[::10]))
                     count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
                 source_layers = (
                     geometry_detail_sources if _is_detail_geometry(kind) else geometry_overview_sources
@@ -1972,37 +2041,35 @@ def package_maplibre_viewer(
                 geometry_overview_layers.append(viewer_layer)
                 geometry_layers.append(viewer_layer)
 
+        # The overview tileset carries the sparse engineering layers (cross
+        # sections, structures, BC and reference lines), complete at every
+        # zoom.  Dense mesh layers and the results joined to them go into
+        # separate tilesets that start at ``detail_min_zoom``: complete tiles
+        # below it are multi-megabyte, and thinning them shows as stripes.
+        detail_min_zoom = _detail_min_zoom(detail_pixel_sizes, min_zoom, max_zoom)
         geometry_pmtiles = tiles_dir / "geometry.pmtiles"
-        _run_tippecanoe(
+        _run_vector_tiler(
             geometry_pmtiles,
             geometry_overview_sources,
             min_zoom,
             max_zoom,
-            work_dir / "tippecanoe-overview",
+            work_dir / "tiles-overview",
         )
         geometry_detail_pmtiles: Path | None = None
         if geometry_detail_sources:
             geometry_detail_pmtiles = tiles_dir / "geometry-detail.pmtiles"
-            _run_tippecanoe(
+            _run_vector_tiler(
                 geometry_detail_pmtiles,
                 geometry_detail_sources,
-                max(min_zoom, 13),
+                detail_min_zoom,
                 max_zoom,
-                work_dir / "tippecanoe-detail",
-                # Only the dense mesh is bounded, and only here.  At this
-                # tileset's floor of z13 a typical RAS cell is roughly half a
-                # pixel, so unbounded tiles pay multi-megabyte transfers for
-                # geometry no one can resolve.  Paired with
-                # --extend-zooms-if-still-dropping this does not discard
-                # features: it pushes them to the zoom where they are legible.
-                # The overview tileset stays unbounded because its engineering
-                # layers -- cross sections, structures, BC and reference lines
-                # -- are sparse and must be complete at every zoom.
-                bounded=True,
+                work_dir / "tiles-detail",
             )
 
         result_sources: list[tuple[str, Path]] = []
+        result_detail_sources: list[tuple[str, Path]] = []
         result_layers: list[dict[str, Any]] = []
+        result_detail_layers: list[dict[str, Any]] = []
         if include_vector_results:
             for plan in archive.get("results", []):
                 plan_id = str(plan.get("plan_id", "plan")).lower()
@@ -2058,8 +2125,14 @@ def package_maplibre_viewer(
                         source_layer = f"{result_group_id}-{_slug(variable_name)}{profile_suffix}"
                         source_path = work_dir / "results" / f"{source_layer}.ndgeojson"
                         count, geometry_types, bounds = _write_ndgeojson(joined, source_path)
-                        result_sources.append((source_layer, source_path))
+                        dense_result = _is_detail_geometry(geometry_kind)
+                        (result_detail_sources if dense_result else result_sources).append(
+                            (source_layer, source_path)
+                        )
                         all_bounds.append(bounds)
+                        style = _result_style(variable_name)
+                        if dense_result:
+                            style["minzoom"] = detail_min_zoom
                         layer_name = _display_name(variable_name)
                         if profile is not None:
                             layer_name = f"{layer_name} - {profile}"
@@ -2089,13 +2162,14 @@ def package_maplibre_viewer(
                                 "groupId": result_group_id,
                                 "visible": False,
                                 "kind": f"{plan_id}_{variable_name}{profile_suffix}",
-                                "style": _result_style(variable_name),
+                                "style": style,
                                 "featureCount": count,
                                 "geometryTypes": geometry_types,
                                 "bounds": bounds,
                                 "sort": 100 + profile_index,
                                 "queryable": True,
                                 "rawResult": raw_result,
+                                "_dense": dense_result,
                             }
                         )
                 if plan_layers:
@@ -2107,23 +2181,33 @@ def package_maplibre_viewer(
                             "resultKind": "raw_hdf",
                         }
                     )
-                    result_layers.extend(plan_layers)
+                    for plan_layer in plan_layers:
+                        target = result_detail_layers if plan_layer.pop("_dense") else result_layers
+                        target.append(plan_layer)
 
+        # Sparse joins (cross sections, reference lines and points) are
+        # complete at every zoom.  Values joined to mesh cells or faces are one
+        # feature per element -- as dense as the detail geometry -- so they
+        # share its floor.
         result_pmtiles: Path | None = None
         if result_sources:
             result_pmtiles = tiles_dir / "results.pmtiles"
-            _run_tippecanoe(
+            _run_vector_tiler(
                 result_pmtiles,
                 result_sources,
                 min_zoom,
                 max_zoom,
-                work_dir / "tippecanoe-results",
-                # Result values joined to mesh cells are one polygon per cell --
-                # as dense as the detail tileset, but spanning the full zoom
-                # range rather than starting at z13.  The ceiling is only a
-                # ceiling: on a sparse join (reference lines or points) it never
-                # fires, so this costs nothing where density is not a problem.
-                bounded=True,
+                work_dir / "tiles-results",
+            )
+        result_detail_pmtiles: Path | None = None
+        if result_detail_sources:
+            result_detail_pmtiles = tiles_dir / "results-detail.pmtiles"
+            _run_vector_tiler(
+                result_detail_pmtiles,
+                result_detail_sources,
+                detail_min_zoom,
+                max_zoom,
+                work_dir / "tiles-results-detail",
             )
 
     final_bounds = _merge_bounds(all_bounds)
@@ -2148,7 +2232,7 @@ def package_maplibre_viewer(
                 "href": "tiles/geometry-detail.pmtiles",
                 "bytes": geometry_detail_pmtiles.stat().st_size,
                 "layers": geometry_detail_layers,
-                "minzoom": max(min_zoom, 13),
+                "minzoom": detail_min_zoom,
             }
         )
 
@@ -2195,6 +2279,18 @@ def package_maplibre_viewer(
                 "resultKind": "raw_hdf",
             }
         )
+    if result_detail_pmtiles:
+        manifest["tilesets"].append(
+            {
+                "id": "results-detail",
+                "type": "vector",
+                "href": "tiles/results-detail.pmtiles",
+                "bytes": result_detail_pmtiles.stat().st_size,
+                "layers": result_detail_layers,
+                "resultKind": "raw_hdf",
+                "minzoom": detail_min_zoom,
+            }
+        )
     apply_manifest_v2(manifest, archive=archive)
 
     (output_dir / "model_extent.geojson").write_text(
@@ -2217,8 +2313,10 @@ def package_maplibre_viewer(
         geometry_pmtiles=geometry_pmtiles,
         result_pmtiles=result_pmtiles,
         geometry_layer_count=len(geometry_layers),
-        result_layer_count=len(result_layers),
+        result_layer_count=len(result_layers) + len(result_detail_layers),
         bounds=final_bounds,
+        result_detail_pmtiles=result_detail_pmtiles,
+        detail_min_zoom=detail_min_zoom,
     )
 
 

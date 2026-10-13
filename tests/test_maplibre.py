@@ -16,6 +16,13 @@ from ras2cng import maplibre
 from ras2cng.cli import app
 
 
+@pytest.fixture(autouse=True)
+def _tippecanoe_backend(monkeypatch):
+    """Pin the tiler so ``auto`` does not depend on what this host has installed."""
+
+    monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "tippecanoe")
+
+
 def _completed(command, stdout: str = "", stderr: str = ""):
     """Stand-in for subprocess.CompletedProcess used by the fake runners."""
 
@@ -162,7 +169,7 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_viewer(
         archive_dir,
@@ -182,7 +189,11 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
         "terrains",
     ]
     assert manifest["resources"]["geometry"]["type"] == "vector-pmtiles"
-    assert manifest["resources"]["results"]["type"] == "vector-pmtiles"
+    # Values joined to mesh cells are as dense as the mesh, so they share the
+    # detail floor rather than spanning the full zoom range.
+    assert manifest["resources"]["results-detail"]["type"] == "vector-pmtiles"
+    assert manifest["resources"]["results-detail"]["minzoom"] == 13
+    assert "results" not in manifest["resources"]
     assert manifest["layers"]["ras-results-p01-maximum-depth"]["sourceKind"] == "raw-hdf"
     assert manifest["associations"][0]["type"] == "plan-geometry"
     geometry_tiles = [tileset for tileset in manifest["tilesets"] if tileset["id"].startswith("geometry")]
@@ -196,15 +207,19 @@ def test_package_uses_api_footprint_and_groups_raw_results(monkeypatch, tmp_path
     assert manifest["groups"][1]["resultKind"] == "raw_hdf"
     detail_tiles = next(tileset for tileset in geometry_tiles if tileset["id"] == "geometry-detail")
     assert detail_tiles["minzoom"] == 13
-    result_tiles = next(tileset for tileset in manifest["tilesets"] if tileset["id"] == "results")
+    result_tiles = next(tileset for tileset in manifest["tilesets"] if tileset["id"] == "results-detail")
     assert result_tiles["resultKind"] == "raw_hdf"
+    assert result_tiles["minzoom"] == 13
     result_layer = result_tiles["layers"][0]
+    assert result_layer["style"]["minzoom"] == 13
     assert result_layer["rawResult"]["source"] == "Raw HEC-RAS HDF summary result values"
     assert summary.geometry_layer_count == 3
     assert summary.result_layer_count == 1
     assert len(calls) == 3
     assert all(call[2].is_relative_to(tmp_path / "scratch") for call in calls)
-    assert summary.result_pmtiles and summary.result_pmtiles.is_file()
+    assert summary.result_pmtiles is None
+    assert summary.result_detail_pmtiles and summary.result_detail_pmtiles.is_file()
+    assert summary.detail_min_zoom == 13
 
 
 def test_package_reads_plan_layout_raw_results(monkeypatch, tmp_path: Path):
@@ -239,7 +254,7 @@ def test_package_reads_plan_layout_raw_results(monkeypatch, tmp_path: Path):
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_viewer(
         archive_dir,
@@ -859,7 +874,7 @@ def test_package_stored_vector_adds_rasmapper_result_to_plan(monkeypatch, tmp_pa
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
 
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_stored_vector(
         source,
@@ -932,7 +947,7 @@ def test_geometry_only_package_streams_dense_mesh_delivery(monkeypatch, tmp_path
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     maplibre.package_maplibre_viewer(
         archive_dir,
@@ -948,43 +963,66 @@ def test_geometry_only_package_streams_dense_mesh_delivery(monkeypatch, tmp_path
     assert detail_call[2].is_relative_to(tmp_path / "scratch")
 
 
-def test_only_the_dense_detail_tileset_bounds_tile_size(monkeypatch, tmp_path: Path) -> None:
-    """The size policy is per-tileset, not global.
+def test_dense_tilesets_start_at_the_detail_floor(monkeypatch, tmp_path: Path) -> None:
+    """Tile weight is bounded by each tileset's first zoom, never by dropping.
 
-    The detail tileset carries only mesh cells and faces and starts at z13,
-    where a typical RAS cell is roughly half a pixel -- unbounded tiles there
-    pay multi-megabyte transfers for geometry no one can resolve. The overview
-    tileset carries the sparse engineering layers (cross sections, structures,
-    BC and reference lines), which must be complete at every zoom.
+    The overview tileset carries the sparse engineering layers and spans the
+    full range; mesh cells/faces and the results joined to them start at the
+    detail floor, where complete tiles stay under a megabyte.
     """
 
     archive_dir, hdf = _write_archive(tmp_path)
-    policies: dict[str, bool | None] = {}
+    zooms: dict[str, tuple[int, int]] = {}
 
-    def fake_tippecanoe(
-        output: Path, layers, min_zoom, max_zoom, temporary_directory=None, *, bounded=None
-    ):
-        policies[output.name] = bounded
+    def fake_tiler(output: Path, layers, min_zoom, max_zoom, temporary_directory=None):
+        zooms[output.name] = (min_zoom, max_zoom)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"pmtiles")
 
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tiler)
 
     maplibre.package_maplibre_viewer(
         archive_dir,
         tmp_path / "viewer",
         geometry_hdfs={"g01": hdf},
+        include_vector_results=True,
         scratch_dir=tmp_path / "scratch",
     )
 
-    assert policies["geometry-detail.pmtiles"] is True
-    assert not policies["geometry.pmtiles"]
+    assert zooms["geometry.pmtiles"] == (0, 17)
+    assert zooms["geometry-detail.pmtiles"] == (13, 17)
+    assert zooms["results-detail.pmtiles"] == (13, 17)
 
 
-def test_bounded_tiles_swap_the_size_policy_flags(monkeypatch, tmp_path: Path) -> None:
+def test_detail_floor_rises_for_a_finer_mesh() -> None:
+    def cells(size_degrees: float) -> np.ndarray:
+        squares = [
+            box(-95.0 + i * size_degrees, 30.0, -95.0 + (i + 1) * size_degrees, 30.0 + size_degrees)
+            for i in range(50)
+        ]
+        return maplibre._feature_pixel_sizes(np.array(squares, dtype=object))
+
+    # ~30 m cells reach two CSS pixels by z13, so the fixed floor holds.
+    assert maplibre._detail_min_zoom([cells(0.0003)], 0, 17) == 13
+    # ~3 m cells are sub-pixel until z16; starting earlier ships unreadable,
+    # multi-megabyte tiles.
+    assert maplibre._detail_min_zoom([cells(0.00003)], 0, 17) == 16
+    # The floor never passes the tileset's maximum zoom.
+    assert maplibre._detail_min_zoom([cells(0.00003)], 0, 15) == 15
+    # No sample (e.g. an empty layer) keeps the fixed floor.
+    assert maplibre._detail_min_zoom([], 0, 17) == 13
+
+
+def test_mesh_face_size_is_its_length_not_its_bbox_area() -> None:
+    horizontal_face = LineString([(-95.0, 30.0), (-94.9997, 30.0)])
+    size = maplibre._feature_pixel_sizes(np.array([horizontal_face], dtype=object))[0]
+    assert size == pytest.approx(0.0003 * 512 / 360)
+
+
+def test_tippecanoe_never_drops_features(monkeypatch, tmp_path: Path) -> None:
     commands: list[list[str]] = []
 
     def fake_run(command, **_kwargs):
@@ -999,27 +1037,71 @@ def test_bounded_tiles_swap_the_size_policy_flags(monkeypatch, tmp_path: Path) -
     source = tmp_path / "mesh.ndgeojson"
     source.write_text("", encoding="utf-8")
 
-    maplibre._run_tippecanoe(
-        tmp_path / "detail.pmtiles", [("mesh", source)], 13, 17, bounded=True
-    )
-    bounded = commands[0]
-    assert "--drop-densest-as-needed" in bounded
-    assert "--no-tile-size-limit" not in bounded
-    assert "--no-feature-limit" not in bounded
-    # Inert under the unbounded policy, load-bearing here: features that would
-    # be dropped move to a higher zoom rather than disappearing.
-    assert "--extend-zooms-if-still-dropping" in bounded
+    maplibre._run_tippecanoe(tmp_path / "detail.pmtiles", [("mesh", source)], 13, 17)
 
-    commands.clear()
-    maplibre._run_tippecanoe(
-        tmp_path / "overview.pmtiles", [("xs", source)], 0, 17, bounded=False
-    )
-    unbounded = commands[0]
-    assert "--no-tile-size-limit" in unbounded and "--no-feature-limit" in unbounded
-    assert "--drop-densest-as-needed" not in unbounded
-    # `--drop-fraction-as-needed` is never used: it makes tippecanoe retry the
-    # sparsest features until the native binary crashes on mixed dense layers.
-    assert "--drop-fraction-as-needed" not in bounded + unbounded
+    command = commands[0]
+    assert "--no-tile-size-limit" in command and "--no-feature-limit" in command
+    # --drop-densest-as-needed renders a thinned mesh as stripes, and
+    # --drop-fraction-as-needed crashes tippecanoe on mixed dense layers.
+    assert not [flag for flag in command if flag.startswith("--drop-")]
+    assert "--extend-zooms-if-still-dropping" not in command
+
+
+def test_auto_backend_prefers_tippecanoe_then_freestiler(monkeypatch) -> None:
+    from ras2cng import vector_tiles
+
+    monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "auto")
+    monkeypatch.setattr(vector_tiles.shutil, "which", lambda command: f"/usr/bin/{command}")
+    assert vector_tiles.vector_tiler_backend() == "tippecanoe"
+
+    monkeypatch.setattr(vector_tiles.shutil, "which", lambda command: None)
+    monkeypatch.setattr(vector_tiles, "freestiler_available", lambda: True)
+    assert vector_tiles.vector_tiler_backend() == "freestiler"
+
+    # With neither usable, report the documented default's missing CLI.
+    monkeypatch.setattr(vector_tiles, "freestiler_available", lambda: False)
+    assert vector_tiles.vector_tiler_backend() == "tippecanoe"
+
+    monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "mapnik")
+    with pytest.raises(ValueError, match="RAS2CNG_VECTOR_TILER"):
+        vector_tiles.vector_tiler_backend()
+
+
+def test_freestiler_backend_tiles_every_source_layer(monkeypatch, tmp_path: Path) -> None:
+    from ras2cng import vector_tiles
+
+    monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "freestiler")
+    received: dict = {}
+
+    def fake_freestiler(output, layers, min_zoom, max_zoom):
+        received.update(output=output, layers=layers, zooms=(min_zoom, max_zoom))
+
+    monkeypatch.setattr(vector_tiles, "run_freestiler", fake_freestiler)
+    sources = []
+    for name, geometry in (
+        ("cells", box(-95.0, 30.0, -94.99, 30.01)),
+        ("bc", LineString([(-95.0, 30.0), (-94.0, 30.0)])),
+    ):
+        path = tmp_path / f"{name}.ndgeojson"
+        frame = gpd.GeoDataFrame({"cell_id": [7]}, geometry=[geometry], crs="EPSG:4326")
+        maplibre._write_ndgeojson(frame, path)
+        sources.append((name, path))
+
+    maplibre._run_vector_tiler(tmp_path / "out.pmtiles", sources, 13, 17, tmp_path / "scratch")
+
+    assert received["zooms"] == (13, 17)
+    assert list(received["layers"]) == ["cells", "bc"]
+    cells = received["layers"]["cells"]
+    assert cells.crs.to_epsg() == 4326 and int(cells["cell_id"].iloc[0]) == 7
+
+
+def test_freestiler_backend_needs_the_extra(monkeypatch) -> None:
+    from ras2cng import vector_tiles
+
+    monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "freestiler")
+    monkeypatch.setattr(vector_tiles, "freestiler_available", lambda: False)
+    with pytest.raises(RuntimeError, match=r"ras2cng\[freestiler\]"):
+        maplibre._require_vector_tiler()
 
 
 def test_package_includes_terrain_modification_vectors(monkeypatch, tmp_path: Path):
@@ -1058,7 +1140,7 @@ def test_package_includes_terrain_modification_vectors(monkeypatch, tmp_path: Pa
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_viewer(
         archive_dir,
@@ -1114,7 +1196,7 @@ def test_package_includes_terrain_source_footprints(monkeypatch, tmp_path: Path)
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_viewer(
         archive_dir,
@@ -1264,7 +1346,7 @@ def test_package_splits_steady_cross_section_results_by_profile(monkeypatch, tmp
     footprint = gpd.GeoDataFrame(geometry=[box(-85.01, 39.99, -84.98, 40.02)], crs="EPSG:4326")
     monkeypatch.setattr(maplibre, "_require_cli", lambda _: None)
     monkeypatch.setattr(maplibre, "_extent_from_hdf", lambda *_: footprint)
-    monkeypatch.setattr(maplibre, "_run_tippecanoe", fake_tippecanoe)
+    monkeypatch.setattr(maplibre, "_run_vector_tiler", fake_tippecanoe)
 
     summary = maplibre.package_maplibre_viewer(
         archive_dir,
@@ -1384,3 +1466,23 @@ def test_stored_map_cli_passes_plan_provenance(monkeypatch, tmp_path: Path):
     assert received["profile"] == "Max"
     assert received["geometry"] == "g02"
     assert received["domain_policy"] == "current-view"
+
+
+def test_freestiler_input_matches_what_tippecanoe_would_read() -> None:
+    from ras2cng import vector_tiles
+
+    frame = gpd.GeoDataFrame(
+        {
+            "Name": ["weir", "missing", "culvert"],
+            "Profile_Data": [[{"Station": 0.0, "Elevation": 683.0}], None, np.array([1.5, 2.5])],
+        },
+        geometry=[LineString([(-95, 30), (-94, 30)]), None, Point(-95, 30)],
+        crs="EPSG:4326",
+    )
+
+    prepared = vector_tiles._freestiler_frame(frame)
+
+    # freestiler crashes on a null geometry; tippecanoe skips it.
+    assert list(prepared["Name"]) == ["weir", "culvert"]
+    # Nested values are stringified, as tippecanoe does with JSON arrays.
+    assert list(prepared["Profile_Data"]) == ['[{"Station":0.0,"Elevation":683.0}]', "[1.5,2.5]"]
