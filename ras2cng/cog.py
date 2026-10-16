@@ -581,6 +581,10 @@ class OverviewReport:
     #: Set only for LERC.  Its presence is the record that the artifact is
     #: lossy and by how much.
     lossy_max_z_error: float | None = None
+    #: Set only when the caller asked for overview values rounded to a quantum
+    #: (``overview_quantum``).  ``None`` leaves every overview value, and every
+    #: tag, exactly as it was before the option existed.
+    value_quantum: float | None = None
 
     def as_tags(self) -> dict[str, str]:
         tags = {
@@ -594,6 +598,11 @@ class OverviewReport:
             # lossless one, and the tolerance is the whole engineering decision.
             tags["compression_lossy"] = "true"
             tags["compression_max_z_error"] = f"{self.lossy_max_z_error:g}"
+        if self.value_quantum is not None:
+            # Rounding is applied to each level's final valid mean, after mask
+            # selection and from unrounded accumulators -- never level to level.
+            tags["overview_value_quantum"] = f"{self.value_quantum:g}"
+            tags["overview_value_rounding"] = "half_even_after_area_matched_mean"
         if self.area_ratios:
             tags["overview_area_ratios"] = ",".join(f"{r:.6f}" for r in self.area_ratios)
         if self.base_valid_pixels:
@@ -774,6 +783,71 @@ def _accumulate_first_level(source, band: int, categorical: bool):
     return sums, weights, modes, mode_valid, base_valid
 
 
+def _validate_value_quantum(value_quantum: Any) -> float | None:
+    """Return a usable quantum, ``None`` for "not requested", or raise."""
+
+    if value_quantum is None:
+        return None
+    try:
+        quantum = float(value_quantum)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"overview value quantum must be a positive finite number, got {value_quantum!r}"
+        ) from error
+    if not (quantum > 0.0) or not math.isfinite(quantum):
+        raise ValueError(
+            f"overview value quantum must be a positive finite number, got {value_quantum!r}"
+        )
+    return quantum
+
+
+def _round_to_quantum(values, quantum: float):
+    """Round to the nearest multiple of ``quantum`` (half to even, float64).
+
+    When ``1 / quantum`` is a whole number the rounding is ``rint(v * k) / k``,
+    which is the form that yields the cleanest decimal for 0.01-style quanta;
+    otherwise it is ``rint(v / q) * q``.
+    """
+
+    import numpy as np
+
+    inverse = 1.0 / quantum
+    steps = round(inverse)
+    if steps >= 1 and math.isclose(inverse, steps, rel_tol=1e-9):
+        return np.rint(values * float(steps)) / float(steps)
+    return np.rint(values / quantum) * quantum
+
+
+def _quantize_level_values(values, keep, quantum: float, nodata: float, dtype: str, factor: int):
+    """Round the valid emitted means of one level; fail closed on any hazard.
+
+    ``values`` holds the level's final means (``nodata`` outside ``keep``).  Only
+    ``keep`` cells are rounded.  Rounded values must be finite, representable at
+    ``dtype`` to well inside one quantum, and must not equal the nodata value --
+    otherwise a valid cell would silently become masked.
+    """
+
+    import numpy as np
+
+    rounded = np.where(keep, _round_to_quantum(values, quantum), nodata)
+    valid = rounded[keep]
+    if valid.size == 0:
+        return rounded
+    if not np.isfinite(valid).all():
+        raise ValueError(f"overview level {factor}: rounded value is not finite")
+    half_ulp = float(np.finfo(dtype).eps) / 2.0
+    if float(np.abs(valid).max()) * half_ulp > quantum * 0.1:
+        raise ValueError(
+            f"overview level {factor}: {dtype} cannot represent steps of {quantum:g} "
+            f"at magnitude {float(np.abs(valid).max()):.6g}"
+        )
+    if (valid.astype(dtype) == np.asarray(nodata).astype(dtype)).any():
+        raise ValueError(
+            f"overview level {factor}: a rounded valid value equals the nodata value {nodata:g}"
+        )
+    return rounded
+
+
 def build_area_matched_overviews(
     source_path: Path,
     work_dir: Path,
@@ -781,11 +855,20 @@ def build_area_matched_overviews(
     factors: Sequence[int],
     categorical: bool = False,
     band: int = 1,
+    value_quantum: float | None = None,
 ) -> tuple[list[Path], OverviewReport]:
     """Write one sidecar GeoTIFF per overview level, preserving wet area.
 
     Returns the level files in ascending-factor order along with a report of
     what was built, including the wet area each level actually reproduced.
+
+    ``value_quantum`` (stored raster value units, not a unit conversion) rounds
+    each level's **final valid means** to the nearest multiple, half to even,
+    *after* mask selection.  The accumulated sums, weights, masks, modes and
+    area ratios are untouched, and every level is rounded from the unrounded
+    accumulators -- never from the previous level's rounded values, which would
+    compound.  Continuous floating rasters only; ``None`` is the unchanged
+    behaviour.
     """
 
     import numpy as np
@@ -797,6 +880,10 @@ def build_area_matched_overviews(
     work_dir.mkdir(parents=True, exist_ok=True)
     method = "area_matched_mode" if categorical else "area_matched_mean"
     report = OverviewReport(method=method, factors=list(factors))
+    quantum = _validate_value_quantum(value_quantum)
+    if quantum is not None and categorical:
+        raise ValueError("an overview value quantum cannot be applied to a categorical raster")
+    report.value_quantum = quantum
 
     with rasterio.open(source_path) as source:
         if source.nodata is None:
@@ -815,6 +902,10 @@ def build_area_matched_overviews(
 
         nodata = float(source.nodata)
         dtype = source.dtypes[band - 1]
+        if quantum is not None and np.dtype(dtype).kind != "f":
+            raise ValueError(
+                f"an overview value quantum needs a floating-point raster, not {dtype}"
+            )
         base_transform = source.transform
         crs = source.crs
 
@@ -846,6 +937,8 @@ def build_area_matched_overviews(
             with np.errstate(invalid="ignore", divide="ignore"):
                 means = np.where(weights > 0, sums / np.maximum(weights, 1), nodata)
             values = np.where(keep, means, nodata)
+        if quantum is not None:
+            values = _quantize_level_values(values, keep, quantum, nodata, dtype, factor)
         if integral:
             values = np.rint(values)
 
@@ -942,6 +1035,7 @@ def area_matched_cog(
     require_area_matched: bool = False,
     lerc_max_z_error: float | None = _USE_DEFAULT_LERC,
     creation_options: Mapping[str, Any] | None = None,
+    overview_quantum: float | None = None,
 ) -> OverviewReport:
     """Write ``source_path`` to ``destination`` as a COG with correct overviews.
 
@@ -957,6 +1051,15 @@ def area_matched_cog(
     artifact's tags so the loss travels with the file.  Pass
     ``lerc_max_z_error=None`` (or set ``RAS2CNG_LERC_MAX_Z_ERROR=off``) for any
     raster whose values feed a downstream calculation rather than a map.
+
+    ``overview_quantum`` rounds the valid values of every overview level to a
+    multiple of that quantum, in the raster's own value units (see
+    :func:`build_area_matched_overviews`).  The base level is *not* touched.  It
+    is opt-in and fail-closed: it is refused for a categorical or integer
+    raster, with any positive LERC tolerance (a second lossy error stacked on
+    the rounding), and whenever the area-matched builder cannot run, because
+    the GDAL fallback would silently drop the guarantee.  ``None`` changes
+    nothing.
     """
 
     from rasterio.shutil import copy as copy_raster
@@ -984,6 +1087,30 @@ def area_matched_cog(
         explicit=explicit_lerc,
     )
     extra_options = dict(creation_options or {})
+    quantum = _validate_value_quantum(overview_quantum)
+    if quantum is not None:
+        if categorical:
+            raise ValueError("overview_quantum cannot be applied to a categorical raster")
+        if not floating_point:
+            raise ValueError("overview_quantum needs a floating-point raster")
+        if tolerance is not None:
+            raise ValueError(
+                "overview_quantum cannot be combined with a positive LERC tolerance "
+                f"({tolerance:g}): two lossy errors would stack; pass lerc_max_z_error=None"
+            )
+        for key, value in extra_options.items():
+            if str(key).upper() not in {"MAX_Z_ERROR", "MAX_Z_ERROR_OVERVIEW"}:
+                continue
+            try:
+                numeric_tolerance = float(value)
+                stacked = not math.isfinite(numeric_tolerance) or numeric_tolerance != 0.0
+            except (TypeError, ValueError):
+                stacked = True
+            if stacked:
+                raise ValueError(
+                    f"overview_quantum cannot be combined with creation option "
+                    f"{key}={value!r}: require finite zero; two lossy errors would stack"
+                )
     if tolerance is not None:
         extra_options["MAX_Z_ERROR"] = tolerance
         # LERC does its own encoding; a byte predictor on top is meaningless.
@@ -999,15 +1126,24 @@ def area_matched_cog(
 
         if not factors:
             report = OverviewReport(
-                method="none", factors=[], fallback_reason="raster fits a single block"
+                method="none",
+                factors=[],
+                fallback_reason="raster fits a single block",
+                value_quantum=quantum,
             )
         else:
             try:
                 level_paths, report = build_area_matched_overviews(
-                    source_path, work_dir, factors=factors, categorical=categorical
+                    source_path,
+                    work_dir,
+                    factors=factors,
+                    categorical=categorical,
+                    value_quantum=quantum,
                 )
             except (ValueError, MemoryError) as error:
-                if require_area_matched:
+                # The GDAL fallback cannot honour a requested quantum, so it is
+                # never taken silently when one was asked for.
+                if require_area_matched or quantum is not None:
                     raise
                 report = OverviewReport(
                     method=fallback_resampling,
