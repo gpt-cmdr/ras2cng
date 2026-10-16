@@ -31,6 +31,17 @@ FOOT_CRS_WKT = (
 NODATA = -32768.0
 
 
+@pytest.mark.parametrize("increment", [float("inf"), -float("inf"), float("nan"), 5e-324])
+def test_policy_rejects_nonfinite_increment_or_reciprocal(increment) -> None:
+    with pytest.raises(td.DisplayTerrainError, match="finite"):
+        td.DisplayPolicy(increment=increment)
+
+
+@pytest.mark.parametrize("increment", [0.01, 0.001])
+def test_finite_decimal_policy_remains_valid(increment) -> None:
+    assert td.DisplayPolicy(increment=increment).increment == increment
+
+
 def _write_source(
     path: Path,
     array: np.ndarray,
@@ -64,6 +75,71 @@ def _sloped(height: int, width: int, *, hole: bool = True) -> np.ndarray:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_manual_source_unit_is_declared_in_plan_without_loosening_reinspection(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "manual.tif", _sloped(24, 24), pixel=3.0)
+    inspected = td.inspect_source(source, vertical_unit="metre")
+    manual = replace(inspected, vertical_unit_declared=None)
+    before = _sha(source)
+    plan = td.plan_display_terrain(manual)
+    assert manual.vertical_unit_declared is None
+    assert plan.source.vertical_unit_declared == "metre"
+    assert plan.source.vertical_unit_assurance == "declared_only"
+    output = tmp_path / "manual-display.tif"
+    td.write_display_terrain(plan, source, output)
+    assert td.validate_display_terrain(plan, output, expected=None).valid
+    assert _sha(source) == before
+    with rasterio.open(source, "r+") as changed:
+        changed.units = ("us_survey_foot",)
+    with pytest.raises(td.GridError, match="contradiction"):
+        td.write_display_terrain(plan, source, tmp_path / "refused.tif")
+    assert not (tmp_path / "refused.tif").exists()
+
+
+@pytest.mark.parametrize("scale,offset", [(2.0, 0.0), (1.0, 5.0)])
+def test_validator_rejects_foreign_output_scale_offset_with_valid_cog_layout(tmp_path: Path, scale, offset) -> None:
+    from rasterio.shutil import copy
+
+    source = _write_source(tmp_path / "source.tif", _sloped(24, 24), pixel=3.0)
+    plan = td.plan_display_terrain(td.inspect_source(source, vertical_unit="metre"))
+    good = tmp_path / "good.tif"
+    td.write_display_terrain(plan, source, good)
+    assert td.validate_display_terrain(plan, good, expected=None).valid
+    base = tmp_path / "foreign-base.tif"
+    copy(good, base, driver="GTiff")
+    with rasterio.open(base, "r+") as foreign:
+        foreign.scales = (scale,)
+        foreign.offsets = (offset,)
+    bad = tmp_path / "foreign-cog.tif"
+    copy(base, bad, driver="COG", COMPRESS="DEFLATE", PREDICTOR="YES", BLOCKSIZE=512, OVERVIEWS="NONE")
+    with rasterio.open(good) as original, rasterio.open(bad) as foreign:
+        assert foreign.tags(ns="IMAGE_STRUCTURE")["LAYOUT"] == "COG"
+        assert foreign.tags() == original.tags()
+        assert foreign.scales == (scale,) and foreign.offsets == (offset,)
+        np.testing.assert_array_equal(foreign.read(1), original.read(1))
+    verdict = td.validate_display_terrain(plan, bad, expected=None)
+    assert not verdict.valid
+    assert any("scale/offset" in error for error in verdict.errors)
+
+
+def test_sequential_quantization_bound_references_stored_base_at_every_level(tmp_path: Path) -> None:
+    original = np.tile(np.array([[0.0049, 0.0049], [0.0049, 0.0149]], dtype="float32"), (768, 768))
+    source = _write_source(tmp_path / "rounding.tif", original, pixel=3.0)
+    plan = td.plan_display_terrain(td.inspect_source(source, vertical_unit="metre"))
+    output = tmp_path / "rounding-cog.tif"
+    td.write_display_terrain(plan, source, output)
+    assert td.validate_display_terrain(plan, output).valid
+    original_mean = float(original[:2, :2].astype("float64").mean())
+    with rasterio.open(output) as stored:
+        factors = stored.overviews(1)
+        base_mean = float(stored.read(1, window=rasterio.windows.Window(0, 0, 2, 2)).astype("float64").mean())
+    assert len(factors) >= 2
+    for level in range(len(factors)):
+        with rasterio.open(output, overview_level=level) as overview:
+            value = float(overview.read(1, window=rasterio.windows.Window(0, 0, 1, 1))[0, 0])
+        assert abs(value - base_mean) <= 0.005 + 1e-7
+        assert 0.005 < abs(value - original_mean) <= 0.01 + 1e-7
 
 
 # ---------------------------------------------------------------------------

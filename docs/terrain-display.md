@@ -39,6 +39,14 @@ assert verdict.valid, verdict.errors
 replacement is atomic, and the source is re-inspected immediately before it is
 read.
 
+A manually constructed `SourceGridInfo` must still supply its vertical unit.
+If neither embedded nor declared-unit provenance is populated, planning records
+that explicit unit as a declaration in the frozen plan; the caller's record is
+unchanged. This never infers elevation units from the horizontal CRS. The writer
+still compares all source facts and provenance strictly on re-inspection, and a
+changed/conflicting embedded unit is refused. Validation also requires output
+scale 1 and offset 0 before raw sample precision can describe physical values.
+
 `benchmark_codecs()` / `select_smallest()` encode one rounded raster with each
 candidate codec and report measured bytes and a base-level exact-equality check.
 Run them on a tiny sample only. A smaller file is a byte decision; it is not
@@ -156,9 +164,21 @@ DEFLATE with no `compression_lossy` tag.
 
 The same quantum applies to **every embedded overview level**, through
 `cog.area_matched_cog(overview_quantum=...)` (see below). Each level's value is
-the mean of that cell's valid contributors, computed from the unrounded
-accumulators and rounded once, after the area-matched mask is chosen. A level is
+the mean of that cell's valid **stored-base** contributors, computed from
+accumulators without additional intermediate rounding and rounded once, after
+the area-matched mask is chosen. A level is
 never rounded from the previous level's rounded values, which would compound.
+
+Base rounding error is at most half a quantum plus float32 representation.
+An overview's additional rounding error has that bound relative to its aggregate
+of the already-rounded stored base. Relative to the corresponding original-source
+aggregate with the same contributors, the conservative combined bound is one
+quantum plus representation, not half a quantum. This is not a global difference
+bound across spatial resampling, changed footprints or nearest-cell selection.
+When an overview quantum is requested, both `MAX_Z_ERROR` and
+`MAX_Z_ERROR_OVERVIEW` creation options must be finite zero (case-insensitive);
+positive, negative, non-finite and unparseable tolerances are refused before
+writing. `overview_quantum=None` preserves the shared writer's legacy behavior.
 
 `validate_display_terrain` reads back the base and each embedded level (not just
 the tags) and checks that every valid sample is on the quantum, that the level

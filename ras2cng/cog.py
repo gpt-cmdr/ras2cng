@@ -1099,16 +1099,17 @@ def area_matched_cog(
                 f"({tolerance:g}): two lossy errors would stack; pass lerc_max_z_error=None"
             )
         for key, value in extra_options.items():
-            if str(key).upper() != "MAX_Z_ERROR":
+            if str(key).upper() not in {"MAX_Z_ERROR", "MAX_Z_ERROR_OVERVIEW"}:
                 continue
             try:
-                stacked = float(value) > 0.0
+                numeric_tolerance = float(value)
+                stacked = not math.isfinite(numeric_tolerance) or numeric_tolerance != 0.0
             except (TypeError, ValueError):
                 stacked = True
             if stacked:
                 raise ValueError(
                     f"overview_quantum cannot be combined with creation option "
-                    f"MAX_Z_ERROR={value!r}: two lossy errors would stack"
+                    f"{key}={value!r}: require finite zero; two lossy errors would stack"
                 )
     if tolerance is not None:
         extra_options["MAX_Z_ERROR"] = tolerance

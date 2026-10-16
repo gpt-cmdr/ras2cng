@@ -1066,6 +1066,31 @@ def test_overview_quantum_is_refused_for_categorical_and_integer_rasters(tmp_pat
     assert not (tmp_path / "a.tif").exists() and not (tmp_path / "b.tif").exists()
 
 
+@pytest.mark.parametrize("key", ["MAX_Z_ERROR", "max_z_error", "MAX_Z_ERROR_OVERVIEW", "max_z_error_overview"])
+@pytest.mark.parametrize("value", [0.01, -1, float("nan"), float("inf"), -float("inf"), "junk", None])
+def test_overview_quantum_rejects_all_invalid_creation_tolerances(tmp_path: Path, key, value) -> None:
+    source, out = tmp_path / "source.tif", tmp_path / "refused.tif"
+    _flood_raster(source, height=32, width=32)
+    with pytest.raises(ValueError, match="creation option"):
+        area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=0.01, creation_options={key: value})
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("key", ["MAX_Z_ERROR", "max_z_error", "MAX_Z_ERROR_OVERVIEW", "max_z_error_overview"])
+def test_overview_quantum_allows_explicit_zero_tolerances(tmp_path: Path, key) -> None:
+    source, out = tmp_path / "source.tif", tmp_path / "zero.tif"
+    _flood_raster(source, height=32, width=32)
+    report = area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=0.01, creation_options={key: "0"})
+    assert out.is_file() and report.value_quantum == 0.01
+
+
+def test_none_quantum_retains_legacy_overview_tolerance_options(tmp_path: Path) -> None:
+    source, out = tmp_path / "source.tif", tmp_path / "legacy.tif"
+    _flood_raster(source, height=32, width=32)
+    report = area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=None, creation_options={"MAX_Z_ERROR_OVERVIEW": 0.01})
+    assert out.is_file() and report.value_quantum is None
+
+
 def test_overview_quantum_refuses_to_stack_a_lossy_tolerance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

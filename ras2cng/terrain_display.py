@@ -26,7 +26,10 @@ resampler; no value of it is inherently area-neutral.
 **Precision.**  Valid samples are rounded to the nearest 0.01 stored vertical
 unit *after* resampling, in the base level and in every embedded overview level
 (through ``cog.area_matched_cog(overview_quantum=...)``).  That is decimal
-quantization (error <= 0.005, plus a float32 representation term), and it is
+quantization: the base error is <= 0.005 plus float32 representation. Each
+overview has that bound relative to its aggregate of the *stored base*;
+relative to the corresponding original-source aggregate the conservative
+combined bound is 0.01 plus representation, not 0.005. This is
 deliberately **not** LERC ``MAX_Z_ERROR``: the encoder is always lossless over
 the already-rounded values, so no second lossy tolerance is layered on top.
 ``cog``'s lossy LERC default is explicitly switched off for every write.
@@ -273,8 +276,12 @@ class DisplayPolicy:
     def __post_init__(self) -> None:
         if not 0.0 < self.min_spacing_m <= self.target_spacing_m <= self.max_spacing_m:
             raise DisplayTerrainError("require 0 < min <= target <= max spacing")
-        inverse = 1.0 / self.increment if self.increment > 0 else 0.0
-        if not self.increment > 0 or not math.isclose(inverse, round(inverse), rel_tol=1e-9):
+        if not math.isfinite(self.increment) or self.increment <= 0:
+            raise DisplayTerrainError("increment must be finite and positive")
+        inverse = 1.0 / self.increment
+        if not math.isfinite(inverse):
+            raise DisplayTerrainError("increment reciprocal must be finite")
+        if not math.isclose(inverse, round(inverse), rel_tol=1e-9):
             raise DisplayTerrainError("increment must be 1/k for a positive integer k")
         if self.resampling not in {"average", "nearest"}:
             raise DisplayTerrainError("resampling must be 'average' or 'nearest'")
@@ -572,6 +579,10 @@ def plan_display_terrain(
     """
 
     policy = policy or DisplayPolicy()
+    if source.vertical_unit_declared is None and source.vertical_unit_embedded is None:
+        # A manually supplied mandatory vertical_unit is a declaration, never
+        # inferred from horizontal CRS. Freeze it before strict re-inspection.
+        source = replace(source, vertical_unit_declared=resolve_vertical_unit(source.vertical_unit))
     _check_source(source)
     factor, disposition = choose_factor(source.pixel_size_metres, policy)
     if source.width % factor or source.height % factor:
@@ -1028,6 +1039,8 @@ def validate_display_terrain(
                 errors.append("transform (origin / pixel size) differs from the plan")
             if src.count != 1 or src.dtypes[0] != "float32":
                 errors.append(f"expected one float32 band, found {src.count} x {src.dtypes[0]}")
+            if src.scales != (1.0,) or src.offsets != (0.0,):
+                errors.append(f"output scale/offset must be identity (1/0), found {src.scales}/{src.offsets}")
             if src.nodata is None or float(src.nodata) != plan.policy.output_nodata:
                 errors.append(f"nodata {src.nodata!r} differs from plan {plan.policy.output_nodata}")
             if src.profile.get("blockxsize") != _BLOCK or src.profile.get("blockysize") != _BLOCK:
