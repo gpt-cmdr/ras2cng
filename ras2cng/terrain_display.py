@@ -1078,8 +1078,8 @@ def validate_display_terrain(
             for start, count in _strips(src.height, rows):
                 block = src.read(1, window=Window(0, start, src.width, count))
                 valid = block != nodata
-                if np.isnan(block).any():
-                    errors.append("NaN present in base level")
+                if not np.isfinite(block).all():
+                    errors.append("non-finite value present in base level")
                     break
                 display_valid += int(valid.sum())
                 off_grid += off_grid_count(block, valid)

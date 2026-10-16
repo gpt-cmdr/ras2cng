@@ -71,6 +71,39 @@ def _sha(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf], ids=["nan", "positive-inf", "negative-inf"])
+def test_validate_rejects_nonfinite_base_with_preserved_cog_layout_and_tags(
+    tmp_path: Path, value: float
+) -> None:
+    source = _write_source(
+        tmp_path / "source.tif", np.full((24, 24), 123.45, dtype="float32"), pixel=3.0
+    )
+    plan = td.plan_display_terrain(td.inspect_source(source, vertical_unit="metre"))
+    good = tmp_path / "good.tif"
+    td.write_display_terrain(plan, source, good)
+    assert td.validate_display_terrain(plan, good, expected=None).valid
+
+    with rasterio.open(good) as original:
+        data, profile, tags, units = original.read(1), original.profile, original.tags(), original.units
+    data[1, 1] = value
+    profile.update(driver="GTiff")
+    mutated_base = tmp_path / "mutated-base.tif"
+    with rasterio.open(mutated_base, "w", **profile) as base:
+        base.write(data, 1)
+        base.update_tags(**tags)
+        base.units = units
+    # Re-encode the deliberately corrupted synthetic base through the existing
+    # writer, so layout damage or missing tags cannot explain a rejection.
+    corrupted = tmp_path / "corrupted.tif"
+    td._encode_cog(plan, mutated_base, corrupted, tmp_path)
+    with rasterio.open(corrupted) as result:
+        assert result.tags(ns="IMAGE_STRUCTURE")["LAYOUT"] == "COG"
+        assert all(result.tags().get(key) == val for key, val in tags.items())
+    verdict = td.validate_display_terrain(plan, corrupted, expected=None)
+    assert not verdict.valid
+    assert "non-finite value present in base level" in verdict.errors
+
+
 def test_bare_foot_is_ambiguous_and_never_inferred() -> None:
     with pytest.raises(td.UnitsError, match="international_foot or us_survey_foot"):
         td.resolve_vertical_unit("ft")
