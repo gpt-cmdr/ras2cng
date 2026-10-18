@@ -34,16 +34,16 @@ matter:
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 import math
 import os
-from pathlib import Path
 import tempfile
-from typing import Any, Iterator, Mapping, Sequence
 import uuid
 import warnings
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterator, Mapping, Sequence
 
 # --------------------------------------------------------------------------
 # Policy defaults
@@ -581,6 +581,8 @@ class OverviewReport:
     #: Set only for LERC.  Its presence is the record that the artifact is
     #: lossy and by how much.
     lossy_max_z_error: float | None = None
+    #: Explicit rounding step applied to continuous overview means, if any.
+    overview_rounding_step: float | None = None
 
     def as_tags(self) -> dict[str, str]:
         tags = {
@@ -598,9 +600,48 @@ class OverviewReport:
             tags["overview_area_ratios"] = ",".join(f"{r:.6f}" for r in self.area_ratios)
         if self.base_valid_pixels:
             tags["overview_base_valid_pixels"] = str(self.base_valid_pixels)
+        if self.overview_rounding_step is not None:
+            tags["overview_rounding_step"] = f"{self.overview_rounding_step:g}"
         if self.fallback_reason:
             tags["overview_fallback_reason"] = self.fallback_reason
         return tags
+
+
+def round_to_step(values: Any, step: float) -> Any:
+    """Round ``values`` half away from zero to a multiple of ``step``, as float64.
+
+    Ambiguous half-steps are resolved using the shortest round-trip decimal
+    representation of the input and step (``1.005`` -> ``1.01``). Decimal arithmetic
+    is used only within two scaled float64 ULPs of a half-step, never as a nudge
+    applied to all values. Finite scaled magnitudes above 2**50 are refused because
+    float64 cannot resolve the half-step reliably. Non-finite values stay non-finite.
+    ``step`` must be positive and finite.
+    """
+    import numpy as np
+
+    if isinstance(step, (bool, np.bool_)) or not (math.isfinite(step) and step > 0):
+        raise ValueError("round_step must be positive and finite")
+    array = np.asarray(values, dtype="float64")
+    with np.errstate(over="ignore", invalid="ignore"):
+        scaled = array / step
+    if np.any(np.isfinite(array) & (~np.isfinite(scaled) | (np.abs(scaled) > 2**50))):
+        raise ValueError("round_step is too small for the finite value magnitude")
+    magnitude = np.abs(scaled)
+    whole = np.floor(magnitude)
+    with np.errstate(invalid="ignore"):
+        fraction = magnitude - whole
+        result = np.asarray(np.sign(scaled) * (whole + (fraction >= 0.5)) * step)
+        ambiguous = np.isfinite(scaled) & (np.abs(fraction - 0.5) <= 2 * np.spacing(magnitude))
+    if np.any(ambiguous):
+        from decimal import ROUND_HALF_UP, Decimal, localcontext
+
+        with localcontext() as context:
+            context.prec = 50
+            decimal_step = Decimal(str(step))
+            for index in np.flatnonzero(ambiguous):
+                quotient = Decimal(str(float(array.flat[index]))) / decimal_step
+                result.flat[index] = float(quotient.to_integral_value(rounding=ROUND_HALF_UP) * decimal_step)
+    return result
 
 
 def _dither(indices, salt: int):
@@ -781,11 +822,16 @@ def build_area_matched_overviews(
     factors: Sequence[int],
     categorical: bool = False,
     band: int = 1,
+    round_step: float | None = None,
 ) -> tuple[list[Path], OverviewReport]:
     """Write one sidecar GeoTIFF per overview level, preserving wet area.
 
     Returns the level files in ascending-factor order along with a report of
     what was built, including the wet area each level actually reproduced.
+    ``round_step`` rounds each continuous floating-point overview mean half away
+    from zero to that step (for example 0.01), so overviews carry the same
+    explicit rounding as a rounded base level. It is ignored for categorical and
+    integer rasters, whose levels already hold source values.
     """
 
     import numpy as np
@@ -797,6 +843,8 @@ def build_area_matched_overviews(
     work_dir.mkdir(parents=True, exist_ok=True)
     method = "area_matched_mode" if categorical else "area_matched_mean"
     report = OverviewReport(method=method, factors=list(factors))
+    if round_step is not None and not (round_step > 0 and math.isfinite(round_step)):
+        raise ValueError(f"round_step must be a positive finite step, got {round_step!r}")
 
     with rasterio.open(source_path) as source:
         if source.nodata is None:
@@ -827,6 +875,8 @@ def build_area_matched_overviews(
         raise ValueError(f"Raster has no valid pixels: {source_path}")
 
     integral = np.dtype(dtype).kind in "iu"
+    rounding = None if categorical or integral else round_step
+    report.overview_rounding_step = rounding
     level_paths: list[Path] = []
 
     for index, factor in enumerate(factors):
@@ -845,6 +895,8 @@ def build_area_matched_overviews(
         else:
             with np.errstate(invalid="ignore", divide="ignore"):
                 means = np.where(weights > 0, sums / np.maximum(weights, 1), nodata)
+            if rounding is not None:
+                means = np.where(weights > 0, round_to_step(means, rounding), nodata)
             values = np.where(keep, means, nodata)
         if integral:
             values = np.rint(values)
@@ -942,6 +994,7 @@ def area_matched_cog(
     require_area_matched: bool = False,
     lerc_max_z_error: float | None = _USE_DEFAULT_LERC,
     creation_options: Mapping[str, Any] | None = None,
+    round_step: float | None = None,
 ) -> OverviewReport:
     """Write ``source_path`` to ``destination`` as a COG with correct overviews.
 
@@ -957,10 +1010,19 @@ def area_matched_cog(
     artifact's tags so the loss travels with the file.  Pass
     ``lerc_max_z_error=None`` (or set ``RAS2CNG_LERC_MAX_Z_ERROR=off``) for any
     raster whose values feed a downstream calculation rather than a map.
+
+    ``round_step`` rounds the area-matched overview means of a continuous
+    floating-point raster to that step (see :func:`build_area_matched_overviews`).
+    The base level is written as given: round it first when an explicit rounding
+    contract applies to every level. A GDAL fallback cannot round its overviews;
+    with ``round_step`` set its ``overview_fallback_reason`` tag says so, and
+    ``overview_rounding_step`` stays unset.
     """
 
     from rasterio.shutil import copy as copy_raster
 
+    if round_step is not None:
+        round_to_step([], round_step)
     source_path = Path(source_path)
     destination = Path(destination)
     if predictor is None:
@@ -1004,15 +1066,22 @@ def area_matched_cog(
         else:
             try:
                 level_paths, report = build_area_matched_overviews(
-                    source_path, work_dir, factors=factors, categorical=categorical
+                    source_path,
+                    work_dir,
+                    factors=factors,
+                    categorical=categorical,
+                    round_step=round_step,
                 )
             except (ValueError, MemoryError) as error:
                 if require_area_matched:
                     raise
+                reason = str(error)
+                if round_step is not None:
+                    reason += f"; overview rounding to {round_step:g} not applied"
                 report = OverviewReport(
                     method=fallback_resampling,
                     factors=list(factors),
-                    fallback_reason=str(error),
+                    fallback_reason=reason,
                 )
 
         report.compression = compress
