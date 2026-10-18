@@ -27,6 +27,7 @@ def write_depth_stack(
     flow_units: str | None = None,
     provenance: Mapping[str, str] | None = None,
     compression_level: int = 4,
+    include_source_hashes: bool = True,
 ) -> Path:
     """Write one atomic NetCDF4 depth catalog without modifying source rasters.
 
@@ -48,6 +49,8 @@ def write_depth_stack(
     centers, CRS/grid metadata, source SHA256 identities and display_derivative
     role. Chunking is (1,min(256,height),min(256,width)), with shuffle and standard
     deflate level 4 or 6. Existing targets are replaced only after success.
+    ``include_source_hashes=False`` omits private input identities from public
+    display files; hashes are still checked privately for source immutability.
     Source selection/completeness, units and hydraulic review remain caller
     responsibilities; the file never asserts approval.
     """
@@ -92,6 +95,8 @@ def write_depth_stack(
             raise ValueError(
                 "flows must be strictly monotonic; use profile indices for unordered discharge"
             )
+    if type(include_source_hashes) is not bool:
+        raise ValueError("include_source_hashes must be a boolean")
     public = dict(provenance or {})
     if any(
         not isinstance(k, str)
@@ -157,7 +162,8 @@ def write_depth_stack(
             output.schema = "ras2cng-depth-stack/v1"
             output.role = "display_derivative"
             output.provenance_json = json.dumps(public, sort_keys=True, allow_nan=False)
-            output.source_sha256_json = json.dumps(hashes)
+            if include_source_hashes:
+                output.source_sha256_json = json.dumps(hashes)
             output.createDimension("flow", len(paths))
             output.createDimension("y", height)
             output.createDimension("x", width)

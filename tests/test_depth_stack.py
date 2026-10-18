@@ -230,3 +230,23 @@ def test_nonfinite_grid_preserves_target(tmp_path, transform):
     with pytest.raises(ValueError, match="finite"):
         call([source], target)
     assert target.read_bytes() == b"previous-good"
+
+
+def test_public_display_omits_private_source_identities(tmp_path):
+    source = raster(tmp_path)
+    output = call(
+        [source],
+        tmp_path / "reach.nc",
+        include_source_hashes=False,
+        provenance={"producer": "public-writer", "role": "display_derivative"},
+    )
+    with Dataset(output) as nc:
+        assert "source_sha256_json" not in nc.ncattrs()
+        assert json.loads(nc.provenance_json) == {
+            "producer": "public-writer",
+            "role": "display_derivative",
+        }
+        assert nc.variables["depth"][0, 0, 0] == 0
+        assert nc.variables["depth"][0, 1, 1] is np.ma.masked
+    with pytest.raises(ValueError, match="boolean"):
+        call([source], output, include_source_hashes="false")

@@ -58,3 +58,5 @@ packaging. The caller owns selection lineage, vertical-unit provenance, public
 metadata safety, product review status, container execution and delivery receipts.
 
 Physical discharge coordinates must be strictly increasing or decreasing; they are never sorted. For duplicate or nonmonotonic physical discharge catalogs, omit flows, retain profile-index order, and carry actual discharges in the bound external catalog. All grid transform coefficients must be finite.
+
+For public display delivery, pass `include_source_hashes=False` and an explicitly allowlisted public provenance mapping. This omits input identities from the NetCDF while still checking them privately before and after conversion. The default `True` retains source hashes for archival consumers. Private paths, receipt/image identities and internal review notes must never be supplied as public provenance.
