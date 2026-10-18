@@ -42,6 +42,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+netcdf = ["netCDF4>=1.6.5", "rasterio>=1.3.0"]
 duckdb = [
   "duckdb>=1.0.0",
 ]
@@ -75,6 +76,7 @@ webgis = [
   "uvicorn[standard]>=0.34,<1",
 ]
 all = [
+  "netCDF4>=1.6.5",
   "duckdb>=1.0.0",
   "sqlalchemy>=2.0.0",
   "geoalchemy2>=0.14.0",
