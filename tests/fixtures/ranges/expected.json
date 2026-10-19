@@ -1,0 +1,266 @@
+{
+ "fixture": "tiny-depth-stack.nc",
+ "formula": "value(k,r,c) = float32((((7*r + 3*c + 11*k) % 41) - 10) * 0.25); then NaN where (r < 40 and c < 50) or (r + c + k) % 17 == 0; then 0.0 where 100 <= r < 110 and c < 20",
+ "profiles": [
+  "p03-low",
+  "p01-mid",
+  "p02-high"
+ ],
+ "axis_semantics": "profile_index",
+ "units": "ft",
+ "crs": "EPSG:3857",
+ "width": 270,
+ "height": 260,
+ "geotransform": [
+  -10855000.0,
+  3.0,
+  0.0,
+  3511600.0,
+  0.0,
+  -3.0
+ ],
+ "chunk_shape": [
+  1,
+  256,
+  256
+ ],
+ "edge_chunks": "chunk rows/cols 1 hold 4 rows / 14 cols of valid data; stored chunks are full 256x256",
+ "nan_count": [
+  5998,
+  5999,
+  6000
+ ],
+ "zero_count": [
+  1761,
+  1760,
+  1761
+ ],
+ "negative_count": [
+  15615,
+  15612,
+  15612
+ ],
+ "plane_sha256_float32le": [
+  "511d76fde75e7fed61fc254e7f1b244414a249e1746321c0710d67e9f8c82354",
+  "fa95fbafcc390a2112005f8eb22081a0616ddcf7bcf159f4db64ee556a680389",
+  "989a107f90afbe12d7ddc1dc733d9ea4c6303414ea9735054139e6c7dc36a8a4"
+ ],
+ "samples": [
+  {
+   "profile": 0,
+   "row": 0,
+   "col": 0,
+   "value": null
+  },
+  {
+   "profile": 0,
+   "row": 0,
+   "col": 269,
+   "value": 4.5
+  },
+  {
+   "profile": 0,
+   "row": 259,
+   "col": 0,
+   "value": -0.25
+  },
+  {
+   "profile": 0,
+   "row": 259,
+   "col": 269,
+   "value": 6.75
+  },
+  {
+   "profile": 0,
+   "row": 255,
+   "col": 255,
+   "value": null
+  },
+  {
+   "profile": 0,
+   "row": 256,
+   "col": 256,
+   "value": 2.0
+  },
+  {
+   "profile": 0,
+   "row": 255,
+   "col": 256,
+   "value": 0.25
+  },
+  {
+   "profile": 0,
+   "row": 256,
+   "col": 255,
+   "value": 1.25
+  },
+  {
+   "profile": 0,
+   "row": 100,
+   "col": 5,
+   "value": 0.0
+  },
+  {
+   "profile": 0,
+   "row": 39,
+   "col": 49,
+   "value": null
+  },
+  {
+   "profile": 0,
+   "row": 40,
+   "col": 50,
+   "value": 2.5
+  },
+  {
+   "profile": 0,
+   "row": 150,
+   "col": 150,
+   "value": 3.5
+  },
+  {
+   "profile": 1,
+   "row": 0,
+   "col": 0,
+   "value": null
+  },
+  {
+   "profile": 1,
+   "row": 0,
+   "col": 269,
+   "value": 7.25
+  },
+  {
+   "profile": 1,
+   "row": 259,
+   "col": 0,
+   "value": 2.5
+  },
+  {
+   "profile": 1,
+   "row": 259,
+   "col": 269,
+   "value": -0.75
+  },
+  {
+   "profile": 1,
+   "row": 255,
+   "col": 255,
+   "value": 2.25
+  },
+  {
+   "profile": 1,
+   "row": 256,
+   "col": 256,
+   "value": 4.75
+  },
+  {
+   "profile": 1,
+   "row": 255,
+   "col": 256,
+   "value": 3.0
+  },
+  {
+   "profile": 1,
+   "row": 256,
+   "col": 255,
+   "value": 4.0
+  },
+  {
+   "profile": 1,
+   "row": 100,
+   "col": 5,
+   "value": 0.0
+  },
+  {
+   "profile": 1,
+   "row": 39,
+   "col": 49,
+   "value": null
+  },
+  {
+   "profile": 1,
+   "row": 40,
+   "col": 50,
+   "value": 5.25
+  },
+  {
+   "profile": 1,
+   "row": 150,
+   "col": 150,
+   "value": 6.25
+  },
+  {
+   "profile": 2,
+   "row": 0,
+   "col": 0,
+   "value": null
+  },
+  {
+   "profile": 2,
+   "row": 0,
+   "col": 269,
+   "value": -0.25
+  },
+  {
+   "profile": 2,
+   "row": 259,
+   "col": 0,
+   "value": 5.25
+  },
+  {
+   "profile": 2,
+   "row": 259,
+   "col": 269,
+   "value": 2.0
+  },
+  {
+   "profile": 2,
+   "row": 255,
+   "col": 255,
+   "value": 5.0
+  },
+  {
+   "profile": 2,
+   "row": 256,
+   "col": 256,
+   "value": 7.5
+  },
+  {
+   "profile": 2,
+   "row": 255,
+   "col": 256,
+   "value": 5.75
+  },
+  {
+   "profile": 2,
+   "row": 256,
+   "col": 255,
+   "value": 6.75
+  },
+  {
+   "profile": 2,
+   "row": 100,
+   "col": 5,
+   "value": 0.0
+  },
+  {
+   "profile": 2,
+   "row": 39,
+   "col": 49,
+   "value": null
+  },
+  {
+   "profile": 2,
+   "row": 40,
+   "col": 50,
+   "value": -2.25
+  },
+  {
+   "profile": 2,
+   "row": 150,
+   "col": 150,
+   "value": -1.25
+  }
+ ]
+}

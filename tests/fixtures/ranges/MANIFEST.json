@@ -1,0 +1,14 @@
+{
+ "tiny-depth-stack.nc": {
+  "bytes": 58126,
+  "sha256": "13dd6f107a499f573be50602b0efaa59e73d6a66c899ec27e0c9aaeb49cc7264"
+ },
+ "tiny-depth-stack.ranges.json": {
+  "bytes": 991,
+  "sha256": "78fc8fb1316d7e94dec8e145321cc5fa55228e811e08ac975a50da8694284871"
+ },
+ "expected.json": {
+  "bytes": 3581,
+  "sha256": "9038439b6b33fc0ee7aeb240835c947859a65ca6a44b70ca72d3deb6013cd9ce"
+ }
+}
