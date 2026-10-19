@@ -1,0 +1,3 @@
+# Fixture hashes are raw bytes and must survive Windows checkouts.
+tests/fixtures/ranges/*.json text eol=lf
+tests/fixtures/ranges/*.nc binary
