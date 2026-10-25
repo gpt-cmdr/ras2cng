@@ -201,6 +201,13 @@ def rate_stack_index(path: str | Path) -> dict:
             if name not in hdf:
                 continue
             dataset = hdf[name]
+            if set(dataset.attrs) & {
+                "scale_factor",
+                "add_offset",
+                "_Unsigned",
+                "missing_value",
+            }:
+                raise ValueError("unsupported quantity decoding attributes")
             if (
                 dataset.shape != shape
                 or dataset.chunks != (1, min(256, shape[1]), min(256, shape[2]))
