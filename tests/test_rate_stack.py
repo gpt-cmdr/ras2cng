@@ -116,7 +116,7 @@ def test_native_cell_scalars(tmp_path):
         np.testing.assert_array_equal(src.read(1), [[2, 3, 3], [2, 3, 3]])
 
 
-@pytest.mark.parametrize("mutation", ["rate", "empty", "units", "filters"])
+@pytest.mark.parametrize("mutation", ["rate", "empty", "units", "filters", "scale"])
 def test_index_rejects_incompatible_layouts(tmp_path, mutation):
     import h5py
 
@@ -134,6 +134,8 @@ def test_index_rejects_incompatible_layouts(tmp_path, mutation):
             del hdf["depth"]
         elif mutation == "units":
             hdf["depth"].attrs["units"] = "m"
+        elif mutation == "scale":
+            hdf["depth"].attrs["scale_factor"] = 2.0
         else:
             del hdf["depth"]
             hdf.create_dataset(
