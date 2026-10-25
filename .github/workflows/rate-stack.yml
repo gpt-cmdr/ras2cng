@@ -1,0 +1,19 @@
+name: Rate stack contract
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - ras2cng/rate_stack.py
+      - tests/test_rate_stack.py
+      - .github/workflows/rate-stack.yml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install '.[netcdf,pmtiles]' pytest
+      - run: pytest -q tests/test_rate_stack.py
