@@ -476,8 +476,26 @@ def export_project_metadata(ras, output_path: Path) -> None:
         return
 
     merged = pd.concat(all_dfs, ignore_index=True)
+    # RasPrj frames carry dict/list cells (ras-commander 0.110: rasmap_df's
+    # ``rasmap_field_errors``, usually ``{}``).  An empty dict infers as a
+    # struct with no fields, which Parquet cannot store, and the failed write
+    # used to leave a 0-byte file.  Store such cells as JSON text.
+    for column in merged.columns[merged.dtypes == object]:
+        values = merged[column]
+        if values.map(lambda v: isinstance(v, (dict, list, tuple, set))).any():
+            merged[column] = values.map(_json_cell)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_parquet(output_path, compression="zstd", index=False)
+    from ras2cng.cog import atomic_output
+
+    with atomic_output(output_path, suffix=".parquet") as staged:
+        merged.to_parquet(staged, compression="zstd", index=False)
+
+
+def _json_cell(value):
+    """JSON text for container cells; other values (incl. missing) unchanged."""
+    if isinstance(value, (dict, list, tuple, set)):
+        return json.dumps(sorted(value) if isinstance(value, set) else value, default=str)
+    return value
 
 
 # ---------------------------------------------------------------------------

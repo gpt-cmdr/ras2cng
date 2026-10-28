@@ -75,7 +75,7 @@ DATAFRAME_SCHEMAS = {
         "archive_columns": ARCHIVE_GEOPARQUET_COLUMNS,
     },
     "project_metadata": {
-        "description": "Union of ras-commander project DataFrames written to project metadata Parquet.",
+        "description": "Union of ras-commander project DataFrames written to project metadata Parquet. Cells holding dicts, lists or sets are stored as JSON text.",
         "accessor": "archive_project(...) output <project>.parquet",
         "source": "ras2cng.project.export_project_metadata",
         "extra_columns": True,

@@ -958,3 +958,25 @@ def test_archive_accepts_new_flags(mock_init, mock_merge, tmp_path):
 
     assert manifest is not None
     assert (tmp_path / "out" / "manifest.json").exists()
+
+
+def test_project_metadata_stores_container_cells_as_json(tmp_path):
+    """An empty-dict column (ras-commander rasmap_df) used to leave a 0-byte file."""
+    import json as _json
+    from types import SimpleNamespace
+
+    import pandas as _pd
+
+    from ras2cng.project import export_project_metadata
+
+    ras = SimpleNamespace(
+        plan_df=_pd.DataFrame({"plan_number": ["01"]}),
+        rasmap_df=_pd.DataFrame({"name": ["x"], "rasmap_field_errors": [{}], "tags": [["a", "b"]]}),
+    )
+    out = tmp_path / "meta.parquet"
+    export_project_metadata(ras, out)
+    frame = _pd.read_parquet(out)
+    row = frame[frame["_table"] == "rasmap_df"].iloc[0]
+    assert _json.loads(row["rasmap_field_errors"]) == {}
+    assert _json.loads(row["tags"]) == ["a", "b"]
+    assert frame[frame["_table"] == "plan_df"]["plan_number"].tolist() == ["01"]
