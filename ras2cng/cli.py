@@ -1301,7 +1301,28 @@ def map_command(
     ),
     fast_map_terrain_hdf: Optional[Path] = typer.Option(
         None, "--fast-map-terrain-hdf",
-        help="Original single-source terrain HDF for Rust boundaries (default: the plan's terrain)",
+        help="Original terrain HDF for Rust boundaries and source-terrain mapping (default: the plan's terrain)",
+    ),
+    fast_map_source_terrain: bool = typer.Option(
+        True, "--fast-map-source-terrain/--no-fast-map-source-terrain",
+        help=(
+            "With --engine fast-map, map on the terrain's priority-1 source TIFF "
+            "and skip the RAS Mapper terrain export when the engine accepts it"
+        ),
+    ),
+    fast_map_whole_simulation: bool = typer.Option(
+        True, "--fast-map-whole-simulation/--no-fast-map-whole-simulation",
+        help=(
+            "With --engine fast-map, map --arrival-time and --percent-inundated in Rust "
+            "(threshold --arrival-depth; duration stays on RAS Mapper)"
+        ),
+    ),
+    fast_map_velocity: bool = typer.Option(
+        False, "--fast-map-velocity",
+        help=(
+            "Opt-in: with --engine fast-map in plain sloping mode, map Max velocity in Rust "
+            "(values match RAS Mapper; the drawn mask can differ at a few edge pixels)"
+        ),
     ),
     fast_map_fallback: bool = typer.Option(
         True, "--fast-map-fallback/--fast-map-strict",
@@ -1313,11 +1334,13 @@ def map_command(
     Renders completed plan results to GeoTIFF rasters using the HEC-RAS
     mapping engine via RasStoreMapHelper.exe (bundled with ras-commander).
 
-    With --engine fast-map, WSE and Depth for 2D-only models are mapped by the
-    Rust ras-commander-fast-map engine instead. It is faster than RAS Mapper
-    and matched RAS Mapper 7.0.1 bit for bit in ras-commander's comparisons.
-    Models with 1D reaches or cross sections, non-Max profiles and the other
-    map types still go through RAS Mapper.
+    With --engine fast-map, pure 2D models (the FIM library scope, not every
+    model type) are mapped by the Rust ras-commander-fast-map engine: Max WSE
+    and Depth, plus arrival time and percent inundated, qualified against
+    RAS Mapper 7.0.1 stored maps (identical pixels on the named models). It
+    maps on the terrain's priority-1 source TIFF when it can, skipping the
+    terrain export. Models with 1D reaches, cross sections or storage areas,
+    non-Max profiles and the other map types still go through RAS Mapper.
 
     With --engine fast-map and --inundation-boundary, the boundary is also
     mapped in Rust (recommended: RAS Mapper's boundary export is very slow).
@@ -1370,6 +1393,9 @@ def map_command(
             fast_map_memory_mib=fast_map_memory_mib,
             fast_map_boundary=fast_map_boundary,
             fast_map_terrain_hdf=fast_map_terrain_hdf,
+            fast_map_source_terrain=fast_map_source_terrain,
+            fast_map_whole_simulation=fast_map_whole_simulation,
+            fast_map_velocity=fast_map_velocity,
             fast_map_fallback=fast_map_fallback,
         )
     except Exception as e:
@@ -1485,7 +1511,28 @@ def map_hdf_command(
     ),
     fast_map_terrain_hdf: Optional[Path] = typer.Option(
         None, "--fast-map-terrain-hdf",
-        help="Original single-source terrain HDF for Rust boundaries (default: the plan's terrain)",
+        help="Original terrain HDF for Rust boundaries and source-terrain mapping (default: the plan's terrain)",
+    ),
+    fast_map_source_terrain: bool = typer.Option(
+        True, "--fast-map-source-terrain/--no-fast-map-source-terrain",
+        help=(
+            "With --engine fast-map, map on the terrain's priority-1 source TIFF "
+            "and skip the RAS Mapper terrain export when the engine accepts it"
+        ),
+    ),
+    fast_map_whole_simulation: bool = typer.Option(
+        True, "--fast-map-whole-simulation/--no-fast-map-whole-simulation",
+        help=(
+            "With --engine fast-map, map --arrival-time and --percent-inundated in Rust "
+            "(threshold --arrival-depth; duration stays on RAS Mapper)"
+        ),
+    ),
+    fast_map_velocity: bool = typer.Option(
+        False, "--fast-map-velocity",
+        help=(
+            "Opt-in: with --engine fast-map in plain sloping mode, map Max velocity in Rust "
+            "(values match RAS Mapper; the drawn mask can differ at a few edge pixels)"
+        ),
     ),
     fast_map_fallback: bool = typer.Option(
         True, "--fast-map-fallback/--fast-map-strict",
@@ -1582,6 +1629,9 @@ def map_hdf_command(
             fast_map_memory_mib=fast_map_memory_mib,
             fast_map_boundary=fast_map_boundary,
             fast_map_terrain_hdf=fast_map_terrain_hdf or terrain_hdf,
+            fast_map_source_terrain=fast_map_source_terrain,
+            fast_map_whole_simulation=fast_map_whole_simulation,
+            fast_map_velocity=fast_map_velocity,
             fast_map_fallback=fast_map_fallback,
         )
     except Exception as e:

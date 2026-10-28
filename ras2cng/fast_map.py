@@ -2,26 +2,40 @@
 
 ``ras2cng map`` renders result rasters through RAS Mapper
 (``RasStoreMapHelper.exe``) by default. ``map_engine="fast-map"`` instead maps
-WSE and Depth through ``RasFim`` and the native Rust ``ras2fim-batch`` engine
-from ``ras-commander-fast-map``. On 2D-only models this is faster than RAS
-Mapper. ras-commander's comparisons against native RAS Mapper 7.0.1 found
-identical float32 values and validity masks on five eBFE / example models,
-1.2-3.6x faster for horizontal and plain sloping, and 1.8-7.3x for
-depth-weighted sloping faces. See
-https://rascommander.info/ras/development/fim-mapping-performance/.
+the products below through ``RasFim`` and the native Rust ``ras2fim-batch``
+engine from ``ras-commander-fast-map``.
 
-Scope. Everything outside it falls back to RAS Mapper unless fallback is
-disabled:
+**Scope: pure 2D models, built for FIM library creation, not general use
+across all model types.** Every product here is qualified against RAS Mapper
+output: pixel conformance against native HEC-RAS 7.0.1 stored maps on the
+named models. Everything outside the scope (1D reaches or cross sections,
+storage areas, non-Max profiles, unqualified products) falls back to RAS
+Mapper per product group, with the reason printed, unless fallback is
+disabled (``--fast-map-strict``). ``MapResult.engines`` records which engine
+produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
 
 * **Pure 2D models.** ``RasFim.validate_2d_model`` rejects any model with 1D
-  river reaches or cross sections. ras2cng also sends models with storage
-  areas to RAS Mapper: fast-map does not render storage-area surfaces, so its
-  map would leave them blank. (Checked on a Bald Eagle dam-break plan: inside
-  the 2D mesh every pixel matched RAS Mapper bit for bit, and the only
-  difference was the 466,912 storage-area pixels RAS Mapper drew.) Pipe
-  networks are permitted.
-* **WSE and Depth, Max profile.** Velocity, Froude, arrival time, and the
-  other map types always go through RAS Mapper.
+  river reaches or cross sections. Models with storage areas also go to RAS
+  Mapper: fast-map does not render storage-area surfaces. (On a Bald Eagle
+  dam-break plan every 2D-mesh pixel matched RAS Mapper and only the 466,912
+  storage-area pixels differed.) Pipe networks are permitted.
+* **WSE and Depth, Max profile.** ras-commander's comparison found identical
+  float32 values and masks on five eBFE / example models, 1.2-7.3x faster.
+  Render modes ``horizontal``, ``sloping`` and ``slopingPretty`` (with the
+  project's shallow-to-horizontal and depth-weighting flags; depth weighting
+  needs stored corner elevations).
+* **Arrival time and percent time inundated** (fast-map #12, ras-commander
+  #724). Wet means depth > ``arrival_depth``; arrival time is in hours since
+  the simulation start. Identical to RAS Mapper on Davis p02 and Bald Eagle
+  bridges p05 at 0.5 ft, in horizontal and plain sloping (RAS Mapper draws
+  them the same in both). Named as RAS Mapper names them
+  (``Arrival Time (0.5ft hrs).tif``). Duration stays on RAS Mapper (the
+  engine marks it unqualified). ``fast_map_whole_simulation=False`` keeps
+  them on RAS Mapper.
+* **Velocity, Max, plain sloping, opt-in** (``fast_map_velocity=True``;
+  fast-map #13). Values match RAS Mapper on every common pixel, but on Bald
+  Eagle bridges p05 about 2,000 of 973,000 pixels differ in the drawn mask,
+  so it is off by default.
 * **Inundation boundary, Max profile** (``RasFim.map_inundation_boundaries``,
   ras-commander PR #709 / fast-map PR #5). RAS Mapper's boundary export is
   very slow; on Davis the Rust batch took 3.5 s against 85 s for two native
@@ -29,18 +43,18 @@ disabled:
   (``deterministic-zero-depth-contours/1``), not vector parity: polygons
   differ slightly from RAS Mapper's, whose own polygons vary between
   identical exports. Horizontal and plain sloping only, and it needs the
-  original **single-source, unmodified** terrain TIFF plus its terrain HDF
-  (not the export used for rasters). Multi-source terrains fall back.
+  original **single-source, unmodified** terrain TIFF plus its terrain HDF.
   ``fast_map_boundary=False`` keeps boundaries on RAS Mapper.
-* **Render modes.** ``horizontal`` (cell-constant), ``sloping`` (cell
-  corners), and ``slopingPretty`` (cell faces, with the project's
-  shallow-to-horizontal and depth-weighting flags). Depth weighting needs
-  stored corner ground elevations; without them the plan falls back.
-* **Terrain.** One float32 GeoTIFF of the exact registered terrain, with
-  modifications applied. Supply ``fast_map_terrain`` to reuse an export.
-  Otherwise ras2cng exports the plan's terrain once per run through RAS
-  Mapper (``RasTerrain.export_rasmapper_terrain``), so this step still needs
-  HEC-RAS (Windows or Wine). The published speed-ups exclude that export.
+* **Terrain** (:class:`TerrainResolver`, :func:`with_terrain`). A supplied
+  ``fast_map_terrain`` (a float32 export of the registered terrain, with
+  modifications) is used as is. Otherwise, when ras-commander has
+  ``RasFim.top_priority_terrain_source`` (fast-map #11), the products are
+  mapped on the terrain's unmodified **priority-1 source TIFF** with its
+  terrain-HDF footprint mask, skipping the RAS Mapper terrain export (about
+  190-240 s on Bald Eagle). The engine refuses when a wet cell would draw
+  outside that footprint; a CRS refusal retries on the source's
+  CRS-canonical copy, and any other refusal falls back to the export, which
+  needs HEC-RAS (Windows or Wine). The export is made once per run.
 """
 
 from __future__ import annotations
@@ -62,6 +76,20 @@ MAP_ENGINE_ENV = "RAS2CNG_MAP_ENGINE"
 FAST_MAP_RASTER_TYPES = ("wse", "depth")
 FAST_MAP_BOUNDARY = "inundation_boundary"
 FAST_MAP_TYPES = FAST_MAP_RASTER_TYPES + (FAST_MAP_BOUNDARY,)
+# Whole-simulation products qualified against RAS Mapper (fast-map #12).
+# Duration stays on RAS Mapper: the engine marks it unqualified.
+FAST_MAP_WHOLE_SIMULATION_TYPES = ("arrival_time", "percent_inundated")
+FAST_MAP_WHOLE_SIMULATION_RENDER_MODES = ("horizontal", "sloping")
+# Velocity (fast-map #13) is opt-in: plain sloping only, and on Bald Eagle
+# bridges p05 Max its mask differs from RAS Mapper's on ~2,000 of 973,000
+# pixels although every common value is identical.
+FAST_MAP_VELOCITY = "velocity"
+FAST_MAP_WHOLE_SIMULATION_MANIFEST = "fast_map_whole_simulation_manifest.json"
+# How fast-map got its terrain, recorded per product in MapResult.fast_map_terrain.
+TERRAIN_SUPPLIED = "supplied"
+TERRAIN_SOURCE = "source"
+TERRAIN_SOURCE_CANONICAL = "source-canonical"
+TERRAIN_EXPORT = "export"
 FAST_MAP_RENDER_MODES = ("horizontal", "sloping", "slopingPretty")
 # Deterministic contours support horizontal and plain cell-corner sloping only.
 FAST_MAP_BOUNDARY_RENDER_MODES = ("horizontal", "sloping")
@@ -193,6 +221,50 @@ def boundary_supported() -> bool:
     return callable(getattr(RasFim, "map_inundation_boundaries", None))
 
 
+def _has_kwargs(function: Any, *names: str) -> bool:
+    import inspect
+
+    try:
+        parameters = inspect.signature(function).parameters
+    except (TypeError, ValueError):
+        return False
+    return all(name in parameters for name in names)
+
+
+def source_terrain_supported() -> bool:
+    """True when RasFim maps on the priority-1 source TIFF (ras-commander #724).
+
+    That skips the RAS Mapper terrain export (about 190-240 s on Bald Eagle)
+    wherever every mapped pixel of a wet cell lies inside that source's
+    footprint (fast-map #11); otherwise the engine refuses and ras2cng exports.
+    """
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    return callable(getattr(RasFim, "top_priority_terrain_source", None)) and _has_kwargs(
+        RasFim.map_sloping_profiles, "terrain_hdf"
+    ) and _has_kwargs(RasFim.map_horizontal_profiles, "terrain_hdf")
+
+
+def whole_simulation_supported() -> bool:
+    """True when RasFim maps arrival time / percent inundated (fast-map #12)."""
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    return callable(getattr(RasFim, "map_whole_simulation", None))
+
+
+def velocity_supported() -> bool:
+    """True when RasFim renders velocity in sloping requests (fast-map #13)."""
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    return _has_kwargs(RasFim.map_sloping_profiles, "velocity")
+
+
 def plan_terrain_hdf(plan_hdf: Path, project_dir: Path) -> Optional[Path]:
     """Return the terrain HDF the plan's geometry was computed against."""
     import h5py
@@ -256,6 +328,11 @@ class TerrainResolver:
         self.terrain_path = Path(terrain_path) if terrain_path is not None else None
         self.terrain_name = terrain_name
         self._exported: dict[Optional[str], Path] = {}
+        self._sources: dict[tuple[str, str], Any] = {}
+        #: Why cheaper terrain candidates were skipped, for the console/manifest.
+        self.notes: list[str] = []
+        #: The engine's last refusal, which decides the next candidate.
+        self.last_refusal: Optional[str] = None
 
     def for_plan(self, plan_hdf: Path) -> Path:
         if self.terrain_path is not None:
@@ -280,6 +357,81 @@ class TerrainResolver:
             ) from exc
         self._exported[name] = Path(exported)
         return self._exported[name]
+
+    def candidates(self, plan_hdf: Path, *, use_source: bool = True):
+        """Yield ``(kind, terrain_tif, terrain_hdf_or_None)`` cheapest first.
+
+        A supplied terrain is the only candidate. Otherwise, when RasFim can
+        map on the priority-1 source TIFF: that TIFF, then its CRS-canonical
+        copy (the engine refuses some original CRS definitions, e.g. Davis),
+        then the RAS Mapper export. The copy is only tried after a CRS refusal
+        (``last_refusal``). Each later candidate is only built when
+        the caller asks for it, i.e. after the previous one was refused.
+        """
+        if self.terrain_path is not None:
+            yield TERRAIN_SUPPLIED, self.for_plan(plan_hdf), None
+            return
+        if use_source and source_terrain_supported():
+            source = self._source(plan_hdf)
+            if source is not None:
+                tif, hdf = source
+                yield TERRAIN_SOURCE, tif, hdf
+                # Only a CRS refusal is cured by the canonical copy; any other
+                # (e.g. a wet cell drawing outside the source) goes to export.
+                if "crs" in (self.last_refusal or "").lower():
+                    canonical = self._canonical(tif)
+                    if canonical is not None:
+                        yield TERRAIN_SOURCE_CANONICAL, canonical, hdf
+        yield TERRAIN_EXPORT, self.for_plan(plan_hdf), None
+
+    def _terrain_hdf_for(self, plan_hdf: Path) -> Optional[Path]:
+        from ras2cng.terrain import discover_terrains
+
+        hdf = self.terrain_hdf
+        if hdf is None and self.terrain_name:
+            for info in discover_terrains(self.prj_file.parent):
+                if info.name == self.terrain_name and info.hdf_path is not None:
+                    hdf = Path(info.hdf_path)
+                    break
+        if hdf is None:
+            hdf = plan_terrain_hdf(plan_hdf, self.prj_file.parent)
+        return Path(hdf) if hdf is not None and Path(hdf).is_file() else None
+
+    def _source(self, plan_hdf: Path) -> Optional[tuple[Path, Path]]:
+        """The unmodified priority-1 source TIFF and its terrain HDF, or None."""
+        hdf = self._terrain_hdf_for(plan_hdf)
+        if hdf is None:
+            return None
+        key = ("source", str(hdf))
+        if key not in self._sources:
+            from ras_commander import RasFim
+            from ras_commander.fim.errors import FimUnsupportedError
+
+            rasmap = self.prj_file.with_suffix(".rasmap")
+            try:
+                info = RasFim.top_priority_terrain_source(
+                    hdf, rasmap_path=rasmap if rasmap.is_file() else None
+                )
+                usable = not info.get("modified") and Path(info["tif"]).is_file()
+                self._sources[key] = (Path(info["tif"]), hdf) if usable else None
+            except (FimUnsupportedError, OSError, KeyError) as exc:
+                self.notes.append(f"priority-1 terrain source unusable: {exc}")
+                self._sources[key] = None
+        return self._sources[key]
+
+    def _canonical(self, tif: Path) -> Optional[Path]:
+        key = ("canonical", str(tif))
+        if key not in self._sources:
+            from ras_commander import RasFim
+
+            target = self.work_dir / f"{_slug(tif.stem)}.canonical.tif"
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                self._sources[key] = Path(RasFim.canonicalize_terrain_crs(tif, target))
+            except Exception as exc:
+                self.notes.append(f"CRS-canonical copy of {tif.name} failed: {exc}")
+                self._sources[key] = None
+        return self._sources[key]
 
     def boundary_terrain(self, plan_hdf: Path) -> tuple[Path, Path]:
         """Return the original single-source ``(terrain TIFF, terrain HDF)``.
@@ -313,6 +465,54 @@ class TerrainResolver:
         return tifs[0], Path(hdf)
 
 
+def with_terrain(
+    resolver: "TerrainResolver",
+    plan_hdf: Path,
+    run,
+    *,
+    use_source: bool = True,
+) -> tuple[Any, str]:
+    """Call ``run(terrain_tif, terrain_hdf)`` on each terrain candidate in turn.
+
+    Returns ``(run's result, terrain kind)``. A candidate the engine refuses
+    (:class:`FastMapUnavailable`) moves on to the next one, ending with the
+    RAS Mapper export; the reasons are kept in ``resolver.notes``. Other
+    errors propagate.
+    """
+    resolver.last_refusal = None
+    candidates = resolver.candidates(plan_hdf, use_source=use_source)
+    last: Optional[FastMapUnavailable] = None
+    while True:
+        try:
+            kind, tif, terrain_hdf = next(candidates)
+        except StopIteration:
+            break
+        except FastMapUnavailable as exc:  # the export itself failed
+            last = exc
+            break
+        try:
+            return run(tif, terrain_hdf, kind), kind
+        except FastMapUnavailable as exc:
+            resolver.notes.append(f"{kind} terrain refused: {exc}")
+            resolver.last_refusal = str(exc)
+            last = exc
+    raise last or FastMapUnavailable("no terrain available for fast-map")
+
+
+def plan_units(plan_hdf: Path) -> str:
+    """``ft`` or ``m``, as RAS Mapper labels whole-simulation products."""
+    import h5py
+
+    try:
+        with h5py.File(plan_hdf, "r") as hdf:
+            value = hdf.attrs.get("Units System", b"US Customary")
+    except OSError:
+        value = b"US Customary"
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return "m" if "SI" in str(value) else "ft"
+
+
 def map_plan(
     plan_hdf: Path,
     terrain_tif: Path,
@@ -325,6 +525,9 @@ def map_plan(
     writer_threads: int = 2,
     timeout: Optional[float] = None,
     max_working_mib: Optional[int] = None,
+    terrain_hdf: Optional[Path] = None,
+    velocity: bool = False,
+    terrain_kind: Optional[str] = None,
 ) -> dict[str, list[Path]]:
     """Map one plan's Max WSE/Depth with the Rust engine into ``output_dir``.
 
@@ -335,6 +538,14 @@ def map_plan(
     engine failures propagate.
     """
     requested = [name for name in map_types if name in FAST_MAP_RASTER_TYPES]
+    # Velocity is opt-in and plain sloping only; anything else leaves it to
+    # RAS Mapper without affecting WSE/Depth.
+    want_velocity = bool(
+        velocity and FAST_MAP_VELOCITY in map_types and render["mode"] == "sloping"
+        and velocity_supported()
+    )
+    if want_velocity:
+        requested.append(FAST_MAP_VELOCITY)
     if not requested:
         return {}
     if profile != "Max":
@@ -369,9 +580,10 @@ def map_plan(
                 cells = RasFim.get_cells_from_plan_hdf(
                     plan_hdf, mesh_name="*", profile_name="wsel_max",
                 )
+                scope = {"terrain_hdf": terrain_hdf} if terrain_hdf is not None else {}
                 manifest = RasFim.map_horizontal_profiles(
                     cells, terrain_tif, work, profiles=["wsel_max"],
-                    hdf_path=plan_hdf, **common,
+                    hdf_path=plan_hdf, **scope, **common,
                 )
             else:
                 pretty = render["mode"] == "slopingPretty"
@@ -381,6 +593,8 @@ def map_plan(
                     render_mode=render["mode"],
                     reduce_shallow_to_horizontal=pretty and render["reduce_shallow_to_horizontal"],
                     use_depth_weighted_faces=pretty and render["use_depth_weighted_faces"],
+                    **({"terrain_hdf": terrain_hdf} if terrain_hdf is not None else {}),
+                    **({"velocity": True} if want_velocity else {}),
                     **common,
                 )
         except FimUnsupportedError as exc:
@@ -390,8 +604,12 @@ def map_plan(
         if row["status"] not in _COMPLETE_STATUSES:
             raise RuntimeError(f"fast-map {row['status']}: {row.get('error')}")
 
-        products = {"wse": row.get("wse_tif"), "depth": row.get("depth_tif")}
-        labels = {"wse": "WSE", "depth": "Depth"}
+        products = {
+            "wse": row.get("wse_tif"),
+            "depth": row.get("depth_tif"),
+            FAST_MAP_VELOCITY: row.get("velocity_tif"),
+        }
+        labels = {"wse": "WSE", "depth": "Depth", FAST_MAP_VELOCITY: "Velocity"}
         result: dict[str, list[Path]] = {}
         for name in requested:
             source = products.get(name)
@@ -407,12 +625,132 @@ def map_plan(
             details["ras2cng"] = {
                 "plan_hdf": str(plan_hdf),
                 "terrain": str(terrain_tif),
+                "terrain_hdf": str(terrain_hdf) if terrain_hdf is not None else None,
+                "terrain_kind": terrain_kind,
                 "render": render,
                 "products": {k: [str(p) for p in v] for k, v in result.items()},
             }
             (output_dir / FAST_MAP_MANIFEST).write_text(
                 json.dumps(details, indent=2, default=str), encoding="utf-8"
             )
+        return result
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def map_whole_simulation(
+    plan_hdf: Path,
+    terrain_tif: Path,
+    output_dir: Path,
+    *,
+    map_types: list[str],
+    threshold: float,
+    render: dict[str, Any],
+    terrain_hdf: Optional[Path] = None,
+    threads: Optional[int] = None,
+    writer_threads: int = 2,
+    timeout: Optional[float] = None,
+    max_working_mib: Optional[int] = None,
+    terrain_kind: Optional[str] = None,
+) -> dict[str, list[Path]]:
+    """Map arrival time and percent time inundated with the Rust engine.
+
+    Qualified against RAS Mapper 7.0.1 stored maps (fast-map #12, ras-commander
+    #724): identical values and masks on Davis p02 and Bald Eagle bridges p05
+    at a 0.5 ft threshold, in horizontal and plain sloping (RAS Mapper draws
+    the same products in both). Wet means depth > ``threshold`` (model
+    vertical units; ras2cng's ``arrival_depth``); arrival time is in hours
+    since the simulation start. Products are named as RAS Mapper names them
+    (``Arrival Time (0.5ft hrs).tif``, ``Percent Time Inundated (0.5ft).tif``).
+    Duration is not produced here: the engine marks it unqualified.
+    """
+    requested = [t for t in map_types if t in FAST_MAP_WHOLE_SIMULATION_TYPES]
+    if not requested:
+        return {}
+    if render["mode"] not in FAST_MAP_WHOLE_SIMULATION_RENDER_MODES:
+        raise FastMapUnavailable(
+            "whole-simulation products are qualified for horizontal and plain "
+            f"sloping, not {render['mode']!r}"
+        )
+    try:
+        from ras_commander import RasFim
+        from ras_commander.fim.errors import FimUnsupportedError
+    except ImportError as exc:
+        raise FastMapUnavailable(f"ras-commander has no RasFim: {exc}") from exc
+    if not whole_simulation_supported():
+        raise FastMapUnavailable(
+            "the installed ras-commander has no RasFim.map_whole_simulation "
+            "(ras-commander #724 with ras-commander-fast-map #12)"
+        )
+
+    plan_hdf = Path(plan_hdf)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _check_scope(RasFim, plan_hdf)
+    work = Path(tempfile.mkdtemp(prefix=".fast-map-adr-", dir=output_dir))
+    try:
+        try:
+            manifest = RasFim.map_whole_simulation(
+                plan_hdf, terrain_tif, work,
+                products=tuple(requested),
+                threshold=float(threshold),
+                terrain_hdf=terrain_hdf,
+                threads=default_threads() if threads is None else int(threads),
+                writer_threads=writer_threads,
+                max_working_mib=(
+                    default_working_mib() if max_working_mib is None else int(max_working_mib)
+                ),
+                timeout=timeout,
+            )
+        except FimUnsupportedError as exc:
+            raise FastMapUnavailable(str(exc)) from exc
+
+        unit = plan_units(plan_hdf)
+        label = f"{float(threshold):g}{unit}"
+        names = {
+            "arrival_time": f"Arrival Time ({label} hrs).tif",
+            "percent_inundated": f"Percent Time Inundated ({label}).tif",
+        }
+        rows = {str(r["product"]): r for _, r in manifest.iterrows()}
+        result: dict[str, list[Path]] = {}
+        for name in requested:
+            row = rows.get(name)
+            if row is None or row["status"] not in _COMPLETE_STATUSES:
+                status = "missing" if row is None else f"{row['status']}: {row.get('error')}"
+                raise RuntimeError(f"fast-map whole-simulation {name} {status}")
+            source = row.get("tif")
+            if not source or not Path(source).is_file():
+                raise RuntimeError(f"fast-map reported no {name} product")
+            target = output_dir / names[name]
+            os.replace(source, target)
+            result[name] = [target]
+
+        def _plain(value):
+            return value.item() if hasattr(value, "item") else value
+
+        details = {
+            "method": "fast-map whole-simulation, qualified against RAS Mapper stored maps",
+            "plan_hdf": str(plan_hdf),
+            "terrain": str(terrain_tif),
+            "terrain_hdf": str(terrain_hdf) if terrain_hdf is not None else None,
+            "terrain_kind": terrain_kind,
+            "render": render,
+            "threshold": float(threshold),
+            "threshold_units": unit,
+            "products": {
+                name: {
+                    "path": str(result[name][0]),
+                    **{
+                        key: _plain(rows[name].get(key))
+                        for key in ("units", "output_times", "wet_pixels", "qualified")
+                    },
+                }
+                for name in requested
+            },
+        }
+        (output_dir / FAST_MAP_WHOLE_SIMULATION_MANIFEST).write_text(
+            json.dumps(details, indent=2, default=str), encoding="utf-8"
+        )
         return result
     finally:
         shutil.rmtree(work, ignore_errors=True)

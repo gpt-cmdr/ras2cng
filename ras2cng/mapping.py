@@ -60,6 +60,11 @@ class MapResult:
     errors: list[str] = field(default_factory=list)
     # Engine that produced each map type: "rasmapper" or "fast-map".
     engines: dict[str, str] = field(default_factory=dict)
+    # For fast-map products, the terrain the engine mapped on: "supplied"
+    # (--fast-map-terrain), "source" (the priority-1 terrain source TIFF, no
+    # export), "source-canonical" (its CRS-canonical copy) or "export" (the
+    # RAS Mapper terrain export).
+    fast_map_terrain: dict[str, str] = field(default_factory=dict)
 
 
 # Map type names to RasProcess store_maps variable names
@@ -81,7 +86,7 @@ MAP_TYPE_VARIABLES = {
 # Whole-simulation map types: RasMapperLib labels their outputs by the
 # ArrivalDepth threshold (e.g. "Arrival Time (0.1ft hrs)") instead of the
 # profile, and always computes them over the full simulation. XML MapType
-# names verified against the RasMapperLib.dll MapTypes table (6.6 and 7.0.1).
+# names verified against RAS Mapper 6.6 and 7.0.1 stored-map output.
 ADR_MAP_TYPES = {
     "arrival_time": ("arrival time", "Arrival Time"),
     "duration": ("duration", "Duration"),
@@ -158,6 +163,9 @@ def generate_result_maps(
     fast_map_memory_mib: Optional[int] = None,
     fast_map_boundary: bool = True,
     fast_map_terrain_hdf: Optional[Path] = None,
+    fast_map_source_terrain: bool = True,
+    fast_map_whole_simulation: bool = True,
+    fast_map_velocity: bool = False,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -226,6 +234,19 @@ def generate_result_maps(
         fast_map_terrain_hdf: Original single-source terrain HDF for Rust
             boundaries; its TIFF is found beside it. None uses the plan's
             terrain (or ``terrain_name``).
+        fast_map_source_terrain: With fast-map and no ``fast_map_terrain``,
+            map on the terrain's priority-1 source TIFF first, skipping the
+            RAS Mapper terrain export, and export only when the engine refuses
+            (a wet cell draws outside that source's footprint). Needs
+            ras-commander with ``RasFim.top_priority_terrain_source``.
+        fast_map_whole_simulation: With fast-map, also map
+            ``arrival_time`` and ``percent_inundated`` in Rust (threshold
+            ``arrival_depth``; horizontal and plain sloping). ``duration``
+            stays on RAS Mapper. Needs ``RasFim.map_whole_simulation``.
+        fast_map_velocity: Opt-in: with fast-map in plain sloping mode, map
+            Max velocity in Rust. On Bald Eagle bridges p05 every common pixel
+            value matched RAS Mapper but about 2,000 of 973,000 pixels differ
+            in the drawn mask, so it is off by default.
         fast_map_fallback: When a plan is outside fast-map's scope (1D
             elements, a non-Max profile, no usable terrain, engine missing or
             failed), render it through RAS Mapper instead. False raises.
@@ -249,10 +270,16 @@ def generate_result_maps(
     engine = _fast_map.resolve_map_engine(map_engine)
     terrain_resolver = None
     if engine == _fast_map.FAST_MAP:
+        rust_products = ["WSE/Depth"]
+        if fast_map_velocity:
+            rust_products.append("velocity (sloping)")
+        if fast_map_whole_simulation:
+            rust_products.append("arrival time/percent inundated")
+        if fast_map_boundary:
+            rust_products.append("inundation boundary")
         console.print(
-            "  Engine  : fast-map (Rust) for WSE/Depth"
-            + (" and inundation boundary" if fast_map_boundary else "")
-            + " on 2D-only models; RAS Mapper for everything else"
+            f"  Engine  : fast-map (Rust) for {', '.join(rust_products)} on pure 2D "
+            "models (FIM library scope); RAS Mapper for everything else"
         )
         terrain_resolver = _fast_map.TerrainResolver(
             prj_file,
@@ -393,17 +420,57 @@ def generate_result_maps(
                     )
                     return produced
 
-                if any(t in _fast_map.FAST_MAP_RASTER_TYPES for t in requested_types):
-                    fast_results.update(_fast_group("WSE/Depth", lambda: _fast_map.map_plan(
-                        plan_hdf,
-                        terrain_resolver.for_plan(plan_hdf),
-                        plan_output,
-                        map_types=requested_types,
-                        profile=profile,
-                        render=_fast_map.render_settings(ras, render_mode),
-                        threads=fast_map_threads,
-                        timeout=timeout,
-                        max_working_mib=fast_map_memory_mib,
+                def _on_terrain(label, run):
+                    """Run on the cheapest terrain the engine accepts; record it."""
+                    notes_before = len(terrain_resolver.notes)
+                    produced, kind = _fast_map.with_terrain(
+                        terrain_resolver, plan_hdf, run, use_source=fast_map_source_terrain,
+                    )
+                    for note in terrain_resolver.notes[notes_before:]:
+                        console.print(f"    fast-map {label}: {note}")
+                    for map_type in produced:
+                        map_result.fast_map_terrain[map_type] = kind
+                    return produced
+
+                wants_velocity = fast_map_velocity and "velocity" in requested_types
+                if wants_velocity or any(
+                    t in _fast_map.FAST_MAP_RASTER_TYPES for t in requested_types
+                ):
+                    fast_results.update(_fast_group("WSE/Depth", lambda: _on_terrain(
+                        "WSE/Depth",
+                        lambda tif, hdf, kind: _fast_map.map_plan(
+                            plan_hdf,
+                            tif,
+                            plan_output,
+                            map_types=requested_types,
+                            profile=profile,
+                            render=_fast_map.render_settings(ras, render_mode),
+                            threads=fast_map_threads,
+                            timeout=timeout,
+                            max_working_mib=fast_map_memory_mib,
+                            terrain_hdf=hdf,
+                            velocity=fast_map_velocity,
+                            terrain_kind=kind,
+                        ),
+                    )))
+                if fast_map_whole_simulation and any(
+                    t in _fast_map.FAST_MAP_WHOLE_SIMULATION_TYPES for t in requested_types
+                ):
+                    fast_results.update(_fast_group("arrival/percent", lambda: _on_terrain(
+                        "arrival/percent",
+                        lambda tif, hdf, kind: _fast_map.map_whole_simulation(
+                            plan_hdf,
+                            tif,
+                            plan_output,
+                            map_types=requested_types,
+                            threshold=arrival_depth,
+                            render=_fast_map.render_settings(ras, render_mode),
+                            terrain_hdf=hdf,
+                            threads=fast_map_threads,
+                            timeout=timeout,
+                            max_working_mib=fast_map_memory_mib,
+                            terrain_kind=kind,
+                        ),
                     )))
                 if fast_map_boundary and _fast_map.FAST_MAP_BOUNDARY in requested_types:
                     def _boundary():

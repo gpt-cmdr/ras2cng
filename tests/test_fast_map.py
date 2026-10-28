@@ -439,3 +439,288 @@ def test_no_fast_map_boundary_keeps_rasmapper(
     )
     mock_boundary.assert_not_called()
     assert mock_gen.call_args.kwargs["inundation_boundary"] is True
+
+
+# ---------------------------------------------------------------------------
+# Source terrain (fast-map #11), whole simulation (#12), velocity (#13)
+# ---------------------------------------------------------------------------
+
+_SLOPING = {"mode": "sloping", "reduce_shallow_to_horizontal": False,
+            "use_depth_weighted_faces": False}
+
+
+def _velocity_manifest(folder: Path) -> pd.DataFrame:
+    frame = _fake_manifest(folder)
+    velocity = folder / "12_Max_velocity.tif"
+    velocity.write_bytes(b"vel")
+    frame["velocity_tif"] = str(velocity)
+    return frame
+
+
+@patch("ras_commander.RasFim")
+def test_map_plan_passes_terrain_hdf_and_opt_in_velocity(mock_fim, tmp_path, monkeypatch):
+    monkeypatch.setattr(fast_map, "velocity_supported", lambda: True)
+    mock_fim.map_sloping_profiles.side_effect = (
+        lambda hdf, terrain, folder, **kw: _velocity_manifest(Path(folder))
+    )
+    out = tmp_path / "p01"
+    result = fast_map.map_plan(
+        tmp_path / "x.p01.hdf", tmp_path / "src.tif", out,
+        map_types=["wse", "depth", "velocity"], render=_SLOPING,
+        terrain_hdf=tmp_path / "Terrain.hdf", velocity=True, terrain_kind="source",
+    )
+    assert result["velocity"] == [out / "Velocity (Max).tif"]
+    assert (out / "Velocity (Max).tif").read_bytes() == b"vel"
+    kwargs = mock_fim.map_sloping_profiles.call_args.kwargs
+    assert kwargs["terrain_hdf"] == tmp_path / "Terrain.hdf" and kwargs["velocity"] is True
+    details = json.loads((out / fast_map.FAST_MAP_MANIFEST).read_text())["ras2cng"]
+    assert details["terrain_kind"] == "source"
+
+
+@pytest.mark.parametrize("mode", ["horizontal", "slopingPretty"])
+@patch("ras_commander.RasFim")
+def test_map_plan_velocity_only_in_plain_sloping(mock_fim, mode, tmp_path, monkeypatch):
+    monkeypatch.setattr(fast_map, "velocity_supported", lambda: True)
+    mock_fim.map_sloping_profiles.side_effect = (
+        lambda hdf, terrain, folder, **kw: _fake_manifest(Path(folder))
+    )
+    mock_fim.map_horizontal_profiles.side_effect = (
+        lambda cells, terrain, folder, **kw: _fake_manifest(Path(folder))
+    )
+    render = {**_SLOPING, "mode": mode}
+    result = fast_map.map_plan(
+        tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "p01",
+        map_types=["depth", "velocity"], render=render, velocity=True,
+    )
+    assert set(result) == {"depth"}
+    if mode == "slopingPretty":
+        assert "velocity" not in mock_fim.map_sloping_profiles.call_args.kwargs
+
+
+@patch("ras_commander.RasFim")
+def test_map_plan_without_velocity_flag_leaves_velocity(mock_fim, tmp_path, monkeypatch):
+    monkeypatch.setattr(fast_map, "velocity_supported", lambda: True)
+    result = fast_map.map_plan(
+        tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "p01",
+        map_types=["velocity"], render=_SLOPING,
+    )
+    assert result == {}
+    mock_fim.map_sloping_profiles.assert_not_called()
+
+
+def _resolver_with_source(tmp_path, monkeypatch, *, canonical=True):
+    resolver = fast_map.TerrainResolver(tmp_path / "a.prj", tmp_path / "w", terrain_name="T")
+    monkeypatch.setattr(fast_map, "source_terrain_supported", lambda: True)
+    source, hdf = tmp_path / "src.tif", tmp_path / "T.hdf"
+    monkeypatch.setattr(resolver, "_source", lambda plan: (source, hdf))
+    monkeypatch.setattr(
+        resolver, "_canonical", lambda tif: tmp_path / "canon.tif" if canonical else None
+    )
+    monkeypatch.setattr(resolver, "for_plan", lambda plan: tmp_path / "export.tif")
+    return resolver, source, hdf
+
+
+def test_with_terrain_prefers_the_source_tif(tmp_path, monkeypatch):
+    resolver, source, hdf = _resolver_with_source(tmp_path, monkeypatch)
+    calls = []
+
+    def run(tif, h, k):
+        calls.append((tif, h, k))
+        return "ok"
+
+    result, kind = fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", run)
+    assert (result, kind) == ("ok", fast_map.TERRAIN_SOURCE)
+    assert calls == [(source, hdf, fast_map.TERRAIN_SOURCE)]
+
+
+def test_with_terrain_falls_through_to_the_export(tmp_path, monkeypatch):
+    resolver, source, hdf = _resolver_with_source(tmp_path, monkeypatch)
+    calls = []
+
+    def run(tif, h, k):
+        calls.append((tif, h, k))
+        if k != fast_map.TERRAIN_EXPORT:
+            raise fast_map.FastMapUnavailable("engine terrain CRS differs (" + k + ")")
+        return "exported"
+
+    result, kind = fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", run)
+    assert (result, kind) == ("exported", fast_map.TERRAIN_EXPORT)
+    assert [c[2] for c in calls] == ["source", "source-canonical", "export"]
+    assert calls[1] == (tmp_path / "canon.tif", hdf, "source-canonical")
+    assert calls[2][1] is None, "the export is mapped without a terrain scope"
+    assert len(resolver.notes) == 2
+
+
+def test_only_a_crs_refusal_tries_the_canonical_copy(tmp_path, monkeypatch):
+    resolver, *_ = _resolver_with_source(tmp_path, monkeypatch)
+    kinds = []
+
+    def run(tif, h, k):
+        kinds.append(k)
+        if k == fast_map.TERRAIN_SOURCE:
+            raise fast_map.FastMapUnavailable("28 mapped pixels lie outside the source footprint")
+        return "ok"
+
+    assert fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", run)[1] == fast_map.TERRAIN_EXPORT
+    assert kinds == ["source", "export"]
+
+
+def test_with_terrain_can_skip_the_source(tmp_path, monkeypatch):
+    resolver, *_ = _resolver_with_source(tmp_path, monkeypatch)
+    _, kind = fast_map.with_terrain(
+        resolver, tmp_path / "a.p01.hdf", lambda tif, h, k: "ok", use_source=False,
+    )
+    assert kind == fast_map.TERRAIN_EXPORT
+
+
+def test_with_terrain_supplied_terrain_is_the_only_candidate(tmp_path, monkeypatch):
+    terrain = tmp_path / "dem.tif"
+    terrain.write_bytes(b"x")
+    monkeypatch.setattr(fast_map, "source_terrain_supported", lambda: True)
+    resolver = fast_map.TerrainResolver(tmp_path / "a.prj", tmp_path / "w", terrain_path=terrain)
+
+    def refuse(tif, h, k):
+        raise fast_map.FastMapUnavailable("no")
+
+    with pytest.raises(fast_map.FastMapUnavailable):
+        fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", refuse)
+    assert fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", lambda t, h, k: k) == (
+        fast_map.TERRAIN_SUPPLIED, fast_map.TERRAIN_SUPPLIED
+    )
+
+
+def _whole_simulation_manifest(folder: Path, products) -> pd.DataFrame:
+    rows = []
+    for name in products:
+        tif = folder / f"{name}.tif"
+        tif.write_bytes(name.encode())
+        rows.append({"product": name, "status": "complete", "tif": str(tif),
+                     "units": "hours" if name == "arrival_time" else "percent",
+                     "output_times": 433, "wet_pixels": 10, "qualified": True, "error": None})
+    return pd.DataFrame(rows)
+
+
+@patch("ras_commander.RasFim")
+def test_map_whole_simulation_names_products_like_rasmapper(mock_fim, tmp_path, monkeypatch):
+    monkeypatch.setattr(fast_map, "whole_simulation_supported", lambda: True)
+    mock_fim.map_whole_simulation.side_effect = (
+        lambda hdf, terrain, folder, products, **kw: _whole_simulation_manifest(Path(folder), products)
+    )
+    out = tmp_path / "p01"
+    result = fast_map.map_whole_simulation(
+        tmp_path / "x.p01.hdf", tmp_path / "t.tif", out,
+        map_types=["arrival_time", "duration", "percent_inundated"],
+        threshold=0.5, render=_SLOPING, terrain_hdf=tmp_path / "T.hdf",
+    )
+    assert result == {
+        "arrival_time": [out / "Arrival Time (0.5ft hrs).tif"],
+        "percent_inundated": [out / "Percent Time Inundated (0.5ft).tif"],
+    }
+    kwargs = mock_fim.map_whole_simulation.call_args.kwargs
+    assert kwargs["products"] == ("arrival_time", "percent_inundated")
+    assert kwargs["threshold"] == 0.5 and kwargs["terrain_hdf"] == tmp_path / "T.hdf"
+    details = json.loads((out / fast_map.FAST_MAP_WHOLE_SIMULATION_MANIFEST).read_text())
+    assert details["products"]["arrival_time"]["output_times"] == 433
+    assert not list(out.glob(".fast-map-*"))
+
+
+def test_map_whole_simulation_refuses_sloping_pretty(tmp_path):
+    with pytest.raises(fast_map.FastMapUnavailable, match="slopingPretty"):
+        fast_map.map_whole_simulation(
+            tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "p01",
+            map_types=["arrival_time"], threshold=0.5,
+            render={**_SLOPING, "mode": "slopingPretty"},
+        )
+
+
+def test_map_whole_simulation_duration_alone_is_left_to_rasmapper(tmp_path):
+    assert fast_map.map_whole_simulation(
+        tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "p01",
+        map_types=["duration"], threshold=0.5, render=_SLOPING,
+    ) == {}
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+@patch("ras2cng.fast_map.render_settings", return_value=_SLOPING)
+@patch("ras2cng.fast_map.map_whole_simulation")
+@patch("ras2cng.fast_map.map_plan")
+def test_fast_map_routes_arrival_and_percent_and_records_terrain(
+    mock_map_plan, mock_whole, _render, mock_init, _config, mock_gen, tmp_path,
+):
+    ras, project_dir = _fake_ras(tmp_path)
+    mock_init.return_value = ras
+    terrain = tmp_path / "dem.tif"
+    terrain.write_bytes(b"x")
+    out = tmp_path / "maps" / "p01"
+    mock_map_plan.return_value = {"depth": [out / "Depth (Max).tif"]}
+    mock_whole.return_value = {
+        "arrival_time": [out / "Arrival Time (0.5ft hrs).tif"],
+        "percent_inundated": [out / "Percent Time Inundated (0.5ft).tif"],
+    }
+    mock_gen.return_value = {"duration": [out / "Duration (0.5ft hrs).tif"]}
+
+    results = generate_result_maps(
+        project_dir, tmp_path / "maps", wse=False, depth=True, velocity=False,
+        arrival_time=True, duration=True, percent_inundated=True, arrival_depth=0.5,
+        map_engine="fast-map", fast_map_terrain=terrain,
+    )
+    result = results[0]
+    assert result.engines == {
+        "depth": "fast-map", "arrival_time": "fast-map",
+        "percent_inundated": "fast-map", "duration": "rasmapper",
+    }
+    assert result.fast_map_terrain == {
+        "depth": "supplied", "arrival_time": "supplied", "percent_inundated": "supplied",
+    }
+    assert mock_whole.call_args.kwargs["threshold"] == 0.5
+    flags = mock_gen.call_args.kwargs
+    assert flags["duration"] is True and flags["arrival_time"] is False
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+@patch("ras2cng.fast_map.render_settings", return_value=_SLOPING)
+@patch("ras2cng.fast_map.map_whole_simulation")
+@patch("ras2cng.fast_map.map_plan")
+def test_no_fast_map_whole_simulation_keeps_rasmapper(
+    mock_map_plan, mock_whole, _render, mock_init, _config, mock_gen, tmp_path,
+):
+    ras, project_dir = _fake_ras(tmp_path)
+    mock_init.return_value = ras
+    terrain = tmp_path / "dem.tif"
+    terrain.write_bytes(b"x")
+    mock_map_plan.return_value = {}
+    mock_gen.return_value = {}
+    generate_result_maps(
+        project_dir, tmp_path / "maps", wse=False, depth=False, velocity=False,
+        arrival_time=True, map_engine="fast-map", fast_map_terrain=terrain,
+        fast_map_whole_simulation=False,
+    )
+    mock_whole.assert_not_called()
+    assert mock_gen.call_args.kwargs["arrival_time"] is True
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+@patch("ras2cng.fast_map.render_settings", return_value=_SLOPING)
+@patch("ras2cng.fast_map.map_plan")
+def test_fast_map_velocity_flag_sends_velocity_to_map_plan(
+    mock_map_plan, _render, mock_init, _config, mock_gen, tmp_path,
+):
+    ras, project_dir = _fake_ras(tmp_path)
+    mock_init.return_value = ras
+    terrain = tmp_path / "dem.tif"
+    terrain.write_bytes(b"x")
+    vel = tmp_path / "maps" / "p01" / "Velocity (Max).tif"
+    mock_map_plan.return_value = {"velocity": [vel]}
+    results = generate_result_maps(
+        project_dir, tmp_path / "maps", wse=False, depth=False, velocity=True,
+        map_engine="fast-map", fast_map_terrain=terrain, fast_map_velocity=True,
+    )
+    assert mock_map_plan.call_args.kwargs["velocity"] is True
+    assert results[0].engines == {"velocity": "fast-map"}
+    mock_gen.assert_not_called()

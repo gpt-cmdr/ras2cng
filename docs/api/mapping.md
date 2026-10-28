@@ -112,16 +112,22 @@ ras2cng archive /path/to/project ./archive/ --results --map --render-mode slopin
 ## Mapping engine: RAS Mapper or fast-map
 
 By default every map type is rendered by RAS Mapper (`RasStoreMapHelper.exe`).
-For **pure 2D models**, `--engine fast-map` maps WSE and Depth through the
-Rust `ras-commander-fast-map` engine instead. ras-commander 0.110.1 installs it
-through `ras-commander[full]` on Windows x64 and Linux x64 (`ras2cng[fast-map]`
-requests it explicitly). The mapping arithmetic needs no HEC-RAS and no GDAL.
+`--engine fast-map` maps selected products through the Rust
+`ras-commander-fast-map` engine instead. It is built for **FIM library
+creation on pure 2D models**, not for general use across all model types:
+every fast-map product is qualified against RAS Mapper output (pixel
+conformance against native HEC-RAS 7.0.1 stored maps on the named models),
+and everything else falls back to RAS Mapper. ras-commander installs the
+engine through `ras-commander[full]` on Windows x64 and Linux x64
+(`ras2cng[fast-map]` requests it explicitly). The mapping arithmetic needs no
+GDAL, and with the source-terrain path below no HEC-RAS either.
 
 ```bash
-# Rust WSE/Depth; velocity etc. still go through RAS Mapper
-ras2cng map /path/to/project /output/maps --engine fast-map --ras-version 7.0.1
+# Rust WSE/Depth, arrival time and percent inundated; the rest via RAS Mapper
+ras2cng map /path/to/project /output/maps --engine fast-map \
+    --arrival-time --percent-inundated --arrival-depth 0.5 --ras-version 7.0.1
 
-# Reuse a terrain export across runs (skips the per-run RAS Mapper export)
+# Reuse a terrain export across runs
 ras2cng map /path/to/project /output/maps --engine fast-map \
     --fast-map-terrain /output/maps/_fast_map_terrain/Terrain50.tif
 
@@ -132,36 +138,65 @@ ras2cng map /path/to/project /output/maps --engine fast-map --fast-map-strict
 `RAS2CNG_MAP_ENGINE=fast-map` selects it everywhere, including
 `ras2cng archive --map`.
 
-**Why only pure 2D.** On five models, ras-commander compared fast-map with
-native RAS Mapper 7.0.1. It found identical float32 values and validity masks,
-and measured 1.2–3.6× speed-ups for horizontal and plain sloping and 1.8–7.3×
-for depth-weighted sloping faces. The largest gains were on 340k–420k-cell eBFE
-meshes ([evidence](https://rascommander.info/ras/development/fim-mapping-performance/)).
-That method covers 2D cells only. A plan is sent to RAS Mapper instead when:
+| Product | fast-map | Qualification against RAS Mapper |
+|---|---|---|
+| WSE, Depth (Max) | yes | identical float32 values and masks on five models (1.2–3.6× faster for horizontal and plain sloping, 1.8–7.3× for depth-weighted sloping faces; [evidence](https://rascommander.info/ras/development/fim-mapping-performance/)); Davis p02 and Bald Eagle bridges p05 again on the source-terrain path |
+| Arrival time, percent time inundated | yes (`--no-fast-map-whole-simulation` to opt out) | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft, horizontal and plain sloping |
+| Velocity (Max) | opt-in, `--fast-map-velocity`, plain sloping only | identical values on every common pixel; on bridges p05 the drawn mask differs on 1,196 + 826 of 973,902 pixels (Davis p02: equal masks, 3 pixels within 3e-8) |
+| Duration | no | the engine marks it unqualified |
+| Froude, shear stress, D × V, D × V² | no | not rendered by the engine |
+| Inundation boundary | yes (see below) | deterministic contours, not vector parity |
+
+A plan is sent to RAS Mapper instead when:
 
 | Condition | Why |
 |---|---|
 | 1D river reaches or cross sections | Outside the engine's method (`RasFim.validate_2d_model`) |
 | Storage areas | fast-map does not render storage-area surfaces. On a Bald Eagle dam-break plan, every 2D-mesh pixel matched RAS Mapper bit for bit, but the 466,912 storage-area pixels were blank |
 | A profile other than `Max` | Timestep mapping is not wired through ras2cng yet |
-| No usable terrain | Needs one float32 GeoTIFF of the registered terrain with modifications |
+| No usable terrain | See below |
 | Engine missing or failed | No arithmetic fallback inside fast-map |
 
-**Terrain.** fast-map needs the exact registered terrain as one float32
-GeoTIFF. Without `--fast-map-terrain`, ras2cng exports the plan's terrain once
-per run through RAS Mapper (`RasTerrain.export_rasmapper_terrain`, HEC-RAS
-6.4.1/6.5/6.6/7.0.1/7.1; pass `--ras-version`). The export still needs HEC-RAS
-and is not included in the published speed-ups. On a small model it can take
-longer than the mapping. `map-hdf` with a single raw `--terrain` TIFF passes
-that TIFF directly.
+**Terrain.** With ras-commander's `RasFim.top_priority_terrain_source`
+(ras-commander #724, fast-map #11), ras2cng maps on the terrain's unmodified
+**priority-1 source TIFF**, with its terrain-HDF footprint mask, and skips the
+RAS Mapper terrain export. Inside that footprint the source TIFF is the
+effective terrain, and the engine refuses when a wet cell would draw outside
+it. ras2cng then:
+
+1. retries on the source's CRS-canonical copy, only when the refusal was
+   about the CRS (Davis);
+2. otherwise exports the plan's terrain once per run through RAS Mapper
+   (`RasTerrain.export_rasmapper_terrain`, HEC-RAS 6.4.1/6.5/6.6/7.0.1/7.1;
+   pass `--ras-version`).
+
+`--fast-map-terrain` supplies a float32 export (with modifications) instead,
+and `--no-fast-map-source-terrain` always exports. Modified terrains and
+lower-priority sources are not mapped from source TIFFs. `map-hdf` with a
+single raw `--terrain` TIFF passes that TIFF directly.
+
+Measured on a shared, loaded host:
+
+| Run | Time | Terrain |
+|---|---|---|
+| Bald Eagle bridges p05, WSE + Depth | 4.5 s end to end, no HEC-RAS | priority-1 source TIFF |
+| bridges p05, WSE, Depth, velocity, arrival, percent | 16.6 s | reused export |
+| bridges p05, same five, nothing supplied | 181 s (≈160 s is the HEC-RAS export; arrival/percent were refused on the source) | source, then export |
+| RAS Mapper, bridges p05 | ≈215 s for the seven Max products; ≈26 s for arrival/percent | |
+| Davis p02, all five | 5.4 s, no HEC-RAS | CRS-canonical source copy |
 
 **Output.** Products are named like RAS Mapper's (`WSE (Max).tif`,
-`Depth (Max).tif`) on the terrain's pixel grid, with NaN nodata, next to
-`fast_map_manifest.json` (engine version, method, timings).
-`MapResult.engines` records which engine produced each map type. `--min-depth`,
-`--wgs84` and `--cog` apply unchanged. Other options: `--fast-map-threads`
-(default CPUs − 1) and `--fast-map-memory-mib` (planned working memory; default
-a quarter of RAM, 1–16 GiB).
+`Depth (Max).tif`, `Velocity (Max).tif`, `Arrival Time (0.5ft hrs).tif`,
+`Percent Time Inundated (0.5ft).tif`) on the terrain's pixel grid, with NaN
+nodata, next to `fast_map_manifest.json` and
+`fast_map_whole_simulation_manifest.json` (engine version, method, terrain,
+timings). Arrival time is in hours since the simulation start.
+`MapResult.engines` records which engine produced each map type, and
+`MapResult.fast_map_terrain` which terrain fast-map used (`source`,
+`source-canonical`, `export` or `supplied`). `--min-depth`, `--wgs84` and
+`--cog` apply unchanged. Other options: `--fast-map-threads` (default CPUs − 1)
+and `--fast-map-memory-mib` (planned working memory; default a quarter of
+RAM, 1–16 GiB).
 
 ### Inundation boundaries in Rust (recommended with fast-map)
 
