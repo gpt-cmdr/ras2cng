@@ -677,6 +677,11 @@ class OverviewReport:
     #: ``terrio`` (native area-matched writer).  Not written as a tag: both
     #: engines produce the same pixels and the same provenance tags.
     engine: str = "gdal"
+    #: Where ``area_ratios`` came from: ``builder`` (the GDAL path's own
+    #: levels), ``scan`` (one streamed pass, terrio without a report) or
+    #: ``scan+terrio`` (that pass, confirmed by terrio's report, gpt-cmdr/terrio
+    #: #18).  Not written as a tag: the values are identical either way.
+    ratio_source: str = "builder"
 
     def as_tags(self) -> dict[str, str]:
         tags = {
@@ -1163,16 +1168,67 @@ def _terrio_area_matched_cog(
     # quantization step (<= 2 x MAX_Z_ERROR) away from a GDAL-written file;
     # the nodata mask is identical.  Pinned by tests/test_terrio_equivalence.py.
     raster = terrio.open(str(source_path))
-    with atomic_output(destination) as staged:
-        raster.write(
-            str(staged),
-            driver="COG",
-            options=creation,
-            overview_resampling="area_matched_mode" if categorical else "area_matched",
-            metadata={**source_tags, **report.as_tags()},
-            band_metadata=band_metadata,
+    try:
+        with atomic_output(destination) as staged:
+            native_report = raster.write(
+                str(staged),
+                driver="COG",
+                options=creation,
+                overview_resampling="area_matched_mode" if categorical else "area_matched",
+                metadata={**source_tags, **report.as_tags()},
+                band_metadata=band_metadata,
+            )
+            # terrio >= gpt-cmdr/terrio #18 returns what its writer measured.
+            # The tags above are written into the header before that report
+            # exists, so they come from the scan; the report is the check that
+            # terrio built the pyramid the tags describe.  A mismatch discards
+            # the staged file (the destination is untouched) and the GDAL path
+            # runs instead.  Older terrio returns None: nothing to check.
+            if native_report is not None:
+                _check_terrio_report(native_report, report)
+    except _TerrioReportMismatch as error:
+        warnings.warn(
+            f"terrio's overview report disagrees with ras2cng's scan for "
+            f"{destination.name} ({error}); using GDAL",
+            RuntimeWarning,
+            stacklevel=3,
         )
+        return None
+    report.ratio_source = "scan+terrio" if native_report is not None else "scan"
     return report
+
+
+class _TerrioReportMismatch(RuntimeError):
+    """terrio's area-matched report does not describe the tagged pyramid."""
+
+
+def _check_terrio_report(native: Mapping[str, Any], report: OverviewReport) -> None:
+    """Raise :class:`_TerrioReportMismatch` unless terrio built the tagged pyramid.
+
+    Compares the factors, the level-0 valid count and every area ratio as
+    written to the tag (``%.6f``), so an accepted file's tags are exactly what
+    terrio measured.  terrio's count excludes NaN; the scan has already sent
+    rasters with NaN under a numeric nodata to GDAL, so the counts agree.
+    """
+
+    expected_method = (
+        "area_matched_mode" if report.method == "area_matched_mode" else "area_matched"
+    )
+    problems = []
+    if native.get("method") != expected_method:
+        problems.append(f"method {native.get('method')!r} != {expected_method!r}")
+    if list(native.get("factors") or []) != list(report.factors):
+        problems.append(f"factors {native.get('factors')} != {report.factors}")
+    base = list(native.get("base_valid_pixels") or [])
+    if base != [report.base_valid_pixels]:
+        problems.append(f"base_valid_pixels {base} != [{report.base_valid_pixels}]")
+    ratios = list(native.get("area_ratios") or [])
+    ours = [f"{r:.6f}" for r in report.area_ratios]
+    theirs = [f"{r:.6f}" for r in ratios[0]] if len(ratios) == 1 else None
+    if theirs != ours:
+        problems.append(f"area_ratios {theirs} != {ours}")
+    if problems:
+        raise _TerrioReportMismatch("; ".join(problems))
 
 
 def area_matched_cog(

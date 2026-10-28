@@ -156,7 +156,12 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
       step (≤ 0.02)**. The differences come in whole 8×8 micro-blocks:
       terrio's lerc-writer stores the exact block minimum as the offset, and
       Esri/GDAL often does not.
-    - **terrio's file is currently about 10% larger** (10.6% on that raster).
+    - **Size.** With ras2cng's default `LERC_DEFLATE` the terrio file is
+      within 0.4% of GDAL's; with plain `LERC` it is up to 18% larger on a
+      sparse result raster (table below). Since gpt-cmdr/terrio #22 the
+      padding of partial edge tiles is masked as GDAL masks it. The rest of
+      the plain-LERC gap is lerc-writer's encoder; a size fix is pending
+      upstream (roteiro-gis/lerc-rust #48) and ras2cng does not depend on it.
     - The nodata mask is identical, and so are `compression_lossy`,
       `compression_max_z_error` and the overview provenance tags.
 
@@ -164,10 +169,22 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
   the GDAL path must ask for lossless** (`lerc_max_z_error=None` or
   `RAS2CNG_LERC_MAX_Z_ERROR=off`). It is lossless output that is identical
   across engines, not LERC output.
-- terrio does not report area ratios, so `overview_area_ratios` and
-  `overview_base_valid_pixels` come from one streamed pass over level 0. That
-  pass is exact: the selection keeps `round(valid / f²)` cells, or every partly
-  wet cell when there are fewer.
+- `overview_area_ratios` and `overview_base_valid_pixels` come from one
+  streamed pass over level 0, made before the write because the tags go into
+  the COG header. That pass is exact: the selection keeps `round(valid / f²)`
+  cells, or every partly wet cell when there are fewer. It is also the check
+  for NaN under a numeric nodata (below). terrio with gpt-cmdr/terrio #18
+  returns its own measurement from `Raster.write()`; ras2cng compares the
+  factors, the valid count and every ratio at the tag's precision against the
+  scan, and on any difference discards terrio's file and writes the GDAL path
+  instead. The pass costs about 45% of terrio's write time (Depth 1.1 s of
+  2.5 s, Terrain50 12.2 s of 25.8 s); removing it needs terrio to write the
+  report into the default domain itself, which is a draft on the gpt-cmdr fork.
+- ras2cng never passes overview factors to terrio's COG writer: it relies on
+  the automatic pyramid, which halves until a level fits one block, exactly
+  as `overview_factors()` does. Since gpt-cmdr/terrio #19 explicit factors are
+  honoured on COG, which does not change this path, and the report check
+  above would catch a different pyramid.
 - The GDAL path still runs for:
     - a raster with no nodata;
     - more than one band;
@@ -183,14 +200,17 @@ Measured on Bald Eagle (peak working set, fresh process, default LERC 0.01):
 
 | artifact | GDAL path | terrio | size (GDAL → terrio) |
 |---|---|---|---|
-| Terrain50 COG (15,777 × 12,599, `LERC_DEFLATE`, `LEVEL=9`) | 66.0 s / 2,197 MiB | 24.0 s / 2,071 MiB | 377.96 → 377.75 MB (−0.06%) |
-| Depth (Max) COG (`LERC_DEFLATE`) | 9.1 s / 621 MiB | 4.7 s / 485 MiB | 2.243 → 2.262 MB (+0.8%) |
+| Terrain50 COG (15,777 × 12,599, `LERC_DEFLATE`, `LEVEL=9`) | 71.6 s / 2,197 MiB | 25.8 s / 2,071 MiB | 377.96 → 377.74 MB (−0.06%) |
+| Depth (Max) COG (`LERC_DEFLATE`) | 4.3–5.6 s / 621 MiB | 2.5 s / 485 MiB | 2.243 → 2.252 MB (+0.37%) |
+| Terrain50 COG, plain `LERC` (`SPARSE_OK`) | | | 386.62 → 387.13 MB (+0.13%) |
+| Depth (Max) COG, plain `LERC` | | | 3.009 → 3.542 MB (+17.7%) |
 
-The times were taken on a shared, fully loaded host, so compare them only
-against each other. With ras2cng's default `LERC_DEFLATE` the size gap is
-much smaller than the ~10% measured with plain LERC. On this Depth COG, 4.5%
-of base pixels differ from GDAL's, by at most 0.0197, and every level is
-within 0.01 of the lossless pyramid with an identical mask.
+terrio main with #18, #19 and #22, 2026-10-28. The terrio times include the
+level-0 scan. They were taken on a shared, loaded host, so compare them only
+against each other. Before #22 the `LERC_DEFLATE` Depth file was 2.262 MB
+(+0.8%). On this Depth COG, 4.5% of base pixels differ from GDAL's, by at
+most 0.0197, and every level is within 0.01 of the lossless pyramid with an
+identical mask.
 
 terrio reads the base level whole, so peak memory is still about the
 raster's size. Only the NumPy accumulators go.

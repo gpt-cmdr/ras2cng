@@ -274,6 +274,105 @@ def test_gdal_engine_disables_terrio(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# terrio's overview report (gpt-cmdr/terrio #18) cross-checks the scanned tags
+# ---------------------------------------------------------------------------
+
+
+def _scanned(method="area_matched_mean"):
+    return cog.OverviewReport(
+        method=method, factors=[2, 4], base_valid_pixels=1000,
+        area_ratios=[1.0, 0.9999996], engine="terrio",
+    )
+
+
+def test_terrio_report_check_accepts_the_tagged_pyramid():
+    native = {
+        "method": "area_matched", "factors": [2, 4], "base_valid_pixels": [1000],
+        # Equal at the tag's precision (%.6f) is what the file records.
+        "area_ratios": [[1.0, 0.99999962]],
+    }
+    cog._check_terrio_report(native, _scanned())
+    cog._check_terrio_report({**native, "method": "area_matched_mode"}, _scanned("area_matched_mode"))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"method": "area_matched_mode"},
+        {"factors": [2, 4, 8]},
+        {"base_valid_pixels": [999]},
+        {"area_ratios": [[1.0, 0.999]]},
+        {"area_ratios": [[1.0, 1.0], [1.0, 1.0]]},
+        {"area_ratios": []},
+    ],
+)
+def test_terrio_report_check_refuses_any_disagreement(change):
+    native = {
+        "method": "area_matched", "factors": [2, 4], "base_valid_pixels": [1000],
+        "area_ratios": [[1.0, 0.9999996]], **change,
+    }
+    with pytest.raises(cog._TerrioReportMismatch):
+        cog._check_terrio_report(native, _scanned())
+
+
+@needs_writer
+def test_report_mismatch_discards_the_terrio_file_and_uses_gdal(tmp_path, monkeypatch):
+    source = _flood_source(tmp_path, "mismatch", -9999.0)
+    monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+
+    def disagree(native, report):
+        raise cog._TerrioReportMismatch("forced")
+
+    monkeypatch.setattr(cog, "_check_terrio_report", disagree)
+    # A writer without the report never reaches the check; force one that has it.
+    real = cog._terrio_area_matched_cog
+
+    def with_report(terrio, *args, **kwargs):
+        class Wrapped:
+            def __getattr__(self, name):
+                return getattr(terrio, name)
+
+            def open(self, path):
+                raster = terrio.open(path)
+
+                class R:
+                    def write(self, *a, **k):
+                        raster.write(*a, **k)
+                        return {"method": "area_matched"}
+
+                return R()
+
+        return real(Wrapped(), *args, **kwargs)
+
+    monkeypatch.setattr(cog, "_terrio_area_matched_cog", with_report)
+    out = tmp_path / "out.tif"
+    with pytest.warns(RuntimeWarning, match="overview report disagrees"):
+        report = cog.area_matched_cog(source, out, blocksize=128, lerc_max_z_error=None)
+    assert report.engine == "gdal" and report.ratio_source == "builder"
+    assert not list(tmp_path.glob(".out.tif.partial-*"))
+    assert cog.validate_cog(out).valid
+
+
+@needs_writer
+@pytest.mark.parametrize("nodata", [-9999.0, np.nan])
+def test_terrio_report_equals_the_scanned_tags(tmp_path, monkeypatch, nodata):
+    """The tag the scan wrote is what terrio's writer measured, digit for digit."""
+    source = _flood_source(tmp_path, "report", nodata)
+    monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+    report = cog.area_matched_cog(source, tmp_path / "out.tif", blocksize=128)
+    assert report.engine == "terrio"
+    if report.ratio_source != "scan+terrio":
+        pytest.skip("installed terrio does not report area ratios (gpt-cmdr/terrio #18)")
+    with rasterio.open(tmp_path / "out.tif") as src:
+        tags, native = src.tags(), src.tags(ns="OVERVIEW_REPORT")
+    assert native["OVERVIEW_FACTORS"] == tags["overview_factors"]
+    assert native["OVERVIEW_BASE_VALID_PIXELS"] == tags["overview_base_valid_pixels"]
+    assert ",".join(
+        f"{float(r):.6f}" for r in native["OVERVIEW_AREA_RATIOS"].split(",")
+    ) == tags["overview_area_ratios"]
+
+
+# ---------------------------------------------------------------------------
 # terrio.validate_cog == rio_cogeo.cog_validate
 # ---------------------------------------------------------------------------
 
