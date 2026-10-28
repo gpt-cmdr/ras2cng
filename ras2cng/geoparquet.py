@@ -800,7 +800,14 @@ def _write_native(
     with tempfile.TemporaryDirectory(prefix=".ras2cng-gpq-", dir=output.parent) as scratch:
         inputs = []
         for index, ((name, rows), (namespace, local)) in enumerate(zip(slices, identities)):
-            layer = base if len(slices) == 1 else base.take(pa.array(rows))
+            if len(slices) == 1:
+                layer = base
+            elif len(rows) and rows[-1] - rows[0] + 1 == len(rows) and bool(np.all(np.diff(rows) == 1)):
+                # Layers are contiguous blocks in every archive frame seen so
+                # far; a zero-copy slice saves the 2-3 s ``take`` cost on p07.
+                layer = base.slice(int(rows[0]), len(rows))
+            else:
+                layer = base.take(pa.array(rows))
             identity_options[name or ""] = {"namespace": namespace, "local": local}
             fields = []
             for field in layer.schema:
