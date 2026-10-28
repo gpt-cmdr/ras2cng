@@ -5,23 +5,37 @@ One writer serves every consolidated archive file (``Model.g01.parquet``,
 order, Arrow schema, GeoParquet metadata and row-group layout:
 
 ``fast-hdf``
-    ``ras_commander_fast_hdf.export_geoparquet_ipc_files`` (fast-hdf PR #36),
-    used when the installed extension has it. It is a strict, contract-bound
-    profile: every layer needs a stable row identity, contract types (no
-    float32, no list columns), finite floats and 2D WKB. A file that does not
-    fit falls back to the Python engine as a whole, and the reason is
-    returned so the archive manifest can record it.
+    ``ras_commander_fast_hdf.export_geoparquet_ipc_files`` (fast-hdf #36, with
+    the archive types and layout options of #38/#39), used when the installed
+    extension has it. It is a strict, contract-bound profile: every layer
+    needs a stable (Utf8, Int64) row identity, contract types (see
+    :func:`_contract_type`; float32, nested lists/structs and tz-naive
+    timestamps pass), finite floats and 2D WKB. A file that does not fit
+    falls back to the Python engine as a whole, and the reason is returned so
+    the archive manifest can record it.
 
 ``python``
     pyarrow, always available.
 
 ``RAS2CNG_GEOPARQUET_WRITER`` = ``auto`` (default) | ``native`` | ``prefer-native`` | ``python``.
-``auto`` currently selects ``python``: on Bald Eagle p07 the native engine wrote
-identical files but was not faster end to end (p07: 7.7-8.6 s vs ~5 s, most of
-it ras2cng-side input staging) and 4.4% larger (Rust Parquet page indexes).
-``native`` requires fast-hdf and raises when a file does not fit its contract;
-``prefer-native`` tries it and falls back to ``python`` with a warning and the
-reason recorded in the manifest.
+``auto`` (and its alias ``prefer-native``) uses fast-hdf when the installed
+build supports the file, and otherwise writes it with ``python``, warning once
+per distinct reason and recording the reason in the manifest
+(``geometry[].geoparquet.fallback_reason``). ``native`` requires fast-hdf and
+raises when a file does not fit its contract; ``python`` never tries it.
+
+Trade-offs of the native default, measured on Bald Eagle p07 (16 files, all
+identical to the Python engine's rows, order, schema and metadata):
+
+- **Size:** +1.4% with ``statistics: "chunk"`` (pyarrow's statistics, no page
+  index), which ras2cng requests when the build accepts it; +4.4% with the
+  Rust default page indexes.
+- **Time:** not faster; on p07 the archive took 5-13 s longer (55-67 s vs
+  49-54 s). The Rust write (12-15 s) replaces pyarrow's write plus the Python
+  Hilbert keys (about 10 s), and staging the frames as Arrow IPC adds about
+  5 s. Most of the archive time is elsewhere: reading and merging the
+  geometry through ras-commander (12-14 s), frame-to-Arrow conversion (5 s),
+  row-identity checks (3 s) and the results read.
 
 Layout (both engines):
 
@@ -545,7 +559,15 @@ def _requested_engine(engine: Optional[str]) -> str:
     choice = aliases.get(choice, choice)
     if choice not in {"auto", "native", "prefer-native", "python"}:
         raise ValueError(f"{WRITER_ENV} must be one of auto, native, prefer-native, python; got {choice!r}")
-    return choice
+    if choice == "auto":
+        return PREFER_NATIVE if AUTO_PREFERS_NATIVE else "python"
+    return PREFER_NATIVE if choice == "prefer-native" else choice
+
+
+#: What ``auto`` (the default) means: prefer fast-hdf with a pyarrow fallback
+#: (``True``), or always pyarrow (``False``).  The one switch for the default.
+AUTO_PREFERS_NATIVE = True
+PREFER_NATIVE = "prefer-native"
 
 
 _CONTRACT_SCALARS = (
@@ -562,18 +584,20 @@ _CONTRACT_SCALARS = (
 def _contract_type(dtype: pa.DataType, *, top_level: bool = True) -> bool:
     """Types fast-hdf's archive profile passes through.
 
-    Scalars above, timestamps (ms/us/ns, any tz), all-null columns at the top
-    level, and list / large_list / fixed_size_list / non-empty struct nested
-    to any depth over those scalars and timestamps.
+    Scalars above, timezone-naive timestamps (ms/us/ns), all-null columns at
+    the top level, and list / non-empty struct nested to any depth over those
+    scalars and timestamps.  As merged (fast-hdf #38/#39) the writer refuses
+    large_list, fixed_size_list and timestamps with a time zone, so those stay
+    on pyarrow rather than failing inside the engine.
     """
 
     if any(check(dtype) for check in _CONTRACT_SCALARS):
         return True
     if pa.types.is_timestamp(dtype):
-        return dtype.unit in ("ms", "us", "ns")
+        return dtype.unit in ("ms", "us", "ns") and dtype.tz is None
     if pa.types.is_null(dtype):
         return top_level
-    if pa.types.is_list(dtype) or pa.types.is_large_list(dtype) or pa.types.is_fixed_size_list(dtype):
+    if pa.types.is_list(dtype):
         return _contract_type(dtype.value_type, top_level=False)
     if pa.types.is_struct(dtype):
         return dtype.num_fields > 0 and all(
@@ -735,9 +759,8 @@ def _write_python(
             compression="zstd",
             compression_level=level,
             use_dictionary=dictionary or False,
-            # Keep Arrow's list item name ("item"), as fast-hdf writes it,
-            # instead of renaming it to "element".
-            use_compliant_nested_type=False,
+            # pyarrow's default compliant nesting names list items "element",
+            # as fast-hdf's writer does since #39, so both engines match.
         ) as writer:
             offset = 0
             for _, rows in slices:
@@ -820,6 +843,11 @@ def _write_native(
         options.update(_NATIVE_LAYOUT_OPTIONS)
         if hilbert_column:
             options["hilbert_column"] = hilbert_column
+        # pyarrow's statistics: chunk-level, untruncated, no page index.  The
+        # Rust default adds page indexes (+4.4% on Bald Eagle p07; +1.4% left
+        # with chunk statistics).  Builds without the option keep their default.
+        if _native_accepts("statistics"):
+            options["statistics"] = "chunk"
         with atomic_output(output, suffix=".parquet") as staged:
             metrics = json.loads(
                 native.export_geoparquet_ipc_files(inputs, str(staged), json.dumps(options))
@@ -872,7 +900,7 @@ def write_geoparquet(
         "row_groups": 0,
     }
 
-    if requested in ("native", "prefer-native"):
+    if requested in ("native", PREFER_NATIVE):
         reason = native_writer_reason()
         available = reason is None
         if available and len(frame) == 0:
@@ -914,10 +942,10 @@ def write_geoparquet(
             raise RuntimeError(
                 f"{WRITER_ENV}=native, but the fast-hdf writer cannot write {output_path.name}: {reason}"
             )
-        if available or (
-            "lacks the archive layout" in (reason or "") and not _NATIVE_PROBE.get("warned")
-        ):
-            _NATIVE_PROBE["warned"] = "yes"
+        warned_key = f"warned:{reason}"
+        # An empty file has nothing to write natively; that is not news.
+        if reason != "empty table" and not _NATIVE_PROBE.get(warned_key):
+            _NATIVE_PROBE[warned_key] = "yes"
             warnings.warn(
                 f"{output_path.name}: written by the Python GeoParquet engine; {reason}.",
                 RuntimeWarning,

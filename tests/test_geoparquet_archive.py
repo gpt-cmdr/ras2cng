@@ -248,11 +248,19 @@ def test_python_engine_records_why_fast_hdf_was_not_used(monkeypatch, tmp_path: 
     monkeypatch.setattr(
         geoparquet, "native_writer_reason", lambda: "export_geoparquet_ipc_files is not installed"
     )
-    info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "auto.parquet")
-    assert info["engine"] == "python" and info["fallback_reason"] == ""  # auto is python
-    info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet", engine="prefer-native")
+    monkeypatch.setattr(geoparquet, "_NATIVE_PROBE", {})
+    monkeypatch.delenv(geoparquet.WRITER_ENV, raising=False)
+    # auto (the default) prefers fast-hdf: it falls back, says why, warns once.
+    with pytest.warns(RuntimeWarning, match="not installed"):
+        info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "auto.parquet")
+    assert info["engine"] == "python" and "not installed" in info["fallback_reason"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet", engine="prefer-native")
     assert info["engine"] == "python"
     assert "not installed" in info["fallback_reason"]
+    info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "py.parquet", engine="python")
+    assert info["engine"] == "python" and info["fallback_reason"] == ""
 
     monkeypatch.setenv(geoparquet.WRITER_ENV, "native")
     with pytest.raises(RuntimeError, match="cannot write"):
@@ -445,3 +453,35 @@ def test_fast_hdf_without_layout_options_falls_back_once(monkeypatch, tmp_path: 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "b.parquet", engine="prefer-native")
+
+
+@pytest.mark.parametrize(
+    ("dtype", "accepted"),
+    [
+        (pa.float32(), True),
+        (pa.timestamp("ns"), True),
+        (pa.timestamp("ns", tz="UTC"), False),
+        (pa.timestamp("s"), False),
+        (pa.list_(pa.list_(pa.float64())), True),
+        (pa.list_(pa.struct([("a", pa.float64()), ("b", pa.string())])), True),
+        (pa.large_list(pa.float64()), False),
+        (pa.list_(pa.float64(), 2), False),
+        (pa.struct([]), False),
+        (pa.list_(pa.null()), False),
+        (pa.null(), True),
+        (pa.int32(), False),
+    ],
+)
+def test_contract_types_match_the_merged_native_writer(dtype, accepted):
+    """fast-hdf #38/#39 refuse large/fixed-size lists and tz-aware timestamps."""
+    assert geoparquet._contract_type(dtype) is accepted
+
+
+def test_auto_engine_default_is_one_switch(monkeypatch):
+    monkeypatch.delenv(geoparquet.WRITER_ENV, raising=False)
+    assert geoparquet._requested_engine(None) == geoparquet.PREFER_NATIVE
+    assert geoparquet._requested_engine("prefer-native") == geoparquet.PREFER_NATIVE
+    monkeypatch.setattr(geoparquet, "AUTO_PREFERS_NATIVE", False)
+    assert geoparquet._requested_engine(None) == "python"
+    assert geoparquet._requested_engine("prefer-native") == geoparquet.PREFER_NATIVE
+    assert geoparquet._requested_engine("rust") == "native"
