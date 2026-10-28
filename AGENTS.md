@@ -52,24 +52,52 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - `duckdb_session.py` — `DuckSession` class wraps DuckDB with auto-loaded spatial extension. `register_parquet()` detects WKB geometry columns and converts them to DuckDB GEOMETRY type. The table alias is always `_`.
 - `pmtiles.py` — Dispatches between vector (GeoParquet → GeoJSON → tippecanoe → PMTiles, or GeoParquet → freestiler → PMTiles) and raster (GeoTIFF → gdal_translate → pmtiles) pipelines. Requires external CLIs: `tippecanoe`, `gdal_translate`, `pmtiles`; vectors can instead use the optional `ras2cng[freestiler]` extra, selected by `RAS2CNG_VECTOR_TILER` (`vector_tiles.py`). Vector tiles never drop features to cap tile size.
 - `raster_tiles.py` — **Raster tiler backend selection for every raster PMTiles writer** (terrain, Stored Maps, calculated layers, `pmtiles` on a GeoTIFF). `RAS2CNG_RASTER_TILER` = `auto` (default: terrio when installed and the raster is under `RAS2CNG_TERRIO_MAX_PIXELS`, 400 M) | `terrio` (pure-Rust, in-process; no GDAL/pmtiles CLIs) | `gdal` (the gdaldem→gdalwarp→gdal_translate→gdaladdo→`pmtiles convert` chain, streams any size). Measured on Bald Eagle: terrain 6.8 s vs 13.4 s, depth 1.6 s vs 4.7 s. terrio result overviews use `NEAREST`, holding visible wet area at 1.000× at z10 (GDAL chain: 1.225×), and its terrain edges carry ramp colour (the GDAL chain's were black despite the alpha-0 ramp trick, because `gdalwarp -dstalpha` writes black RGB). Terrain uses `AVERAGE`; override with `RAS2CNG_RASTER_TILE_RESAMPLING`. `package_maplibre_terrain(hillshade=True)` (default; CLI `--no-hillshade`) multiplies a terrio multidirectional hillshade into the display colours. It shades only visible pixels, because darkening RGB under alpha 0 brings the edge fringe back. It is not gdaldem-identical, which is accepted for display. Tests pin `gdal` via an autouse fixture in `tests/conftest.py`, because the older raster tests mock the GDAL subprocesses. With a streaming terrio (`dem` has `max_memory_mib` and `hillshade_strength`), relief or one-pass shaded relief goes file to file, the warp is chunked when `warp` has `max_memory_mib`, and PMTiles stream from the lazily opened warp. Tiles are byte-identical to the in-memory path and there is no pixel cap (Terrain50 z14: 13.4 GB -> 1.0 GB peak). `RAS2CNG_TERRIO_MAX_MEMORY_MIB` bounds the strips.
-- `geoparquet.py` — **Every archive GeoParquet goes through `write_geoparquet()`.** It writes a GeoParquet 1.1 `bbox` struct covering (manifest 2.7; older archives have flat `bbox_xmin`… and every reader accepts both), ZSTD level 3 with dictionary encoding on string columns only, and row groups of 65,536 rows that also end at every layer boundary. Per-row-group dictionaries on unique numeric columns cost 12–15% and ZSTD level 1 another 15%. Rows are Hilbert-ordered within each layer by DuckDB `ST_Hilbert` of the bbox centre over the layer extent; a bit-identical NumPy port is used, with a warning, only when DuckDB spatial is missing. With sorting on, the writer stores `hilbert_index` and the spatial-index pass leaves the file alone. fast-hdf's `export_geoparquet_ipc_files` writes identical files but is **opt-in** (`RAS2CNG_GEOPARQUET_WRITER=native` strict, or `prefer-native` with fallback recorded in `manifest.geometry[].geoparquet.fallback_reason`); `auto` is pyarrow, because on Bald Eagle p07 native was not faster end to end and 4.4% larger (page indexes). Never call `gdf.to_parquet` for archive files.
+- `geoparquet.py` — **Every archive GeoParquet goes through `write_geoparquet()`.** It writes a GeoParquet 1.1 `bbox` struct covering (manifest 2.7; older archives have flat `bbox_xmin`… and every reader accepts both), ZSTD level 3 with dictionary encoding on string columns only, and row groups of 65,536 rows that also end at every layer boundary. Per-row-group dictionaries on unique numeric columns cost 12–15% and ZSTD level 1 another 15%. Rows are Hilbert-ordered within each layer by DuckDB `ST_Hilbert` of the bbox centre over the layer extent; a bit-identical NumPy port is used, with a warning, only when DuckDB spatial is missing. With sorting on, the writer stores `hilbert_index` and the spatial-index pass leaves the file alone. fast-hdf's `export_geoparquet_ipc_files` (fast-hdf #36/#38/#39) writes identical rows, order, schema and metadata and is the **default**: `RAS2CNG_GEOPARQUET_WRITER=auto` (= `prefer-native`) uses it when the installed build accepts the file and otherwise falls back to pyarrow, warning once per reason and recording it in `manifest.geometry[].geoparquet.fallback_reason`; `native` is strict, `python` never tries it. The default is one switch, `geoparquet.AUTO_PREFERS_NATIVE`. `_contract_type()` mirrors the merged engine: float32, tz-naive ms/us/ns timestamps, top-level null, and list/struct nesting pass; large_list, fixed_size_list and tz-aware timestamps stay on pyarrow. Both engines name list items `element` (pyarrow's compliant default). ras2cng requests `statistics: "chunk"` (pyarrow's statistics, no page index) when the build accepts it. Measured on Bald Eagle p07 (loaded host): native files +1.4% (+4.4% with the Rust default page indexes), and the archive is **not faster** (55-67 s vs 49-54 s): the Rust write (10-15 s) replaces pyarrow's write plus Python Hilbert keys (~10 s), and Arrow IPC staging adds ~5 s; most time is the ras-commander geometry read/merge (10-14 s), frame-to-Arrow (5 s) and row-identity checks (3 s). Never call `gdf.to_parquet` for archive files.
 - `postgis_sync.py` — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2 with automatic spatial index creation.
 - `terrain.py` — Terrain discovery, consolidation, and raster export. `discover_terrains()` finds terrain layers from rasmap. `consolidate_terrain()` provides a pure-Python publication mosaic. `export_modified_terrain()` delegates registered-terrain consolidation, exact 1x/2x/4x/8x downsampling, and modification rasterization to `RasTerrain.export_rasmapper_terrain()`; it does not use a geometry HDF or the deprecated row sampler. Native terrain export is qualified on Windows and Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1, with stable 7.1 forward-open behind ras-commander's exact managed-contract check. `export_mannings_raster()` separately wraps `HdfLandCover.compute_final_mannings_raster()` and still requires HEC-RAS 6.6+ on Windows.
 - `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0).
-- `fast_map.py` — Optional Rust WSE/Depth and inundation-boundary mapping for pure 2D models (`map --engine fast-map`, env `RAS2CNG_MAP_ENGINE`); see *Mapping engines* below.
+- `fast_map.py` — Optional Rust mapping for **pure 2D models (FIM library scope)** (`map --engine fast-map`, env `RAS2CNG_MAP_ENGINE`) via `RasFim` and `ras-commander-fast-map`, qualified against RAS Mapper stored maps. `map_plan()` does Max WSE/Depth (+ opt-in plain-sloping velocity), `map_whole_simulation()` arrival time and percent inundated, `map_boundary()` the boundary (original single-source terrain TIFF + HDF); each falls back to RAS Mapper on its own. `with_terrain()` tries the priority-1 source TIFF (no HEC-RAS export), its CRS-canonical copy after a CRS refusal, then the export; `MapResult.fast_map_terrain` records which. Storage areas, 1D, non-Max profiles and duration stay on RAS Mapper (`--fast-map-strict` raises instead). New capabilities are detected from `RasFim`'s methods/kwargs. See *Mapping engines* below.
 
 **Data flow**: HEC-RAS files → ras-commander → GeoDataFrame → GeoParquet (ZSTD compression, bbox columns, Hilbert sorted). Archive output uses `_write_geoparquet()` which adds `covering` metadata for spatial predicate pushdown.
 
 ## Mapping engines (agents: read before running `ras2cng map`)
 
-RAS Mapper stays the **default** engine. For **pure 2D models** (no 1D reaches
-or cross sections, no storage areas), agents should **recommend and use
-`--engine fast-map`** for WSE, Depth and especially **inundation boundaries**:
+RAS Mapper stays the **default** engine. `--engine fast-map` is built for
+**FIM library creation on pure 2D models** (no 1D reaches or cross sections,
+no storage areas), not for general use across all model types. Every fast-map
+product is **qualified against RAS Mapper output**: pixel conformance against
+native HEC-RAS 7.0.1 stored maps on the named models. Everything else falls
+back to RAS Mapper. For pure 2D models, agents should **recommend and use**
+it for WSE, Depth, arrival time, percent inundated and especially
+**inundation boundaries**:
 
 ```bash
 ras2cng map <project> <out> --engine fast-map --inundation-boundary --ras-version 7.0.1
 ```
 
+| Product (Max unless noted) | Qualification | Notes |
+|---|---|---|
+| WSE, Depth | identical values and masks (five-model ras-commander comparison; Davis p02, Bald Eagle bridges p05) | horizontal, sloping, slopingPretty |
+| Arrival time, percent time inundated | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft | horizontal and plain sloping; threshold `--arrival-depth`; `--no-fast-map-whole-simulation` to opt out |
+| Duration | not qualified | stays on RAS Mapper |
+| Velocity | identical values on every common pixel; mask differs on bridges p05 (1,196 / 826 of 973,902 px) | **opt-in** `--fast-map-velocity`, plain sloping only |
+| Inundation boundary | deterministic contours, **not** vector parity | see below |
+
+- **Terrain without the export.** With ras-commander's
+  `RasFim.top_priority_terrain_source` (ras-commander #724, fast-map #11),
+  ras2cng maps on the terrain's unmodified **priority-1 source TIFF** and
+  skips the RAS Mapper terrain export (about 160-240 s on Bald Eagle). The
+  engine refuses when a wet cell would draw outside that source's footprint
+  (bridges p05 whole-simulation: 28 such pixels); ras2cng then exports once
+  per run. A CRS refusal (Davis) retries on the source's CRS-canonical copy
+  first. `--fast-map-terrain` supplies an export instead;
+  `--no-fast-map-source-terrain` always exports. `MapResult.fast_map_terrain`
+  records `source`, `source-canonical`, `export` or `supplied` per product.
+- **Measured (shared, loaded host):** bridges p05 WSE + Depth on the source
+  TIFF 4.5 s end to end with no HEC-RAS (0 differences on 973,902 px);
+  all five products on a reused export 16.6 s; RAS Mapper took about 215 s
+  for the seven Max products and 26 s for arrival/percent. Davis p02, all
+  five products on the canonical source copy: 5.4 s, no HEC-RAS.
 - **Inundation boundaries are the strongest case.** RAS Mapper's boundary
   export is very slow. In ras-commander's Davis comparison the Rust batch
   (Max plus one timestep) took 3.5 s against 85 s for the two native calls.
@@ -78,23 +106,23 @@ ras2cng map <project> <out> --engine fast-map --inundation-boundary --ras-versio
   platforms and worker counts. It is **close to, not identical with,** RAS
   Mapper's polygons, which themselves vary between identical exports (Davis
   Max: 66 vs 65 holes, ~7,400 ft² difference, almost all one hole). Say so
-  when reporting; never claim vector parity.
-- **WSE/Depth rasters match RAS Mapper bit for bit** (five-model
-  ras-commander comparison; 1.2–7.3× faster, largest on 340k+ cell meshes).
-  On small models the end-to-end time can be about equal.
+  when reporting; never claim vector parity. Boundaries need a
+  **single-source, unmodified** terrain (original TIFF + terrain HDF;
+  `--fast-map-terrain-hdf`) and horizontal or plain sloping render mode, and
+  ras-commander with `RasFim.map_inundation_boundaries` (ras-commander PR
+  #709 + fast-map PR #5, unreleased as of 2026-10-28); until then they fall
+  back to RAS Mapper automatically.
 - Out-of-scope plans fall back to RAS Mapper per product group, with the
   reason printed. Use `--fast-map-strict` when the user needs proof that Rust
-  ran. Boundaries additionally need a **single-source, unmodified** terrain
-  (original TIFF + terrain HDF; `--fast-map-terrain-hdf` to point at it) and
-  horizontal or plain sloping render mode. Rasters need a float32 export of
-  the registered terrain: reuse one with `--fast-map-terrain` rather than
-  re-exporting each run.
-- `MapResult.engines` records which engine produced each map type.
-  Boundary output is `Inundation Boundary (Max).geojson` (RAS Mapper writes a
-  shapefile), with `fast_map_boundary_manifest.json`.
-- Rust boundaries need ras-commander with `RasFim.map_inundation_boundaries`
-  (ras-commander PR #709 + ras-commander-fast-map PR #5; unreleased as of
-  2026-10-27). Until then they fall back to RAS Mapper automatically.
+  ran. `MapResult.engines` records which engine produced each map type.
+  Outputs are named like RAS Mapper's (`WSE (Max).tif`,
+  `Arrival Time (0.5ft hrs).tif`, `Percent Time Inundated (0.5ft).tif`);
+  the boundary is `Inundation Boundary (Max).geojson` (RAS Mapper writes a
+  shapefile). Manifests: `fast_map_manifest.json`,
+  `fast_map_whole_simulation_manifest.json`, `fast_map_boundary_manifest.json`.
+- The new capabilities need ras-commander with #724 (merged 2026-10-28,
+  unreleased) and a fast-map engine from its `main` (#11-#13). Older
+  installs are capability-detected and keep the previous behaviour.
 
 ## Archive Output Structure
 
