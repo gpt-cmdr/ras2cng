@@ -34,7 +34,7 @@ from ras2cng.cog import (
     describe_crs,
     overview_factors,
 )
-from ras2cng import vector_tiles
+from ras2cng import raster_tiles, vector_tiles
 from ras2cng.pmtiles import _require_cli
 from ras2cng.viewer_manifest import apply_manifest_v2
 
@@ -43,6 +43,9 @@ LOGGER = logging.getLogger(__name__)
 
 _INTERNAL_COLUMNS = {
     "layer",
+    # GeoParquet bbox covering: the 1.1 struct (manifest schema 2.7+) and the
+    # flat columns of older archives.
+    "bbox",
     "bbox_xmin",
     "bbox_ymin",
     "bbox_xmax",
@@ -578,9 +581,13 @@ def _run_vector_tiler(
     if not layers:
         raise ValueError("A vector tileset needs at least one non-empty source layer.")
     if vector_tiles.vector_tiler_backend() == vector_tiles.FREESTILER:
-        # freestiler tiles every layer of the archive in one in-memory pass.
-        frames = {name: vector_tiles.read_ndgeojson(path) for name, path in layers}
-        vector_tiles.run_freestiler(output, frames, min_zoom, max_zoom)
+        # Each layer is read from its GeoJSON source only when freestiler
+        # reaches it, so a multi-layer tileset holds one layer at a time.
+        sources = {
+            name: (lambda source=path: vector_tiles.read_ndgeojson(source))
+            for name, path in layers
+        }
+        vector_tiles.run_freestiler(output, sources, min_zoom, max_zoom)
         return
     _run_tippecanoe(output, layers, min_zoom, max_zoom, temporary_directory)
 
@@ -661,8 +668,15 @@ def _run_tippecanoe(
 
 
 def _gdalinfo(path: Path) -> dict[str, Any]:
-    """Read GDAL JSON metadata, calculating band statistics when needed."""
+    """Read GDAL JSON metadata, calculating band statistics when needed.
 
+    With the terrio raster backend the same statistics come from
+    ``terrio.info(stats=True)`` (identical min/max/mean/stddev to gdalinfo on
+    HEC-RAS terrain), so no GDAL CLI is needed.
+    """
+
+    if raster_tiles.resolve_backend() == raster_tiles.TERRIO:
+        return raster_tiles.raster_info(Path(path))
     completed = subprocess.run(
         [_gdalinfo_command(), "-json", "-stats", str(path)],
         check=True,
@@ -902,6 +916,41 @@ def _raster_source_metadata(path: Path) -> dict[str, Any]:
         }
 
 
+def _require_gdal_raster_tools() -> None:
+    for executable in (
+        _gdalinfo_command(),
+        _gdaldem_command(),
+        _gdalwarp_command(),
+        _gdal_translate_command(),
+        _gdaladdo_command(),
+        _pmtiles_command(),
+    ):
+        _require_cli(executable)
+
+
+def _raster_backend_for(cog_path: Path) -> str:
+    """Pick the raster tiler for one raster; see :mod:`ras2cng.raster_tiles`.
+
+    ``auto`` uses terrio when installed and the raster fits its in-memory
+    budget, otherwise the GDAL CLI chain (whose executables must then exist).
+    A terrio that streams the relief, warp and pyramid has no budget, so it
+    takes every raster.
+    """
+
+    backend = raster_tiles.resolve_backend()
+    if backend == raster_tiles.TERRIO:
+        try:
+            raster_tiles.check_fits(cog_path)
+        except raster_tiles.TerrioTooLarge as exc:
+            if raster_tiles.requested_backend() == raster_tiles.TERRIO:
+                raise
+            LOGGER.warning("%s; using the GDAL raster tiler", exc)
+            backend = raster_tiles.GDAL
+    if backend == raster_tiles.GDAL:
+        _require_gdal_raster_tools()
+    return backend
+
+
 def _render_raster_pmtiles(
     cog_path: Path,
     output: Path,
@@ -910,8 +959,17 @@ def _render_raster_pmtiles(
     max_zoom: int | None,
     scratch_dir: Path | None,
     prefix: str,
+    kind: str = "result",
+    hillshade: bool = False,
+    backend: str | None = None,
 ) -> int:
-    """Render a numeric COG to transparent PNG PMTiles with bounded GDAL work."""
+    """Render a numeric COG to transparent PNG PMTiles.
+
+    terrio (default when installed) or the GDAL CLI chain; see
+    :mod:`ras2cng.raster_tiles`. ``kind`` is ``"terrain"`` or ``"result"``
+    and selects the overview resampling. ``hillshade`` bakes a terrio
+    hillshade into the colours and is ignored, with a warning, by GDAL.
+    """
 
     native_resolution = _web_mercator_raster_resolution(cog_path)
     native_max_zoom = _native_raster_zoom_from_resolution(native_resolution)
@@ -923,6 +981,31 @@ def _render_raster_pmtiles(
     if selected_max_zoom < 0:
         raise ValueError("max_zoom must be zero or greater")
     display_resolution = _WEB_MERCATOR_INITIAL_RESOLUTION / (2**selected_max_zoom)
+    backend = backend or _raster_backend_for(cog_path)
+
+    if backend == raster_tiles.TERRIO:
+        with tempfile.TemporaryDirectory(
+            prefix=f"ras2cng-{prefix}-",
+            dir=str(scratch_dir) if scratch_dir is not None else None,
+        ) as temporary:
+            ramp = Path(temporary) / "ramp.txt"
+            ramp_writer(ramp)
+            raster_tiles.render_pmtiles(
+                cog_path,
+                output,
+                ramp_path=ramp,
+                max_zoom=selected_max_zoom,
+                kind=kind,
+                hillshade=hillshade,
+                name=prefix,
+                scratch_dir=Path(temporary),
+            )
+        return selected_max_zoom
+
+    if hillshade:
+        LOGGER.warning(
+            "Hillshade needs the terrio raster tiler; %s is rendered without it", cog_path
+        )
 
     with tempfile.TemporaryDirectory(
         prefix=f"ras2cng-{prefix}-",
@@ -1026,6 +1109,7 @@ def package_maplibre_terrain(
     max_zoom: int | None = None,
     scratch_dir: Path | None = None,
     overwrite: bool = False,
+    hillshade: bool = True,
 ) -> TerrainPackageSummary:
     """Add a RAS-styled, queryable terrain PMTiles layer to a viewer bundle.
 
@@ -1033,6 +1117,11 @@ def package_maplibre_terrain(
     PMTiles overlay is a colorized Web Mercator representation used only for
     display. Its highest zoom is capped at source cell resolution so no
     terrain detail is invented in the browser.
+
+    ``hillshade`` (default on) multiplies a terrio multidirectional
+    hillshade into the display colours, as RAS Mapper shades terrain. It
+    needs the terrio raster tiler; with GDAL the terrain is drawn unshaded.
+    Identify values still come from the unshaded source COG.
     """
 
     cog_path = Path(cog_path)
@@ -1055,15 +1144,7 @@ def package_maplibre_terrain(
             "pass overwrite=True to replace it."
         )
 
-    for executable in (
-        _gdalinfo_command(),
-        _gdaldem_command(),
-        _gdalwarp_command(),
-        _gdal_translate_command(),
-        _gdaladdo_command(),
-        _pmtiles_command(),
-    ):
-        _require_cli(executable)
+    backend = _raster_backend_for(cog_path)
 
     if scratch_dir is not None:
         scratch_dir = Path(scratch_dir).resolve()
@@ -1087,6 +1168,9 @@ def package_maplibre_terrain(
         max_zoom=max_zoom,
         scratch_dir=scratch_dir,
         prefix=terrain_id,
+        kind="terrain",
+        hillshade=hillshade,
+        backend=backend,
     )
 
     terrain_tileset = {
@@ -1103,6 +1187,8 @@ def package_maplibre_terrain(
         "maxzoom": selected_max_zoom,
         "rasterStats": stats,
         "ramp": "stretched",
+        "hillshade": bool(hillshade and backend == raster_tiles.TERRIO),
+        "rasterTiler": backend,
         "domainPolicy": "fixed",
         "sourceKind": "terrain",
         "legend": {
@@ -1477,15 +1563,7 @@ def _package_maplibre_numeric_raster(
             f"Viewer already has raster layer {layer_id}; pass overwrite=True to replace it."
         )
 
-    for executable in (
-        _gdalinfo_command(),
-        _gdaldem_command(),
-        _gdalwarp_command(),
-        _gdal_translate_command(),
-        _gdaladdo_command(),
-        _pmtiles_command(),
-    ):
-        _require_cli(executable)
+    backend = _raster_backend_for(cog_path)
 
     if scratch_dir is not None:
         scratch_dir = Path(scratch_dir).resolve()
@@ -1516,6 +1594,8 @@ def _package_maplibre_numeric_raster(
         max_zoom=max_zoom,
         scratch_dir=scratch_dir,
         prefix=layer_id,
+        kind="result",
+        backend=backend,
     )
 
     stored_map: dict[str, Any] = {

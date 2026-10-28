@@ -58,6 +58,6 @@ gpio inspect output/Model.g01.parquet
 - `BaldEagleCrkMulti2D` has no plan HDF results (model not pre-run), so `--results` would yield no output
 - Terrain COG conversion is skipped in this notebook (set `include_terrain=True` to enable)
 - All layers that are absent from this particular model are silently skipped
-- Hilbert spatial sorting is applied within each layer by default for optimal query performance
-- Per-row bounding box columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) enable spatial predicate pushdown in DuckDB
+- Hilbert spatial sorting (DuckDB spatial `ST_Hilbert`) is applied within each layer by default, and row groups end at layer boundaries
+- A GeoParquet 1.1 `bbox` struct (`bbox.xmin`, `bbox.ymin`, `bbox.xmax`, `bbox.ymax`) enables spatial predicate pushdown in DuckDB; archives from before manifest schema 2.7 have flat `bbox_xmin` ... columns
 - ZSTD compression is used instead of snappy for better compression ratios

@@ -1091,7 +1091,10 @@ def test_freestiler_backend_tiles_every_source_layer(monkeypatch, tmp_path: Path
 
     assert received["zooms"] == (13, 17)
     assert list(received["layers"]) == ["cells", "bc"]
-    cells = received["layers"]["cells"]
+    # Layers are handed over as loaders so a multi-layer tileset holds one
+    # layer in memory at a time.
+    assert all(callable(source) for source in received["layers"].values())
+    cells = received["layers"]["cells"]()
     assert cells.crs.to_epsg() == 4326 and int(cells["cell_id"].iloc[0]) == 7
 
 

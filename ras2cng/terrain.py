@@ -1121,6 +1121,7 @@ def export_modified_terrain(
     terrain_name: Optional[str] = None,
     downsample_factor: int = 1,
     overwrite: bool = False,
+    hecras_version: Optional[str] = None,
 ) -> Path:
     """Export a registered terrain with modifications applied as one GeoTIFF.
 
@@ -1141,6 +1142,8 @@ def export_modified_terrain(
             the project registers exactly one terrain.
         downsample_factor: Exact source-derived factor: 1, 2, 4, or 8.
         overwrite: Replace an existing output and receipt when true.
+        hecras_version: Installed HEC-RAS version to export with (e.g.
+            "7.0.1"). None lets ras-commander choose from the project.
 
     Returns:
         Path to the output GeoTIFF
@@ -1170,10 +1173,13 @@ def export_modified_terrain(
             "RasTerrain.export_rasmapper_terrain()."
         )
 
+    # The project object's version must agree with the export runtime, or
+    # ras-commander uses (and rejects) the version stored in the project.
     ras = init_ras_project(
         prj_file,
         ras_object="new",
         load_results_summary=False,
+        **({"ras_version": hecras_version} if hecras_version else {}),
     )
 
     console.print(f"\n[bold cyan]ras2cng terrain-mod[/bold cyan] -> {output_tif}")
@@ -1183,6 +1189,7 @@ def export_modified_terrain(
     console.print("  Exporting through native RAS Mapper...")
 
     result = export_native(
+        **({"hecras_version": hecras_version} if hecras_version else {}),
         ras_project_path=prj_file,
         output_tif=Path(output_tif),
         terrain_name=terrain_name,

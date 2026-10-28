@@ -65,16 +65,65 @@ def generate_pmtiles_from_input(
     layer_name: str = "layer",
     min_zoom: Optional[int] = None,
     max_zoom: Optional[int] = None,
+    *,
+    mesh_names: Optional[list[str]] = None,
+    source_crs: Optional[str] = None,
+    threads: Optional[int] = None,
 ):
     input_path = Path(input_file)
     suf = input_path.suffix.lower()
 
-    if suf in [".parquet", ".gpq"]:
+    if suf == ".hdf":
+        generate_mesh_pmtiles(
+            input_path, output, layer_name=layer_name,
+            min_zoom=10 if min_zoom is None else min_zoom,
+            max_zoom=14 if max_zoom is None else max_zoom,
+            mesh_names=mesh_names, source_crs=source_crs, threads=threads,
+        )
+    elif mesh_names is not None or source_crs is not None or threads is not None:
+        raise ValueError("Mesh selection, source CRS override and threads apply only to HDF input")
+    elif suf in [".parquet", ".gpq"]:
         generate_vector_pmtiles(input_path, output, layer_name, min_zoom, max_zoom)
     elif suf in [".tif", ".tiff"]:
         generate_raster_pmtiles(input_path, output, min_zoom, max_zoom)
     else:
         raise ValueError(f"Unsupported input format: {input_path.suffix}")
+
+
+def generate_mesh_pmtiles(
+    input_file: Path,
+    output: Path,
+    *,
+    layer_name: str = "mesh_cells",
+    mesh_names: Optional[list[str]] = None,
+    properties: Optional[dict] = None,
+    min_zoom: int = 10,
+    max_zoom: int = 14,
+    source_crs: Optional[str] = None,
+    threads: Optional[int] = None,
+) -> Path:
+    """Tile HDF mesh cells through Rust, using pyproj for bulk reprojection.
+
+    Requires the separately built ras-commander-fast-hdf extension. The source
+    may be geometry HDF or a computed plan containing geometry. Properties are
+    column arrays keyed by mesh name, indexed by original cell ID. All selected
+    meshes share a source layer, with mesh_name/cell_id properties preserving
+    identity. This explicit HDF route does not use the GeoParquet tiler selector.
+    """
+    from ras_commander.fast_hdf import export_mesh_pmtiles
+    from ras2cng.cog import atomic_output
+
+    input_file = Path(input_file)
+    output = Path(output)
+    if input_file.resolve() == output.resolve():
+        raise ValueError("Output must not replace the source HDF")
+    with atomic_output(output, suffix=".pmtiles") as staged:
+        export_mesh_pmtiles(
+            input_file, staged, layer_name=layer_name, mesh_names=mesh_names,
+            properties=properties, min_zoom=min_zoom, max_zoom=max_zoom,
+            source_crs=source_crs, threads=threads, backend="rust",
+        )
+    return output
 
 
 def _write_ndgeojson(gdf: gpd.GeoDataFrame, path: Path) -> int:
@@ -143,7 +192,11 @@ def generate_vector_pmtiles(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    gdf = _to_wgs84(gpd.read_parquet(input_file), Path(input_file))
+    from ras2cng.geoparquet import drop_covering_columns
+
+    # Archive bbox covering columns (struct or flat) are index data, not
+    # feature attributes; keep them out of the tiles.
+    gdf = _to_wgs84(drop_covering_columns(gpd.read_parquet(input_file)), Path(input_file))
 
     if backend == vector_tiles.FREESTILER:
         if gdf.empty:
@@ -219,8 +272,7 @@ def generate_raster_pmtiles(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    _require_cli("gdal_translate")
-    _require_cli("pmtiles")
+    backend = maplibre._raster_backend_for(input_path)
 
     info = maplibre._gdalinfo(input_path)
     bands = info.get("bands") or []
@@ -243,4 +295,5 @@ def generate_raster_pmtiles(
             max_zoom=max_zoom,
             scratch_dir=Path(scratch),
             prefix="cli-raster",
+            backend=backend,
         )

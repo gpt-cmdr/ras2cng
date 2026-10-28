@@ -6,7 +6,7 @@
 ras2cng/
 ├── cli.py           — Typer CLI for archive, extraction, mapping, MapLibre packaging, and validation
 ├── project.py       — Full-project orchestration: inspect, archive, metadata export
-├── catalog.py       — Manifest schema v2.5 for archive catalogs (manifest.json)
+├── catalog.py       — Manifest schema v2.7 for archive catalogs (manifest.json)
 ├── geometry.py      — HDF + text geometry export via ras-commander (20 HDF + 3 text layers)
 ├── results.py       — Plan HDF results export with polygon/point/geometryless modes and cell/face join keys
 ├── precipitation.py — Gridded precipitation GeoTIFF export from HDF meteorology results
@@ -40,7 +40,7 @@ geometry.py / results.py          precipitation.py / mapping.py / terrain.py
      ▼                                  ▼
 GeoParquet/Parquet (ZSTD, bbox, indexes)  GeoTIFF rasters + terrain HDFs
      │
-     ├── catalog.py         →  manifest.json (schema v2.5)
+     ├── catalog.py         →  manifest.json (schema v2.7)
      ├── duckdb_session.py  →  SQL analytics
      ├── pmtiles.py         →  GeoJSON → tippecanoe → PMTiles
      └── postgis_sync.py    →  SQLAlchemy → PostGIS + GIST index
@@ -65,7 +65,7 @@ never next to the HEC-RAS `.prj`, which would break project resolution.
 ## Key Design Decisions
 
 - **Spatial post-processing by default**: `archive_project()` runs the archive index pass unless `sort=False` or `--no-sort` is used. The CLI command `ras2cng spatial-index ARCHIVE_DIR` runs the same pass later for extraction-only archives.
-- **ZSTD compression for archives**: `archive_project()` uses ZSTD compression with per-row bbox columns and GeoParquet `covering` metadata for spatial predicate pushdown. Post-processing preserves that metadata while adding `hilbert_index` to GeoParquet geometry and sorting by `layer,hilbert_index`. Legacy single-file exports still use snappy for maximum read performance
+- **ZSTD compression for archives**: `archive_project()` uses ZSTD compression with a GeoParquet 1.1 `bbox` struct and `covering` metadata for spatial predicate pushdown, row groups that end at layer boundaries, and Hilbert order within each layer (`ras2cng.geoparquet`; fast-hdf's native writer when installed). Post-processing preserves that metadata and order while adding `hilbert_index`. Legacy single-file exports still use snappy for maximum read performance
 - **snake_case columns**: ras-commander normalizes all column names (e.g., "Maximum Depth" → `maximum_depth`)
 - **Table alias `_`**: DuckDB queries always use `_` as the table name — consistent, short, collision-free
 - **Suffix-based detection**: File type is determined from the file extension, not file inspection — fast and predictable

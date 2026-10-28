@@ -47,21 +47,60 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 **Core modules** — each handles one concern:
 - `project.py` — Full-project orchestration. `archive_project()` produces consolidated GeoParquet files (one per geometry source, one per plan) with `layer` discriminator column. `export_project_metadata()` writes RasPrj dataframes to a plain Parquet with `_table` column. `_write_geoparquet()` helper adds per-row bbox columns and ZSTD compression with GeoParquet `covering` metadata. `inspect_project()` returns a `ProjectInfo` dataclass (no file extraction). **Note**: `init_ras_project` and `export_all_variables` are imported at module level (not lazy) to enable mock patching in tests.
 - `catalog.py` — Schema v2.0. `Manifest` dataclass manages `manifest.json`. `ManifestGeomEntry` has a `parquet` field (single consolidated file) and `layers` list with `filter_value` for each layer. `ManifestPlanEntry` similarly has a `parquet` field. `project_parquet` field on `Manifest` references the metadata file.
-- `geometry.py` — Detects file type (HDF `.g??.hdf` vs text `.g??`) and routes to ras-commander parsers. `HDF_LAYERS` dict maps 10 layer names to `(class, method_name)` for dispatch. `merge_all_layers()` consolidates all HDF + text layers into a single GeoDataFrame with `layer` column (text layers get `_text` suffix). `_hilbert_sort()` uses DuckDB for spatial sorting. Legacy `export_all_hdf_layers()` / `export_all_text_layers()` remain for backward compat.
+- `geometry.py` — Detects file type (HDF `.g??.hdf` vs text `.g??`) and routes to ras-commander parsers. `HDF_LAYERS` dict maps 10 layer names to `(class, method_name)` for dispatch. `merge_all_layers()` consolidates all HDF + text layers into a single GeoDataFrame with `layer` column (text layers get `_text` suffix). `_hilbert_sort()` uses DuckDB `ST_Hilbert`; before 0.13 it called a function DuckDB does not have and silently did nothing (the spatial-index post-pass sorted instead). Legacy `export_all_hdf_layers()` / `export_all_text_layers()` remain for backward compat.
 - `results.py` — Exports 2D mesh summary variables from plan HDF files. `merge_all_variables()` consolidates all variables into a single GeoDataFrame with `layer` column. Accepts `mesh_cells_gdf` GeoDataFrame directly for polygon join (avoids write-then-read).
 - `duckdb_session.py` — `DuckSession` class wraps DuckDB with auto-loaded spatial extension. `register_parquet()` detects WKB geometry columns and converts them to DuckDB GEOMETRY type. The table alias is always `_`.
 - `pmtiles.py` — Dispatches between vector (GeoParquet → GeoJSON → tippecanoe → PMTiles, or GeoParquet → freestiler → PMTiles) and raster (GeoTIFF → gdal_translate → pmtiles) pipelines. Requires external CLIs: `tippecanoe`, `gdal_translate`, `pmtiles`; vectors can instead use the optional `ras2cng[freestiler]` extra, selected by `RAS2CNG_VECTOR_TILER` (`vector_tiles.py`). Vector tiles never drop features to cap tile size.
+- `raster_tiles.py` — **Raster tiler backend selection for every raster PMTiles writer** (terrain, Stored Maps, calculated layers, `pmtiles` on a GeoTIFF). `RAS2CNG_RASTER_TILER` = `auto` (default: terrio when installed and the raster is under `RAS2CNG_TERRIO_MAX_PIXELS`, 400 M) | `terrio` (pure-Rust, in-process; no GDAL/pmtiles CLIs) | `gdal` (the gdaldem→gdalwarp→gdal_translate→gdaladdo→`pmtiles convert` chain, streams any size). Measured on Bald Eagle: terrain 6.8 s vs 13.4 s, depth 1.6 s vs 4.7 s. terrio result overviews use `NEAREST`, holding visible wet area at 1.000× at z10 (GDAL chain: 1.225×), and its terrain edges carry ramp colour (the GDAL chain's were black despite the alpha-0 ramp trick, because `gdalwarp -dstalpha` writes black RGB). Terrain uses `AVERAGE`; override with `RAS2CNG_RASTER_TILE_RESAMPLING`. `package_maplibre_terrain(hillshade=True)` (default; CLI `--no-hillshade`) multiplies a terrio multidirectional hillshade into the display colours. It shades only visible pixels, because darkening RGB under alpha 0 brings the edge fringe back. It is not gdaldem-identical, which is accepted for display. Tests pin `gdal` via an autouse fixture in `tests/conftest.py`, because the older raster tests mock the GDAL subprocesses. With a streaming terrio (`dem` has `max_memory_mib` and `hillshade_strength`), relief or one-pass shaded relief goes file to file, the warp is chunked when `warp` has `max_memory_mib`, and PMTiles stream from the lazily opened warp. Tiles are byte-identical to the in-memory path and there is no pixel cap (Terrain50 z14: 13.4 GB -> 1.0 GB peak). `RAS2CNG_TERRIO_MAX_MEMORY_MIB` bounds the strips.
+- `geoparquet.py` — **Every archive GeoParquet goes through `write_geoparquet()`.** It writes a GeoParquet 1.1 `bbox` struct covering (manifest 2.7; older archives have flat `bbox_xmin`… and every reader accepts both), ZSTD level 3 with dictionary encoding on string columns only, and row groups of 65,536 rows that also end at every layer boundary. Per-row-group dictionaries on unique numeric columns cost 12–15% and ZSTD level 1 another 15%. Rows are Hilbert-ordered within each layer by DuckDB `ST_Hilbert` of the bbox centre over the layer extent; a bit-identical NumPy port is used, with a warning, only when DuckDB spatial is missing. With sorting on, the writer stores `hilbert_index` and the spatial-index pass leaves the file alone. fast-hdf's `export_geoparquet_ipc_files` is used only when it accepts `dictionary: "utf8"` and the data fits its contract; otherwise pyarrow writes it and `manifest.geometry[].geoparquet.fallback_reason` says why. Override with `RAS2CNG_GEOPARQUET_WRITER=auto|native|python`. Never call `gdf.to_parquet` for archive files.
 - `postgis_sync.py` — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2 with automatic spatial index creation.
 - `terrain.py` — Terrain discovery, consolidation, and raster export. `discover_terrains()` finds terrain layers from rasmap. `consolidate_terrain()` provides a pure-Python publication mosaic. `export_modified_terrain()` delegates registered-terrain consolidation, exact 1x/2x/4x/8x downsampling, and modification rasterization to `RasTerrain.export_rasmapper_terrain()`; it does not use a geometry HDF or the deprecated row sampler. Native terrain export is qualified on Windows and Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1, with stable 7.1 forward-open behind ras-commander's exact managed-contract check. `export_mannings_raster()` separately wraps `HdfLandCover.compute_final_mannings_raster()` and still requires HEC-RAS 6.6+ on Windows.
 - `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0).
+- `fast_map.py` — Optional Rust WSE/Depth and inundation-boundary mapping for pure 2D models (`map --engine fast-map`, env `RAS2CNG_MAP_ENGINE`); see *Mapping engines* below.
 
 **Data flow**: HEC-RAS files → ras-commander → GeoDataFrame → GeoParquet (ZSTD compression, bbox columns, Hilbert sorted). Archive output uses `_write_geoparquet()` which adds `covering` metadata for spatial predicate pushdown.
+
+## Mapping engines (agents: read before running `ras2cng map`)
+
+RAS Mapper stays the **default** engine. For **pure 2D models** (no 1D reaches
+or cross sections, no storage areas), agents should **recommend and use
+`--engine fast-map`** for WSE, Depth and especially **inundation boundaries**:
+
+```bash
+ras2cng map <project> <out> --engine fast-map --inundation-boundary --ras-version 7.0.1
+```
+
+- **Inundation boundaries are the strongest case.** RAS Mapper's boundary
+  export is very slow. In ras-commander's Davis comparison the Rust batch
+  (Max plus one timestep) took 3.5 s against 85 s for the two native calls.
+  The Rust result is a deterministic contour method
+  (`deterministic-zero-depth-contours/1`): byte-identical across runs,
+  platforms and worker counts. It is **close to, not identical with,** RAS
+  Mapper's polygons, which themselves vary between identical exports (Davis
+  Max: 66 vs 65 holes, ~7,400 ft² difference, almost all one hole). Say so
+  when reporting; never claim vector parity.
+- **WSE/Depth rasters match RAS Mapper bit for bit** (five-model
+  ras-commander comparison; 1.2–7.3× faster, largest on 340k+ cell meshes).
+  On small models the end-to-end time can be about equal.
+- Out-of-scope plans fall back to RAS Mapper per product group, with the
+  reason printed. Use `--fast-map-strict` when the user needs proof that Rust
+  ran. Boundaries additionally need a **single-source, unmodified** terrain
+  (original TIFF + terrain HDF; `--fast-map-terrain-hdf` to point at it) and
+  horizontal or plain sloping render mode. Rasters need a float32 export of
+  the registered terrain: reuse one with `--fast-map-terrain` rather than
+  re-exporting each run.
+- `MapResult.engines` records which engine produced each map type.
+  Boundary output is `Inundation Boundary (Max).geojson` (RAS Mapper writes a
+  shapefile), with `fast_map_boundary_manifest.json`.
+- Rust boundaries need ras-commander with `RasFim.map_inundation_boundaries`
+  (ras-commander PR #709 + ras-commander-fast-map PR #5; unreleased as of
+  2026-10-27). Until then they fall back to RAS Mapper automatically.
 
 ## Archive Output Structure
 
 ```
 {output_dir}/
-├── manifest.json                         # Always written (schema v2.3)
+├── manifest.json                         # Always written (schema v2.7)
 ├── {ProjectName}.parquet                 # Project metadata (RasPrj dataframes, _table column)
 ├── {ProjectName}.g01.parquet             # All geometry from g01 HDF + text, layer column
 ├── {ProjectName}.g02.parquet             # (if multiple geometry files)
@@ -82,7 +121,7 @@ SELECT * FROM 'Model.p01.parquet' WHERE layer = 'maximum_depth'
 SELECT * FROM 'Model.parquet' WHERE _table = 'plan_df'
 ```
 
-Each consolidated GeoParquet includes per-row bbox columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) with GeoParquet `covering` metadata for spatial predicate pushdown. Rows are Hilbert-sorted within each layer for optimal spatial locality.
+Each consolidated GeoParquet includes a per-row `bbox` struct column (`bbox.xmin`, `bbox.ymin`, `bbox.xmax`, `bbox.ymax`; archives before manifest 2.7 use flat `bbox_xmin`… columns) with GeoParquet 1.1 `covering` metadata for spatial predicate pushdown. Rows are Hilbert-sorted within each layer for optimal spatial locality.
 
 ## Key Conventions
 

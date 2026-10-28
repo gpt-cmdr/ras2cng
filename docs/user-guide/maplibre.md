@@ -77,13 +77,59 @@ Vector PMTiles are built by one of two interchangeable backends, chosen with
 |---|---|---|
 | `auto` (default) | tippecanoe when `tippecanoe` and `pmtiles` are on PATH, otherwise freestiler | Windows without tippecanoe gets freestiler automatically |
 | `tippecanoe` | `tippecanoe` + `pmtiles` CLIs | Smallest archives |
-| `freestiler` | In-process Rust tiler, `pip install ras2cng[freestiler]` | No external tools; 8-20x faster; archives about 40-50% larger; holds every layer of a tileset in memory |
+| `freestiler` | In-process Rust tiler, `pip install ras2cng[freestiler]` | No external tools; 8-20x faster; archives about 40-50% larger; with a freestiler that has `freestile_layers`, one layer of a tileset in memory at a time |
+
+freestiler options (tippecanoe ignores them; its tiles never carry feature IDs):
+
+| Setting | Default | Effect |
+|---|---|---|
+| `RAS2CNG_VECTOR_TILE_IDS`, CLI `--feature-ids/--no-feature-ids` | on | `0` / `--no-feature-ids` omits MVT feature IDs (`generate_ids=False`). Bald Eagle 87k-cell mesh, z10-15: 1.7 MB smaller (-14%). The ras2cng viewer does not use IDs; keep them if a consumer uses MapLibre `feature-state` without `promoteId` |
+| `RAS2CNG_VECTOR_TILE_GZIP_LEVEL` | 6 | Tile gzip level 0-9, when the installed freestiler accepts `gzip_level` (freestiler's own default is 1). Same mesh: -14%, tile contents unchanged |
+
+Multi-layer tilesets use `freestiler.freestile_layers` when available, reading
+each layer's GeoJSON source only when its turn comes. If that build's
+`freestile_layers` has no `gzip_level`, ras2cng warns once and those tilesets
+keep freestiler's default compression.
 
 Both keep every feature at every zoom of a tileset and keep shared mesh edges
 coincident. Neither ever drops features to cap tile size: thinning a uniform
 mesh renders as stripes. Tile weight is bounded by each tileset's minimum zoom
 instead (see below). The comparison behind this choice is in
 `feature_dev_notes/vector_tiler_evaluation_2026-10-12.md`.
+
+## Raster Tiler
+
+Terrain and result rasters (Stored Maps, calculated layers, `ras2cng pmtiles` on
+a GeoTIFF) are colorized, warped to Web Mercator and written as PNG PMTiles by
+one of two backends, chosen with `RAS2CNG_RASTER_TILER`:
+
+| Value | Backend | Notes |
+|---|---|---|
+| `auto` (default) | terrio when installed and the raster fits, otherwise GDAL | terrio ships in the `pmtiles`, `terrio` and `all` extras |
+| `terrio` | In-process pure-Rust tiler ([terrio](https://github.com/opengeos/terrio)) | No GDAL or `pmtiles` CLIs; terrain hillshade; whole raster held in memory |
+| `gdal` | `gdaldem` → `gdalwarp` → `gdal_translate` → `gdaladdo` → `pmtiles convert` | Streams through files, so any size; no hillshade |
+
+Measured on Bald Eagle Creek rasters through the real packagers:
+
+| Layer | terrio | GDAL chain |
+|---|---|---|
+| Terrain, 6705 × 4852 px at 20 ft | 6.8 s (hillshaded) | 13.4 s |
+| Depth Stored Map | 1.6 s | 4.7 s |
+
+At full resolution terrio's tile colours are within 0.2/255 of the GDAL chain on
+average. terrio also fixes two display defects of the GDAL chain:
+
+- **Flood extent holds at every zoom.** Result-layer overviews use `NEAREST`, so
+  the visible wet area at z10 is 1.000× the full-resolution area. The GDAL
+  chain's `gdaladdo -r average` showed 1.225× at z10. That is the same extent
+  growth `ras2cng.cog` prevents in COG overviews.
+- **No dark terrain fringe.** The GDAL chain's semi-transparent terrain-edge
+  pixels were black at every overview level; terrio's keep the ramp colour.
+
+Terrain overviews use `AVERAGE` (a smooth, fully covered surface).
+`RAS2CNG_RASTER_TILE_RESAMPLING=NEAREST|AVERAGE` overrides both kinds. Rasters
+larger than `RAS2CNG_TERRIO_MAX_PIXELS` (default 400 million pixels) use the
+GDAL chain under `auto`, because terrio processes the raster in memory.
 
 ## Layer Behavior
 
@@ -151,6 +197,14 @@ and adds it to the `Terrain` control group. Its display palette is the RASMapper
 palette stretched over the source elevation range. The original COG remains unmodified and
 is referenced as `sourceCog`, allowing a click to report the original elevation rather than
 the colorized tile value.
+
+With the terrio raster tiler the display tiles are **hillshaded** by default: a
+multidirectional terrio hillshade is multiplied into the terrain colours, as RAS
+Mapper shades terrain. terrio's hillshade is not pixel-identical to `gdaldem`;
+that is accepted for a display layer. Identify values still come from the
+unshaded COG. `--no-hillshade` publishes flat colour relief, and the manifest
+records `hillshade` and `rasterTiler` on the terrain tileset. Hillshaded archives
+are larger (Bald Eagle: 6.3 MB against 3.9 MB flat), because shading adds texture.
 
 The display raster is reprojected to Web Mercator only for tiled delivery. Its maximum zoom
 is capped at the native terrain cell resolution; `--max-zoom` may lower that cap but cannot

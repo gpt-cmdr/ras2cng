@@ -138,6 +138,71 @@ each cell's wet contributors — never the max, which would inflate flood volume
 
 Categorical rasters get the same mask with a modal value.
 
+### Native engine: terrio
+
+When the installed `terrio` has the area-matched COG writer (gpt-cmdr/terrio
+#9: `Raster.write(metadata=..., overview_resampling="area_matched")`), the
+whole COG is written by terrio: the overviews are built in Rust and encoded by
+terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
+(0.5.0) keeps the GDAL path. Pinned by `tests/test_terrio_equivalence.py`:
+
+- **Lossless output** (DEFLATE/ZSTD floats, integer, categorical) is the GDAL
+  path's file, level for level and pixel for pixel, with the same tags.
+- **LERC output** holds the same bound, but not the same values. Measured on
+  Bald Eagle Depth (Max) (1,345,691 wet pixels, `MAX_Z_ERROR=0.01`, 512 tiles):
+    - Both encoders hold the bound exactly: max error 0.01000 each, mean
+      0.0048 each.
+    - **8.1% of pixels decode differently**, by **at most one quantization
+      step (≤ 0.02)**. The differences come in whole 8×8 micro-blocks:
+      terrio's lerc-writer stores the exact block minimum as the offset, and
+      Esri/GDAL often does not.
+    - **terrio's file is currently about 10% larger** (10.6% on that raster).
+    - The nodata mask is identical, and so are `compression_lossy`,
+      `compression_max_z_error` and the overview provenance tags.
+
+  **Code that relies on byte or value equality with artifacts written by
+  the GDAL path must ask for lossless** (`lerc_max_z_error=None` or
+  `RAS2CNG_LERC_MAX_Z_ERROR=off`). It is lossless output that is identical
+  across engines, not LERC output.
+- terrio does not report area ratios, so `overview_area_ratios` and
+  `overview_base_valid_pixels` come from one streamed pass over level 0. That
+  pass is exact: the selection keeps `round(valid / f²)` cells, or every partly
+  wet cell when there are fewer.
+- The GDAL path still runs for:
+    - a raster with no nodata;
+    - more than one band;
+    - an internal mask or alpha band;
+    - a raster above the pixel ceiling;
+    - a creation option terrio does not act on;
+    - **NaN under a numeric nodata**. terrio treats NaN as dry, but rasterio's
+      mask treats it as a wet value.
+
+  Each fallback reports exactly what it did before.
+
+Measured on Bald Eagle (peak working set, fresh process, default LERC 0.01):
+
+| artifact | GDAL path | terrio | size (GDAL → terrio) |
+|---|---|---|---|
+| Terrain50 COG (15,777 × 12,599, `LERC_DEFLATE`, `LEVEL=9`) | 66.0 s / 2,197 MiB | 24.0 s / 2,071 MiB | 377.96 → 377.75 MB (−0.06%) |
+| Depth (Max) COG (`LERC_DEFLATE`) | 9.1 s / 621 MiB | 4.7 s / 485 MiB | 2.243 → 2.262 MB (+0.8%) |
+
+The times were taken on a shared, fully loaded host, so compare them only
+against each other. With ras2cng's default `LERC_DEFLATE` the size gap is
+much smaller than the ~10% measured with plain LERC. On this Depth COG, 4.5%
+of base pixels differ from GDAL's, by at most 0.0197, and every level is
+within 0.01 of the lossless pyramid with an identical mask.
+
+terrio reads the base level whole, so peak memory is still about the
+raster's size. Only the NumPy accumulators go.
+
+### Layout validation
+
+`validate_cog` uses `terrio.validate_cog` when it exists (gpt-cmdr/terrio
+#10). It is a port of `rio_cogeo.cog_validate` with the same checks and
+messages, and it reads only the TIFF structure. If terrio cannot read a file,
+the check falls through to rio-cogeo. Set `RAS2CNG_COG_ENGINE=gdal` to use
+GDAL and rio-cogeo for both the writer and the validator.
+
 ## CRS: never guessed
 
 An authority code is published only when the registered definition round-trips
@@ -155,6 +220,7 @@ instead, and `sourceProj4` remains the authoritative field for the browser.
 | `RAS2CNG_COG_COMPRESS` | `DEFLATE` | lossless codec / LERC base (`ZSTD` for internal use) |
 | `RAS2CNG_COG_PREDICTOR` | `YES` | predictor for lossless float output |
 | `RAS2CNG_AREA_MATCHED_MAX_PIXELS` | `400000000` | ceiling above which overviews fall back to GDAL resampling |
+| `RAS2CNG_COG_ENGINE` | `auto` | `auto`: terrio where it reproduces the GDAL path; `terrio`: require it; `gdal`: never use it |
 | `RAS2CNG_TIPPECANOE_BOUNDED` | unset | cap vector tile size on every tileset |
 
 Rasters that exceed the pixel ceiling fall back to GDAL resampling and **record

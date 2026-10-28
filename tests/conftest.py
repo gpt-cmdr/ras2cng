@@ -338,3 +338,17 @@ def _file_id(p: Path) -> str:
     label = _source_label(p)
     subdir = _output_subdir(p).split("/", 1)[-1] if "/" in _output_subdir(p) else p.parent.name
     return f"{label}/{subdir}/{p.name}"
+
+
+# ---------------------------------------------------------------------------
+# Raster tiler backend
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _gdal_raster_tiler_by_default(monkeypatch):
+    """Existing raster tests mock the GDAL CLI chain, so pin that backend.
+
+    With terrio installed, ``RAS2CNG_RASTER_TILER=auto`` would choose terrio.
+    Tests that exercise terrio set the variable themselves.
+    """
+    monkeypatch.setenv("RAS2CNG_RASTER_TILER", "gdal")

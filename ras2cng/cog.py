@@ -143,6 +143,75 @@ MIN_CRS_CONFIDENCE = 70
 TERRAIN_CREATION_OPTIONS: dict[str, Any] = {"LEVEL": 9, "SPARSE_OK": "YES"}
 
 
+#: Which engine writes area-matched COGs and validates layout: ``auto`` (the
+#: default) uses terrio where the installed terrio can reproduce the GDAL path
+#: exactly, ``terrio`` requires it, ``gdal`` keeps the rasterio/GDAL path and
+#: ``rio-cogeo``.  See :func:`terrio_cog_writer` and :func:`area_matched_cog`.
+COG_ENGINE_ENV = "RAS2CNG_COG_ENGINE"
+
+#: Creation options terrio's COG writer acts on (GDAL's COG driver names).  An
+#: option outside this set sends the write down the GDAL path rather than
+#: being refused by terrio's strict option check.
+_TERRIO_COG_OPTIONS = frozenset({
+    "BIGTIFF", "BLOCKSIZE", "COMPRESS", "LEVEL", "MAX_Z_ERROR",
+    "MAX_Z_ERROR_OVERVIEW", "NUM_THREADS", "OVERVIEWS", "OVERVIEW_COMPRESS",
+    "OVERVIEW_PREDICTOR", "PREDICTOR", "SPARSE_OK",
+})
+
+
+def cog_engine() -> str:
+    """Return the requested COG engine: ``auto``, ``terrio`` or ``gdal``."""
+
+    value = os.environ.get(COG_ENGINE_ENV, "auto").strip().lower() or "auto"
+    if value not in {"auto", "terrio", "gdal"}:
+        raise ValueError(f"{COG_ENGINE_ENV} must be one of auto, terrio, gdal; got {value!r}")
+    return value
+
+
+def _terrio_signature_has(function: Any, *names: str) -> bool:
+    """Whether ``function``'s signature has every parameter in ``names``.
+
+    Matched as whole parameter names: ``band_metadata`` is not ``metadata``.
+    """
+    import re
+
+    text = getattr(function, "__text_signature__", None) or ""
+    return all(re.search(rf"(?<![\w]){re.escape(name)}\s*=", text) for name in names)
+
+
+def terrio_cog_writer():
+    """Return the ``terrio`` module when it writes area-matched COGs, else ``None``.
+
+    Capability-detected rather than version-pinned: ``Raster.write`` gained
+    ``metadata=`` in the same change as ``overview_resampling="area_matched"``
+    and ``PREDICTOR=YES`` with GDAL semantics (gpt-cmdr/terrio #9).  Stock
+    terrio 0.5.0 has neither, so it keeps the GDAL path.
+    """
+
+    if cog_engine() == "gdal":
+        return None
+    try:
+        import terrio
+    except ImportError:
+        return None
+    raster = getattr(terrio, "Raster", None)
+    if raster is None or not _terrio_signature_has(getattr(raster, "write", None), "metadata"):
+        return None
+    return terrio
+
+
+def terrio_cog_validator():
+    """Return ``terrio.validate_cog`` when available (gpt-cmdr/terrio #10), else ``None``."""
+
+    if cog_engine() == "gdal":
+        return None
+    try:
+        import terrio
+    except ImportError:
+        return None
+    return getattr(terrio, "validate_cog", None)
+
+
 class CogValidationUnavailable(RuntimeError):
     """Raised when ``rio-cogeo`` is not installed, so layout cannot be checked."""
 
@@ -362,6 +431,32 @@ class CogValidation:
     layout_checked: bool = False
 
 
+def _check_layout(path: Path) -> tuple[bool, list[str], list[str]] | None:
+    """Run the cloud-optimized layout check; ``None`` when no checker is installed.
+
+    terrio's ``validate_cog`` (gpt-cmdr/terrio #10) is preferred when present: it
+    ports ``rio_cogeo.cog_validate`` check for check and message for message
+    (0 disagreements over 31 files, strict on and off) and reads only the TIFF
+    structure.  A file terrio cannot read falls through to rio-cogeo instead of
+    being judged on terrio's word alone.  Both gate on the returned boolean.
+    """
+
+    native = terrio_cog_validator()
+    if native is not None:
+        try:
+            valid, errors, cog_warnings = native(str(path), strict=False)
+            return bool(valid), list(errors), list(cog_warnings)
+        except Exception:
+            pass
+    try:
+        from rio_cogeo.cogeo import cog_validate
+    except ImportError:
+        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return cog_validate(str(path), quiet=True)
+
+
 def validate_cog(path: Path, *, require_mask: bool = True) -> CogValidation:
     """Validate cloud-optimized *layout* and transparent-display readiness.
 
@@ -380,17 +475,14 @@ def validate_cog(path: Path, *, require_mask: bool = True) -> CogValidation:
     target = Path(path)
     result = CogValidation(path=target, valid=True)
 
-    try:
-        from rio_cogeo.cogeo import cog_validate
-    except ImportError:
+    layout = _check_layout(target)
+    if layout is None:
         result.warnings.append(
             "rio-cogeo is not installed, so cloud-optimized layout was not verified. "
             "Install ras2cng[pmtiles] to enable the layout gate."
         )
     else:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            is_valid, errors, cog_warnings = cog_validate(str(target), quiet=True)
+        is_valid, errors, cog_warnings = layout
         result.layout_checked = True
         result.warnings.extend(str(item) for item in cog_warnings or ())
         if not is_valid:
@@ -581,6 +673,10 @@ class OverviewReport:
     #: Set only for LERC.  Its presence is the record that the artifact is
     #: lossy and by how much.
     lossy_max_z_error: float | None = None
+    #: Which writer produced the file: ``gdal`` (VRT + GDAL COG driver) or
+    #: ``terrio`` (native area-matched writer).  Not written as a tag: both
+    #: engines produce the same pixels and the same provenance tags.
+    engine: str = "gdal"
 
     def as_tags(self) -> dict[str, str]:
         tags = {
@@ -929,6 +1025,156 @@ def _vrt_with_overviews(
     return vrt_path
 
 
+def _scan_area_matched(source, factors: Sequence[int], band: int = 1):
+    """Stream level 0 once for what terrio's writer does not report.
+
+    Returns ``(base_valid, area_ratios, nan_under_numeric_nodata)``.  The ratios
+    are exactly what :func:`build_area_matched_overviews` records: its
+    selection keeps ``round(base_valid / f**2)`` coarse cells, or every coarse
+    cell holding any valid pixel when there are fewer (the tie-break only
+    chooses *which* cells), so a running "any valid" pyramid -- one byte per
+    level-1 cell -- reproduces them without the float accumulators.
+    """
+
+    import numpy as np
+    from rasterio.windows import Window
+
+    height, width = source.height, source.width
+    nodata = float(source.nodata)
+    check_nan = (not math.isnan(nodata)) and np.dtype(source.dtypes[band - 1]).kind == "f"
+    any_valid = np.zeros((math.ceil(height / 2), math.ceil(width / 2)), dtype=bool)
+    base_valid = 0
+    has_nan = False
+
+    strip = max(2, min(height + (height % 2), 2 * max(1, 4_000_000 // max(1, width))))
+    strip += strip % 2
+    for row in range(0, height, strip):
+        rows = min(strip, height - row)
+        data = source.read(band, window=Window(0, row, width, rows), masked=True)
+        valid = ~np.ma.getmaskarray(data)
+        if check_nan and not has_nan:
+            has_nan = bool(np.isnan(np.ma.getdata(data)[valid]).any())
+        base_valid += int(valid.sum())
+        target = slice(row // 2, row // 2 + math.ceil(rows / 2))
+        any_valid[target, :] = _reduce_sum(valid.astype(np.uint8)) > 0
+
+    ratios: list[float] = []
+    for index, factor in enumerate(factors):
+        if index > 0:
+            any_valid = _reduce_sum(any_valid.astype(np.uint8)) > 0
+        target = int(round(base_valid / (factor * factor)))
+        kept = 0 if target <= 0 else min(target, int(any_valid.sum()))
+        ratios.append((kept * factor * factor) / base_valid if base_valid else 0.0)
+    return base_valid, ratios, has_nan
+
+
+def _terrio_area_matched_cog(
+    terrio: Any,
+    source_path: Path,
+    destination: Path,
+    *,
+    factors: Sequence[int],
+    categorical: bool,
+    compress: str,
+    tolerance: float | None,
+    predictor: int | str | None,
+    blocksize: int,
+    extra_options: Mapping[str, Any],
+) -> OverviewReport | None:
+    """Write the area-matched COG with terrio, or return ``None`` to use GDAL.
+
+    terrio's ``overview_resampling="area_matched"`` is a port of
+    :func:`build_area_matched_overviews` (0 pixel differences), so this path
+    only runs where the overviews are the GDAL path's (lossless output is
+    pixel-identical; LERC output is within MAX_Z_ERROR of the same lossless
+    pyramid, encoded by terrio rather than GDAL): one band, an explicit
+    nodata and no other mask, within :data:`MAX_AREA_MATCHED_PIXELS`, every
+    creation option one terrio acts on, and no NaN under a numeric nodata
+    (terrio treats NaN as invalid; rasterio's mask treats it as a wet value).
+    Anything else returns ``None`` and the GDAL path reports it as before.
+    """
+
+    import rasterio
+    from rasterio.enums import MaskFlags
+
+    options = {str(key).upper(): value for key, value in extra_options.items()}
+    if any(key not in _TERRIO_COG_OPTIONS for key in options):
+        return None
+    with rasterio.open(source_path) as source:
+        if source.count != 1 or source.nodata is None:
+            return None
+        if source.width * source.height > MAX_AREA_MATCHED_PIXELS:
+            return None
+        if source.mask_flag_enums and set(source.mask_flag_enums[0]) != {MaskFlags.nodata}:
+            return None
+        if source.dtypes[0] in {"complex64", "complex128", "complex_int16"}:
+            return None
+        base_valid, ratios, has_nan = _scan_area_matched(source, factors)
+        # The VRT route carries the source's default-domain items, including
+        # GDAL's TIFFTAG_* (HEC-RAS writes TIFFTAG_IMAGEDESCRIPTION/ARTIST),
+        # which terrio does not read back as metadata; pass them on explicitly.
+        source_tags = dict(source.tags())
+        # Band items (HEC-RAS: UNITS, TYPE, STATISTICS_*), description, unit,
+        # scale and offset likewise travel through the VRT; terrio takes them
+        # only when given.
+        band: dict[str, Any] = {}
+        if source.tags(1):
+            band["items"] = dict(source.tags(1))
+        if source.descriptions and source.descriptions[0]:
+            band["description"] = source.descriptions[0]
+        if source.units and source.units[0]:
+            band["unit"] = source.units[0]
+        if source.scales and source.scales[0] not in (None, 1.0):
+            band["scale"] = float(source.scales[0])
+        if source.offsets and source.offsets[0] not in (None, 0.0):
+            band["offset"] = float(source.offsets[0])
+        band_metadata = [band] if band else None
+    if base_valid == 0 or has_nan:
+        return None
+
+    method = "area_matched_mode" if categorical else "area_matched_mean"
+    report = OverviewReport(
+        method=method,
+        factors=list(factors),
+        base_valid_pixels=base_valid,
+        area_ratios=ratios,
+        compression=compress,
+        lossy_max_z_error=tolerance,
+        engine="terrio",
+    )
+    creation = {
+        "COMPRESS": compress,
+        "BLOCKSIZE": str(blocksize),
+        "BIGTIFF": "IF_SAFER",
+        "NUM_THREADS": "ALL_CPUS",
+        # Stated explicitly as everywhere else: the pyramid is computed here,
+        # never inherited from the source's internal overviews.
+        "OVERVIEWS": "IGNORE_EXISTING",
+    }
+    for key, value in options.items():
+        creation[key] = f"{value:g}" if isinstance(value, float) else str(value)
+    if predictor is not None:
+        creation["PREDICTOR"] = str(predictor)
+
+    # Lossless output is the GDAL path's file level for level and pixel for
+    # pixel.  LERC output holds the same MAX_Z_ERROR bound, but terrio's
+    # encoder (lerc-writer) stores each 8x8 micro-block's exact minimum as its
+    # offset where GDAL's often does not, so ~8% of pixels decode one
+    # quantization step (<= 2 x MAX_Z_ERROR) away from a GDAL-written file;
+    # the nodata mask is identical.  Pinned by tests/test_terrio_equivalence.py.
+    raster = terrio.open(str(source_path))
+    with atomic_output(destination) as staged:
+        raster.write(
+            str(staged),
+            driver="COG",
+            options=creation,
+            overview_resampling="area_matched_mode" if categorical else "area_matched",
+            metadata={**source_tags, **report.as_tags()},
+            band_metadata=band_metadata,
+        )
+    return report
+
+
 def area_matched_cog(
     source_path: Path,
     destination: Path,
@@ -988,6 +1234,40 @@ def area_matched_cog(
         extra_options["MAX_Z_ERROR"] = tolerance
         # LERC does its own encoding; a byte predictor on top is meaningless.
         predictor = None
+
+    terrio = terrio_cog_writer() if factors else None
+    if terrio is None and factors and cog_engine() == "terrio":
+        raise RuntimeError(
+            f"{COG_ENGINE_ENV}=terrio, but the installed terrio cannot write area-matched "
+            "COGs (needs gpt-cmdr/terrio #9: Raster.write(metadata=, "
+            "overview_resampling='area_matched'))."
+        )
+    if terrio is not None:
+        try:
+            native = _terrio_area_matched_cog(
+                terrio,
+                source_path,
+                destination,
+                factors=factors,
+                categorical=categorical,
+                compress=compress,
+                tolerance=tolerance,
+                predictor=predictor,
+                blocksize=blocksize,
+                extra_options=extra_options,
+            )
+        except Exception as error:
+            if cog_engine() == "terrio":
+                raise
+            # The GDAL path below writes the same artifact; say why it ran.
+            warnings.warn(
+                f"terrio could not write {destination.name} ({error}); using GDAL",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            native = None
+        if native is not None:
+            return native
 
     with tempfile.TemporaryDirectory(
         prefix="ras2cng-cog-",

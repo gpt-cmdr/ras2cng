@@ -378,48 +378,47 @@ def print_project_info(info: ProjectInfo, as_json: bool = False) -> None:
 # GeoParquet writer with bbox + covering metadata
 # ---------------------------------------------------------------------------
 
-def _write_geoparquet(gdf, output_path: Path) -> None:
-    """Write a GeoDataFrame to GeoParquet with bbox columns and covering metadata.
+def _write_geoparquet(gdf, output_path: Path, *, hilbert: bool = False) -> dict:
+    """Write an archive GeoParquet with a GeoParquet 1.1 ``bbox`` covering.
 
-    Adds per-row bounding box columns (bbox_xmin, bbox_ymin, bbox_xmax, bbox_ymax),
-    writes with ZSTD compression, and patches the GeoParquet ``geo`` metadata to
-    include the ``covering`` spec so DuckDB/BigQuery can do spatial predicate pushdown.
+    Delegates to :func:`ras2cng.geoparquet.write_geoparquet`: ZSTD, a nullable
+    ``bbox`` struct (``bbox.xmin`` ...) with ``covering`` metadata, rows
+    grouped by ``layer`` with a row group ending at every layer boundary, and,
+    with ``hilbert=True``, Hilbert order within each layer. fast-hdf's native
+    writer is used when installed and the file fits its export contract;
+    otherwise pyarrow writes the identical layout. Returns the writer record
+    stored in the manifest (``engine``, ``fallback_reason``, ``hilbert``...).
     """
-    import pyarrow.parquet as pq
+    from ras2cng.geoparquet import write_geoparquet
+    from ras2cng.spatial_index import HILBERT_COLUMN
 
-    gdf = gdf.copy()
+    # With ``hilbert`` the writer also stores the key as ``hilbert_index``, so
+    # the spatial-index post-pass does not have to rewrite the file.
+    return write_geoparquet(
+        gdf,
+        output_path,
+        layer_column="layer",
+        hilbert=hilbert,
+        hilbert_column=HILBERT_COLUMN if hilbert else None,
+    )
 
-    # Add per-row bbox columns from geometry bounds
-    bounds = gdf.geometry.bounds
-    gdf["bbox_xmin"] = bounds["minx"].values
-    gdf["bbox_ymin"] = bounds["miny"].values
-    gdf["bbox_xmax"] = bounds["maxx"].values
-    gdf["bbox_ymax"] = bounds["maxy"].values
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write initial GeoParquet (geopandas handles geo metadata + WKB encoding)
-    gdf.to_parquet(output_path, compression="zstd", index=False)
-
-    # Patch geo metadata to add covering (bbox) spec for spatial predicate pushdown
-    table = pq.read_table(output_path)
-    raw_geo = table.schema.metadata.get(b"geo")
-    if raw_geo:
-        geo_meta = json.loads(raw_geo.decode("utf-8"))
-        geom_col = geo_meta.get("primary_column", "geometry")
-        col_meta = geo_meta.get("columns", {}).get(geom_col, {})
-        col_meta["covering"] = {
-            "bbox": {
-                "xmin": ["bbox_xmin"],
-                "ymin": ["bbox_ymin"],
-                "xmax": ["bbox_xmax"],
-                "ymax": ["bbox_ymax"],
-            }
-        }
-        geo_meta.setdefault("columns", {})[geom_col] = col_meta
-        new_meta = {**table.schema.metadata, b"geo": json.dumps(geo_meta).encode("utf-8")}
-        table = table.replace_schema_metadata(new_meta)
-        pq.write_table(table, output_path, compression="zstd")
+def _report_writer(info: dict, sort: bool) -> None:
+    """Print how an archive GeoParquet was written, and any fallback."""
+    if not info:
+        return
+    engine = info.get("engine", "")
+    detail = f"    writer: {engine}"
+    if sort:
+        detail += f", Hilbert: {info.get('hilbert') or 'not applied'}"
+    console.print(detail)
+    if info.get("fallback_reason"):
+        console.print(f"    [yellow]fast-hdf writer not used:[/yellow] {info['fallback_reason']}")
+    if sort and info.get("hilbert") == "numpy":
+        console.print(
+            "    [yellow]Warning:[/yellow] DuckDB spatial unavailable; Hilbert keys came "
+            "from the bit-identical NumPy port"
+        )
 
 
 def _frame_has_geometry(frame) -> bool:
@@ -431,13 +430,13 @@ def _frame_has_geometry(frame) -> bool:
         return False
 
 
-def _write_result_frame(frame, output_path: Path) -> None:
+def _write_result_frame(frame, output_path: Path, *, hilbert: bool = False) -> dict:
     """Write either GeoParquet or plain Parquet depending on geometry presence."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if _frame_has_geometry(frame):
-        _write_geoparquet(frame, output_path)
-    else:
-        frame.to_parquet(output_path, compression="zstd", index=False)
+        return _write_geoparquet(frame, output_path, hilbert=hilbert)
+    frame.to_parquet(output_path, compression="zstd", index=False)
+    return {}
 
 
 def _result_join_metadata(frame) -> tuple[str, str]:
@@ -620,10 +619,12 @@ def archive_project(
 
             console.print(f"  [{geom_id}] -> {parquet_name}")
             try:
+                # The writer applies the Hilbert order (natively when fast-hdf
+                # is installed), so the layers are not sorted twice.
                 merged_gdf = merge_all_layers(
                     hdf_path=hdf_path,
                     text_path=text_path,
-                    sort=sort,
+                    sort=False,
                 )
                 if merged_gdf is not None and len(merged_gdf) > 0:
                     if merged_gdf.crs is None and crs:
@@ -636,7 +637,10 @@ def archive_project(
                         if len(text_layers) > 0:
                             file_types.append("text")
 
-                    _write_geoparquet(merged_gdf, parquet_path)
+                    geom_entry.geoparquet = _write_geoparquet(
+                        merged_gdf, parquet_path, hilbert=sort
+                    )
+                    _report_writer(geom_entry.geoparquet, sort)
 
                     # Build layer metadata for manifest
                     for layer_val in merged_gdf["layer"].unique():
@@ -985,7 +989,10 @@ def archive_project(
                         geometry_mode=results_geometry,
                     )
                     if results_gdf is not None and len(results_gdf) > 0:
-                        _write_result_frame(results_gdf, parquet_path)
+                        plan_entry.geoparquet = _write_result_frame(
+                            results_gdf, parquet_path, hilbert=sort
+                        )
+                        _report_writer(plan_entry.geoparquet, sort)
 
                         for var_name in results_gdf["layer"].unique():
                             var_subset = results_gdf[results_gdf["layer"] == var_name]

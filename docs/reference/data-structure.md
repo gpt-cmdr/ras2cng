@@ -275,8 +275,9 @@ All geometry is stored as **GeoParquet** (Apache Parquet + GeoArrow encoding):
 - Encoding: Well-Known Binary (WKB) via `geopandas.to_parquet()`
 - Compression: **ZSTD** for archive output (`archive_project()`), snappy for legacy single-file exports
 - CRS: Preserved in parquet metadata (`geo` key)
-- Archive GeoParquet includes per-row bbox columns (`bbox_xmin`, `bbox_ymin`, `bbox_xmax`, `bbox_ymax`) with GeoParquet `covering` metadata for spatial predicate pushdown
-- Spatial post-processing adds `hilbert_index` to GeoParquet geometry and sorts by `layer,hilbert_index`; `--no-sort` skips this during extraction and `ras2cng spatial-index ARCHIVE_DIR` can run it later
+- Archive GeoParquet includes a GeoParquet 1.1 `bbox` struct (`bbox.xmin`, `bbox.ymin`, `bbox.xmax`, `bbox.ymax`) with `covering` metadata for spatial predicate pushdown (manifest schema 2.7+). Older archives carry flat `bbox_xmin` ... `bbox_ymax` columns; readers accept both and the manifest's `bbox_columns` lists valid SQL expressions for either form
+- Rows are grouped by `layer` (a row group ends at every layer boundary and every 65,536 rows) and Hilbert ordered within each layer: DuckDB spatial `ST_Hilbert` of each bbox centre over the layer extent
+- Spatial post-processing stores that key as `hilbert_index` (uint64, null for null/empty geometry) and keeps the order; `--no-sort` skips ordering and indexing during extraction and `ras2cng spatial-index ARCHIVE_DIR` can run it later
 - Geometryless archive result tables get `join_index` and, when matching mesh geometry exists, inherit `hilbert_index` through `mesh_name` plus `cell_id` or `face_id`
 - `manifest.json` schema 2.5 records index metadata, including `sort_order`, `index_column`, `geometry_filter`, and `index_status`, plus named terrain sources and modifications
 

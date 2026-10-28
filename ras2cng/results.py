@@ -617,7 +617,10 @@ def merge_all_variables(
     if not all_gdfs:
         return None
 
-    merged = pd.concat(all_gdfs, ignore_index=True)
+    from ras2cng.geoparquet import concat_layers
+
+    # Integer keys (cell_id, face_id) stay Int64 instead of widening to float.
+    merged = concat_layers(all_gdfs, geometry=None)
     if geometry_mode == "none" or "geometry" not in merged.columns:
         return gpd.GeoDataFrame(merged)
     return gpd.GeoDataFrame(merged, geometry="geometry")

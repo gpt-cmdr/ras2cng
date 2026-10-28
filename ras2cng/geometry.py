@@ -9,6 +9,7 @@ Supports:
 from __future__ import annotations
 
 import tempfile
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -385,34 +386,36 @@ def export_all_text_layers(
 # ---------------------------------------------------------------------------
 
 def _hilbert_sort(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Sort GeoDataFrame rows by Hilbert curve index of geometry bounds center.
+    """Sort rows by the Hilbert index of each geometry's bbox centre.
 
-    Uses DuckDB's hilbert_encode(). Falls back to original order if DuckDB
-    is not installed or sorting fails.
+    The key is DuckDB spatial ``ST_Hilbert(x, y, extent)`` of the bbox centre
+    over the extent of all the rows' bboxes (16 bits per axis), the same
+    order fast-hdf's archive writer produces. Ties keep input order; rows
+    with null or empty geometry go last. If the DuckDB spatial extension
+    cannot be loaded, a warning is issued and ras2cng's bit-identical NumPy
+    port is used, so the order never silently degrades.
+
+    The method used is recorded in ``result.attrs["hilbert_sort"]``
+    (``duckdb``, ``numpy`` or ``skipped: <reason>``).
     """
     if len(gdf) <= 1:
         return gdf
 
-    try:
-        import duckdb
-    except ImportError:
-        return gdf
+    from ras2cng.geoparquet import geometry_bounds, hilbert_keys, hilbert_permutation
 
     try:
-        bounds = gdf.geometry.bounds
-        pts = pd.DataFrame({
-            "_row_idx": range(len(gdf)),
-            "_x": ((bounds.minx + bounds.maxx) / 2).values,
-            "_y": ((bounds.miny + bounds.maxy) / 2).values,
-        })
-        con = duckdb.connect()
-        order = con.execute(
-            "SELECT _row_idx FROM pts ORDER BY hilbert_encode([_x, _y]::DOUBLE[2])"
-        ).fetchdf()["_row_idx"].values
-        con.close()
-        return gdf.iloc[order].reset_index(drop=True)
-    except Exception:
+        keys, valid, method = hilbert_keys(geometry_bounds(gdf.geometry))
+    except Exception as exc:  # pragma: no cover - NumPy port does not fail on finite input
+        warnings.warn(
+            f"Hilbert sort skipped; rows keep their input order: {type(exc).__name__}: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        gdf.attrs["hilbert_sort"] = f"skipped: {type(exc).__name__}: {exc}"
         return gdf
+    result = gdf.iloc[hilbert_permutation(keys, valid)].reset_index(drop=True)
+    result.attrs["hilbert_sort"] = method
+    return result
 
 
 def merge_all_layers(
@@ -478,5 +481,14 @@ def merge_all_layers(
     if not all_gdfs:
         return None
 
-    merged = pd.concat(all_gdfs, ignore_index=True)
-    return gpd.GeoDataFrame(merged, geometry="geometry")
+    from ras2cng.geoparquet import concat_layers
+
+    methods = {
+        str(frame["layer"].iloc[0]): frame.attrs.get("hilbert_sort", "")
+        for frame in all_gdfs
+        if len(frame)
+    }
+    merged = concat_layers(all_gdfs)
+    if sort:
+        merged.attrs["hilbert_sort"] = methods
+    return merged

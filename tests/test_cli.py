@@ -622,6 +622,13 @@ def test_map_defaults(monkeypatch, tmp_path: Path):
                 "skip_errors": True,
                 "keep_postprocessing": False,
                 "performance": None,
+                "map_engine": None,
+                "fast_map_terrain": None,
+                "fast_map_threads": None,
+                "fast_map_fallback": True,
+                "fast_map_memory_mib": None,
+                "fast_map_boundary": True,
+                "fast_map_terrain_hdf": None,
             },
         }
     ]
@@ -667,6 +674,13 @@ def test_map_options_and_flag_pairs(monkeypatch, tmp_path: Path):
             "--timeout",
             "45",
             "--fail-fast",
+            "--engine",
+            "fast-map",
+            "--fast-map-terrain",
+            "dem.tif",
+            "--fast-map-threads",
+            "8",
+            "--fast-map-strict",
         ],
     )
 
@@ -702,6 +716,13 @@ def test_map_options_and_flag_pairs(monkeypatch, tmp_path: Path):
                 "skip_errors": False,
                 "keep_postprocessing": False,
                 "performance": None,
+                "map_engine": "fast-map",
+                "fast_map_terrain": Path("dem.tif"),
+                "fast_map_threads": 8,
+                "fast_map_fallback": False,
+                "fast_map_memory_mib": None,
+                "fast_map_boundary": True,
+                "fast_map_terrain_hdf": None,
             },
         }
     ]

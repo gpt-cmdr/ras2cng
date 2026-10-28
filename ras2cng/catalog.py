@@ -14,8 +14,12 @@ from pathlib import Path
 from typing import Optional
 
 
-# Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.6"
+# Schema version — increment when manifest structure changes.
+# 2.7: archive GeoParquet uses the GeoParquet 1.1 ``bbox`` struct covering
+#      (``bbox.xmin`` ...) instead of flat ``bbox_xmin`` ... columns, row groups
+#      end at layer boundaries, and geometry/plan entries carry a ``geoparquet``
+#      writer record (engine, fallback reason, Hilbert method, covering form).
+SCHEMA_VERSION = "2.7"
 
 
 @dataclass
@@ -41,6 +45,7 @@ class ManifestGeomEntry:
     plans_using: list[str] = field(default_factory=list)
     layers: list[dict] = field(default_factory=list)
     size_bytes: int = 0
+    geoparquet: dict = field(default_factory=dict)  # writer record (schema 2.7+)
 
     def add_layer(self, layer: ManifestLayer) -> None:
         self.layers.append(asdict(layer))
@@ -80,6 +85,7 @@ class ManifestPlanEntry:
     size_bytes: int = 0
     layout: str = "plan"                    # plan or variable
     geometry_mode: str = "polygon"          # polygon, point, or none
+    geoparquet: dict = field(default_factory=dict)  # writer record (schema 2.7+)
 
     def add_variable(self, var: ManifestResultVariable) -> None:
         self.variables.append(asdict(var))

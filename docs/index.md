@@ -92,7 +92,7 @@ ras2cng sync max_depth.parquet "postgresql://user:pass@host/db" max_depth
 ## Key Features
 
 - **Full project archival** — Discovers all geometry configs, plan runs, and terrain; produces consolidated GeoParquet archives with `manifest.json` catalog
-- **Consolidated GeoParquet** — One file per geometry source / plan, with `layer` column discriminator, ZSTD compression, bbox columns, and Hilbert spatial sorting
+- **Consolidated GeoParquet** — One file per geometry source / plan, with `layer` column discriminator, ZSTD compression, a GeoParquet 1.1 `bbox` covering struct, and Hilbert spatial sorting
 - **20 HDF geometry layers** — 1D/2D model geometry, structures, pipe networks, pumps, parameter regions, and storage areas
 - **Results export** — 2D mesh summary variables (Maximum Depth, WSE, Velocity, etc.) spatially joined with polygon geometry
 - **DuckDB queries** — SQL analytics directly on GeoParquet files, no database server needed
