@@ -48,6 +48,11 @@ DATAFRAME_SCHEMAS = {
         "dynamic": True,
         "columns": [
             {"name": "_table", "dtype": "str", "description": "Source ras-commander DataFrame name."},
+            {
+                "name": "rasmap_field_errors",
+                "dtype": "map<str,str>",
+                "description": "rasmap_df per-field extraction errors, written as Parquet MAP<string, string> (field -> error).",
+            },
         ],
     },
     "duckdb_query_results": {

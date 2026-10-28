@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from ras_commander import init_ras_project
 
 from ras2cng.results import export_all_variables
@@ -35,6 +37,7 @@ from ras2cng.catalog import (
     ManifestTerrainModificationEntry,
     ManifestTerrainSourceEntry,
 )
+from ras2cng.cog import atomic_output
 from ras2cng.geometry import (
     export_all_hdf_layers,
     export_all_text_layers,
@@ -453,11 +456,63 @@ def _result_join_metadata(frame) -> tuple[str, str]:
 # Project metadata export
 # ---------------------------------------------------------------------------
 
-def export_project_metadata(ras, output_path: Path) -> None:
+_STRING_MAP = pa.map_(pa.string(), pa.string())
+
+# Dict-valued metadata columns whose keys vary from row to row (for example
+# ``rasmap_field_errors``: failed RASMapper field -> error message).  They are
+# written as Parquet MAP<string, string>, not STRUCT, so the archive schema does
+# not depend on which fields happened to fail, and an empty mapping is
+# representable (a struct with no children cannot be written to Parquet).
+_PROJECT_METADATA_MAP_COLUMNS = frozenset({"rasmap_field_errors"})
+
+
+def _string_map_array(values: pd.Series) -> pa.Array:
+    """Convert a column of ``dict``/null values to a MAP<string, string> array."""
+    items = []
+    for value in values:
+        if isinstance(value, dict):
+            items.append(list(value.items()))
+        elif value is None or (isinstance(value, float) and pd.isna(value)):
+            items.append(None)
+        else:
+            raise TypeError(
+                f"Column {values.name!r} holds a {type(value).__name__}; "
+                "expected a dict or null"
+            )
+    return pa.array(items, type=_STRING_MAP)
+
+
+def _project_metadata_table(frame: pd.DataFrame) -> pa.Table:
+    """Build the Arrow table for the project metadata Parquet.
+
+    Dict-valued columns are inferred by pyarrow as STRUCTs and written as real
+    Parquet structs (e.g. ``current_settings``).  Two cases are converted to
+    MAP<string, string> instead: the known variable-key columns in
+    ``_PROJECT_METADATA_MAP_COLUMNS``, and any column inferred as a struct with
+    no children (every value is ``{}`` or null), which Parquet cannot store.
+    """
+    table = pa.Table.from_pandas(frame, preserve_index=False)
+    for index, column in enumerate(table.schema):
+        empty_struct = pa.types.is_struct(column.type) and column.type.num_fields == 0
+        if column.name in _PROJECT_METADATA_MAP_COLUMNS or empty_struct:
+            table = table.set_column(
+                index,
+                pa.field(column.name, _STRING_MAP),
+                _string_map_array(frame[column.name]),
+            )
+    return table
+
+
+def export_project_metadata(ras, output_path: Path) -> Optional[Path]:
     """Export RasPrj dataframes to a single Parquet file with ``_table`` discriminator.
 
     Reads plan_df, geom_df, flow_df, unsteady_df, boundaries_df, results_df,
     rasmap_df from the RasPrj object and unions them into one DataFrame.
+
+    The file is staged beside ``output_path`` and renamed into place only after
+    a complete write, so a failure raises and never leaves an empty or partial
+    file.  Returns the written path, or ``None`` when every table is empty and
+    nothing was written.
     """
     table_names = [
         "plan_df", "geom_df", "flow_df", "unsteady_df",
@@ -474,11 +529,16 @@ def export_project_metadata(ras, output_path: Path) -> None:
         all_dfs.append(df)
 
     if not all_dfs:
-        return
+        return None
 
     merged = pd.concat(all_dfs, ignore_index=True)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    merged.to_parquet(output_path, compression="zstd", index=False)
+    table = _project_metadata_table(merged)
+    with atomic_output(output_path) as staged:
+        # Own the file handle: when pyarrow fails after opening a path sink it
+        # can leave the handle open, which on Windows blocks deleting the partial.
+        with open(staged, "wb") as sink:
+            pq.write_table(table, sink, compression="zstd")
+    return output_path
 
 
 # ---------------------------------------------------------------------------
@@ -1177,11 +1237,12 @@ def archive_project(
     meta_parquet_name = f"{ras.project_name}.parquet"
     meta_parquet_path = output_dir / meta_parquet_name
     try:
-        export_project_metadata(ras, meta_parquet_path)
-        manifest.project_parquet = meta_parquet_name
-        console.print(f"\n[bold]Metadata:[/bold] {meta_parquet_name}")
+        if export_project_metadata(ras, meta_parquet_path) is not None:
+            manifest.project_parquet = meta_parquet_name
+            console.print(f"\n[bold]Metadata:[/bold] {meta_parquet_name}")
     except Exception as e:
         console.print(f"  [yellow]Warning:[/yellow] Project metadata export failed: {e}")
+        manifest.add_error("project_metadata", meta_parquet_name, e)
         if not skip_errors:
             raise
 
@@ -1217,7 +1278,15 @@ def archive_project(
     manifest_path = output_dir / "manifest.json"
     manifest.write(manifest_path)
     console.print(f"\n[green]OK[/green] manifest.json written -> {manifest_path}")
-    console.print(f"[green]OK[/green] Archive complete: {output_dir}\n")
+    if manifest.errors:
+        console.print(
+            f"[yellow]Archive completed with {len(manifest.errors)} error(s):[/yellow] {output_dir}"
+        )
+        for error in manifest.errors:
+            console.print(f"  [yellow]-[/yellow] {error['step']} ({error['file']}): {error['error']}")
+        console.print()
+    else:
+        console.print(f"[green]OK[/green] Archive complete: {output_dir}\n")
 
     return manifest
 
