@@ -15,7 +15,13 @@ order, Arrow schema, GeoParquet metadata and row-group layout:
 ``python``
     pyarrow, always available.
 
-``RAS2CNG_GEOPARQUET_WRITER`` = ``auto`` (default) | ``native`` | ``python``.
+``RAS2CNG_GEOPARQUET_WRITER`` = ``auto`` (default) | ``native`` | ``prefer-native`` | ``python``.
+``auto`` currently selects ``python``: on Bald Eagle p07 the native engine wrote
+identical files but was not faster end to end (p07: 7.7-8.6 s vs ~5 s, most of
+it ras2cng-side input staging) and 4.4% larger (Rust Parquet page indexes).
+``native`` requires fast-hdf and raises when a file does not fit its contract;
+``prefer-native`` tries it and falls back to ``python`` with a warning and the
+reason recorded in the manifest.
 
 Layout (both engines):
 
@@ -537,19 +543,44 @@ def _requested_engine(engine: Optional[str]) -> str:
     choice = (engine or os.environ.get(WRITER_ENV, "") or "auto").strip().lower()
     aliases = {"fast-hdf": "native", "rust": "native", "pyarrow": "python"}
     choice = aliases.get(choice, choice)
-    if choice not in {"auto", "native", "python"}:
-        raise ValueError(f"{WRITER_ENV} must be one of auto, native, python; got {choice!r}")
+    if choice not in {"auto", "native", "prefer-native", "python"}:
+        raise ValueError(f"{WRITER_ENV} must be one of auto, native, prefer-native, python; got {choice!r}")
     return choice
 
 
-_CONTRACT_TYPES = (
+_CONTRACT_SCALARS = (
     pa.types.is_int64,
     pa.types.is_uint64,
     pa.types.is_float64,
+    pa.types.is_float32,
     pa.types.is_boolean,
     pa.types.is_string,
     pa.types.is_binary,
 )
+
+
+def _contract_type(dtype: pa.DataType, *, top_level: bool = True) -> bool:
+    """Types fast-hdf's archive profile passes through.
+
+    Scalars above, timestamps (ms/us/ns, any tz), all-null columns at the top
+    level, and list / large_list / fixed_size_list / non-empty struct nested
+    to any depth over those scalars and timestamps.
+    """
+
+    if any(check(dtype) for check in _CONTRACT_SCALARS):
+        return True
+    if pa.types.is_timestamp(dtype):
+        return dtype.unit in ("ms", "us", "ns")
+    if pa.types.is_null(dtype):
+        return top_level
+    if pa.types.is_list(dtype) or pa.types.is_large_list(dtype) or pa.types.is_fixed_size_list(dtype):
+        return _contract_type(dtype.value_type, top_level=False)
+    if pa.types.is_struct(dtype):
+        return dtype.num_fields > 0 and all(
+            _contract_type(dtype.field(i).type, top_level=False) for i in range(dtype.num_fields)
+        )
+    return False
+
 
 
 def _crs_evidence(frame) -> dict:
@@ -652,7 +683,7 @@ def _native_ineligible_reason(frame, table: pa.Table, identities, slices, layer_
     for field in table.schema:
         if field.name == layer_column:
             continue
-        if not any(check(field.type) for check in _CONTRACT_TYPES):
+        if not _contract_type(field.type):
             return f"column {field.name!r} has type {field.type}, outside the export contract"
         if field.name.lower() in {"fid", "_ras_fid"}:
             return f"column {field.name!r} is a reserved name"
@@ -704,6 +735,9 @@ def _write_python(
             compression="zstd",
             compression_level=level,
             use_dictionary=dictionary or False,
+            # Keep Arrow's list item name ("item"), as fast-hdf writes it,
+            # instead of renaming it to "element".
+            use_compliant_nested_type=False,
         ) as writer:
             offset = 0
             for _, rows in slices:
@@ -838,7 +872,7 @@ def write_geoparquet(
         "row_groups": 0,
     }
 
-    if requested != "python":
+    if requested in ("native", "prefer-native"):
         reason = native_writer_reason()
         available = reason is None
         if available and len(frame) == 0:

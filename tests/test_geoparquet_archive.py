@@ -248,7 +248,9 @@ def test_python_engine_records_why_fast_hdf_was_not_used(monkeypatch, tmp_path: 
     monkeypatch.setattr(
         geoparquet, "native_writer_reason", lambda: "export_geoparquet_ipc_files is not installed"
     )
-    info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet")
+    info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "auto.parquet")
+    assert info["engine"] == "python" and info["fallback_reason"] == ""  # auto is python
+    info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet", engine="prefer-native")
     assert info["engine"] == "python"
     assert "not installed" in info["fallback_reason"]
 
@@ -291,14 +293,32 @@ def test_native_and_python_engines_write_identical_files(tmp_path: Path):
 
 
 @needs_native
-def test_native_engine_falls_back_on_float32_columns(tmp_path: Path):
-    merged = _mesh_layers()
+def test_native_engine_writes_float32_and_nested_columns(tmp_path: Path):
+    merged = _mesh_layers(120)
     merged["weir_coef"] = np.float32(2.6)
+    merged["stations"] = [[float(i), float(i) + 1.0] for i in range(len(merged))]
+    native, python = tmp_path / "n.parquet", tmp_path / "p.parquet"
+    info = geoparquet.write_geoparquet(merged, native, hilbert=True, hilbert_column="hilbert_index", engine="native")
+    assert info["engine"] == "fast-hdf" and info["hilbert_column"] == "hilbert_index"
+    geoparquet.write_geoparquet(
+        merged, python, hilbert=True, hilbert_column="hilbert_index", engine="python"
+    )
+    a, b = pq.read_table(python), pq.read_table(native)
+    assert all(x.equals(y, check_metadata=True) for x, y in zip(a.schema, b.schema))
+    assert a.equals(b)
+    assert b.schema.field("weir_coef").type == pa.float32()
+
+
+@needs_native
+def test_native_engine_falls_back_on_z_coordinates(tmp_path: Path):
+    from shapely import force_3d
+
+    merged = _mesh_layers()
+    merged.geometry = force_3d(merged.geometry.values)
     with pytest.warns(RuntimeWarning, match="Python GeoParquet engine"):
-        info = geoparquet.write_geoparquet(merged, tmp_path / "f.parquet")
+        info = geoparquet.write_geoparquet(merged, tmp_path / "f.parquet", engine="prefer-native")
     assert info["engine"] == "python"
-    assert "weir_coef" in info["fallback_reason"]
-    assert pq.read_schema(tmp_path / "f.parquet").field("weir_coef").type == pa.float32()
+    assert "Z coordinates" in info["fallback_reason"]
 
 
 # ---------------------------------------------------------------------------
@@ -420,8 +440,8 @@ def test_fast_hdf_without_layout_options_falls_back_once(monkeypatch, tmp_path: 
     )
     monkeypatch.setattr(geoparquet, "_NATIVE_PROBE", {})
     with pytest.warns(RuntimeWarning, match="lacks the archive layout"):
-        info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet")
+        info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet", engine="prefer-native")
     assert info["engine"] == "python" and "layout" in info["fallback_reason"]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "b.parquet")
+        geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "b.parquet", engine="prefer-native")
