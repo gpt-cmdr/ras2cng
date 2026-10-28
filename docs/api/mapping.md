@@ -21,7 +21,7 @@ On Linux, RasProcess.exe runs under Wine. See the [Linux/Wine Setup](../user-gui
 | `shear_stress` | `--shear-stress` | Off | Shear Stress |
 | `depth_x_velocity` | `--dv` | Off | Depth x Velocity |
 | `depth_x_velocity_sq` | `--dv-sq` | Off | Depth x Velocity² |
-| `inundation_boundary` | `--inundation-boundary` | Off | Inundation Boundary (shapefile; GeoJSON with `--engine fast-map`, [much faster](#inundation-boundaries-in-rust-recommended-with-fast-map)) |
+| `inundation_boundary` | `--inundation-boundary` | Off | Inundation Boundary (GeoJSON from the default fast-map engine, [much faster](#inundation-boundaries-in-rust-recommended-with-fast-map); shapefile from RAS Mapper) |
 | `arrival_time` | `--arrival-time` | Off | Arrival Time (hours, whole-simulation) |
 | `duration` | `--duration` | Off | Inundation Duration (hours, whole-simulation) |
 | `percent_inundated` | `--percent-inundated` | Off | Percent Time Inundated (whole-simulation) |
@@ -111,9 +111,14 @@ ras2cng archive /path/to/project ./archive/ --results --map --render-mode slopin
 
 ## Mapping engine: RAS Mapper or fast-map
 
-By default every map type is rendered by RAS Mapper (`RasStoreMapHelper.exe`).
-`--engine fast-map` maps selected products through the Rust
-`ras-commander-fast-map` engine instead. It is built for **FIM library
+**fast-map is the default engine.** It maps selected products through the
+Rust `ras-commander-fast-map` engine and hands everything else to RAS Mapper
+(`RasStoreMapHelper.exe`) per product group, printing the reason;
+`--engine rasmapper` (or `RAS2CNG_MAP_ENGINE=rasmapper`) renders every
+product through RAS Mapper. The water-surface render mode comes from the
+project's `.rasmap`, as RAS Mapper takes it (`--render-mode` overrides it);
+a project with no stored mode goes to RAS Mapper, which applies its own
+default. fast-map is built for **FIM library
 creation on pure 2D models**, not for general use across all model types:
 every fast-map product is qualified against RAS Mapper output (pixel
 conformance against native HEC-RAS 7.0.1 stored maps on the named models),
@@ -123,9 +128,12 @@ engine through `ras-commander[full]` on Windows x64 and Linux x64
 GDAL, and with the source-terrain path below no HEC-RAS either.
 
 ```bash
-# Rust WSE/Depth, arrival time and percent inundated; the rest via RAS Mapper
-ras2cng map /path/to/project /output/maps --engine fast-map \
+# Default: Rust WSE/Depth, arrival time and percent inundated; the rest via RAS Mapper
+ras2cng map /path/to/project /output/maps \
     --arrival-time --percent-inundated --arrival-depth 0.5 --ras-version 7.0.1
+
+# Everything through RAS Mapper
+ras2cng map /path/to/project /output/maps --engine rasmapper
 
 # Reuse a terrain export across runs
 ras2cng map /path/to/project /output/maps --engine fast-map \
@@ -135,8 +143,10 @@ ras2cng map /path/to/project /output/maps --engine fast-map \
 ras2cng map /path/to/project /output/maps --engine fast-map --fast-map-strict
 ```
 
-`RAS2CNG_MAP_ENGINE=fast-map` selects it everywhere, including
-`ras2cng archive --map`.
+`RAS2CNG_MAP_ENGINE` selects the engine everywhere, including
+`ras2cng archive --map`. Scope, engine and render mode are checked from the
+plan HDF and `.rasmap` before any terrain work, so an out-of-scope plan goes
+to RAS Mapper without a terrain export.
 
 | Product | fast-map | Qualification against RAS Mapper |
 |---|---|---|
@@ -200,7 +210,7 @@ RAM, 1–16 GiB).
 
 ### Inundation boundaries in Rust (recommended with fast-map)
 
-RAS Mapper's inundation-boundary export is very slow. With `--engine fast-map`,
+RAS Mapper's inundation-boundary export is very slow. With fast-map (the default engine),
 `--inundation-boundary` is mapped by the Rust engine
 (`RasFim.map_inundation_boundaries`) whenever the plan is in scope. In
 ras-commander's Davis pipes/conduits comparison, the Rust batch for Max plus one

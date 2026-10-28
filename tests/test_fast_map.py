@@ -18,6 +18,17 @@ from ras2cng import fast_map
 from ras2cng.mapping import generate_result_maps
 
 
+@pytest.fixture(autouse=True)
+def _preflight_uses_patched_render(monkeypatch):
+    """Routing tests mock RasFim's inputs; keep the preflight to render_settings.
+
+    The real preflight is covered by the tests that undo this.
+    """
+    monkeypatch.setattr(
+        fast_map, "preflight", lambda plan, ras, mode: fast_map.render_settings(ras, mode)
+    )
+
+
 def _fake_ras(tmp_path):
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -46,8 +57,12 @@ def _fake_manifest(folder: Path, status: str = "complete") -> pd.DataFrame:
 # Engine selection
 # ---------------------------------------------------------------------------
 
-def test_resolve_map_engine_defaults_to_rasmapper(monkeypatch):
+def test_resolve_map_engine_defaults_to_fast_map(monkeypatch):
     monkeypatch.delenv(fast_map.MAP_ENGINE_ENV, raising=False)
+    assert fast_map.DEFAULT_MAP_ENGINE == "fast-map"
+    assert fast_map.resolve_map_engine() == "fast-map"
+    assert fast_map.resolve_map_engine("rasmapper") == "rasmapper"
+    monkeypatch.setenv(fast_map.MAP_ENGINE_ENV, "rasmapper")
     assert fast_map.resolve_map_engine() == "rasmapper"
 
 
@@ -173,9 +188,48 @@ def test_render_settings_flags_only_for_sloping_pretty():
                      "use_depth_weighted_faces": False}
 
 
-def test_render_settings_default_horizontal():
+def test_render_settings_without_a_stored_mode_leaves_it_to_rasmapper():
+    """No hard-coded default: RAS Mapper applies its own."""
     with patch.object(_RasMap, "get_water_surface_render_mode", return_value=None):
-        assert fast_map.render_settings(MagicMock(), None)["mode"] == "horizontal"
+        with pytest.raises(fast_map.FastMapUnavailable, match="render mode"):
+            fast_map.render_settings(MagicMock(), None)
+        # An explicit mode still works without a stored one.
+        assert fast_map.render_settings(MagicMock(), "sloping")["mode"] == "sloping"
+
+
+@pytest.mark.parametrize("stored", ["horizontal", "sloping"])
+def test_render_settings_reads_the_rasmap_mode(stored):
+    with patch.object(_RasMap, "get_water_surface_render_mode",
+                      return_value={"mode": stored}):
+        assert fast_map.render_settings(MagicMock(), None)["mode"] == stored
+
+
+@pytest.mark.parametrize(
+    ("xml", "expected"),
+    [
+        ("<RenderMode>horizontal</RenderMode>", "horizontal"),
+        ("<RenderMode>sloping</RenderMode>", "sloping"),
+        ("", None),
+    ],
+)
+def test_render_settings_from_a_real_rasmap_file(tmp_path, xml, expected):
+    project = tmp_path / "Model.prj"
+    project.write_text("Proj Title=Model\n")
+    (tmp_path / "Model.rasmap").write_text(
+        "<RASMapper><Version>2.0.0</Version><RenderMode>X</RenderMode></RASMapper>".replace(
+            "<RenderMode>X</RenderMode>", xml
+        )
+    )
+    ras = MagicMock()
+    ras.project_folder = str(tmp_path)
+    ras.project_name = "Model"
+    ras.prj_file = str(project)
+    ras.rasmap_path = tmp_path / "Model.rasmap"
+    if expected is None:
+        with pytest.raises(fast_map.FastMapUnavailable):
+            fast_map.render_settings(ras, None)
+    else:
+        assert fast_map.render_settings(ras, None)["mode"] == expected
 
 
 def test_terrain_resolver_prefers_supplied_terrain(tmp_path):
@@ -298,12 +352,77 @@ def test_fast_map_strict_raises(_map_plan, _render, mock_init, _config, mock_gen
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 @patch("ras2cng.fast_map.map_plan")
-def test_default_engine_never_calls_fast_map(mock_map_plan, mock_init, _config, _gen, tmp_path, monkeypatch):
+def test_forced_rasmapper_never_calls_fast_map(mock_map_plan, mock_init, _config, _gen, tmp_path, monkeypatch):
     monkeypatch.delenv(fast_map.MAP_ENGINE_ENV, raising=False)
     ras, project_dir = _fake_ras(tmp_path)
     mock_init.return_value = ras
-    generate_result_maps(project_dir, tmp_path / "maps")
+    results = generate_result_maps(project_dir, tmp_path / "maps", map_engine="rasmapper")
     mock_map_plan.assert_not_called()
+    monkeypatch.setenv(fast_map.MAP_ENGINE_ENV, "rasmapper")
+    generate_result_maps(project_dir, tmp_path / "maps2")
+    mock_map_plan.assert_not_called()
+    assert all(engine == "rasmapper" for engine in results[0].engines.values())
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+@patch("ras2cng.fast_map.render_settings", return_value={"mode": "horizontal"})
+@patch("ras2cng.fast_map.map_plan")
+def test_default_engine_is_fast_map(mock_map_plan, _render, mock_init, _config, mock_gen, tmp_path, monkeypatch):
+    monkeypatch.delenv(fast_map.MAP_ENGINE_ENV, raising=False)
+    ras, project_dir = _fake_ras(tmp_path)
+    mock_init.return_value = ras
+    terrain = tmp_path / "dem.tif"
+    terrain.write_bytes(b"x")
+    out = tmp_path / "maps" / "p01"
+    mock_map_plan.return_value = {"wse": [out / "WSE (Max).tif"], "depth": [out / "Depth (Max).tif"]}
+    mock_gen.return_value = {"velocity": [out / "Velocity (Max).tif"]}
+    results = generate_result_maps(project_dir, tmp_path / "maps", fast_map_terrain=terrain)
+    assert results[0].engines == {"wse": "fast-map", "depth": "fast-map", "velocity": "rasmapper"}
+    assert mock_map_plan.call_args.kwargs["render"] == {"mode": "horizontal"}
+
+
+@patch("ras2cng.mapping._generate_plan_maps")
+@patch("ras2cng.mapping._configure_rasprocess")
+@patch("ras2cng.mapping.init_ras_project")
+@patch("ras2cng.fast_map.map_plan")
+def test_out_of_scope_plan_goes_to_rasmapper_before_any_terrain_work(
+    mock_map_plan, mock_init, _config, mock_gen, tmp_path, monkeypatch,
+):
+    """A storage-area (or 1D, or no-render-mode) plan never exports terrain."""
+    monkeypatch.delenv(fast_map.MAP_ENGINE_ENV, raising=False)
+
+    def refuse(plan, ras, mode):
+        raise fast_map.FastMapUnavailable("model has 1 storage area(s)")
+
+    monkeypatch.setattr(fast_map, "preflight", refuse)
+    ras, project_dir = _fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_gen.return_value = {}
+    with patch("ras2cng.terrain.export_modified_terrain") as export:
+        results = generate_result_maps(project_dir, tmp_path / "maps")
+    export.assert_not_called()
+    mock_map_plan.assert_not_called()
+    flags = mock_gen.call_args.kwargs
+    assert flags["wse"] is True and flags["depth"] is True
+    assert results[0].engines == {"wse": "rasmapper", "depth": "rasmapper", "velocity": "rasmapper"}
+    with pytest.raises(fast_map.FastMapUnavailable):
+        generate_result_maps(project_dir, tmp_path / "maps3", fast_map_fallback=False, skip_errors=False)
+
+
+@patch("ras_commander.RasFim")
+def test_preflight_checks_scope_then_render_mode(mock_fim, tmp_path, monkeypatch):
+    monkeypatch.undo()  # the real preflight
+    mock_fim.validate_2d_model.return_value = {"storage_areas": 1}
+    with pytest.raises(fast_map.FastMapUnavailable, match="storage area"):
+        fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), "sloping")
+    mock_fim.validate_2d_model.return_value = {"storage_areas": 0}
+    with patch.object(_RasMap, "get_water_surface_render_mode", return_value=None):
+        with pytest.raises(fast_map.FastMapUnavailable, match="render mode"):
+            fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None)
+    with patch.object(_RasMap, "get_water_surface_render_mode", return_value={"mode": "sloping"}):
+        assert fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None)["mode"] == "sloping"
 
 
 # ---------------------------------------------------------------------------

@@ -1,9 +1,14 @@
 """Optional Rust 2D inundation mapping (ras-commander-fast-map) for ras2cng.
 
-``ras2cng map`` renders result rasters through RAS Mapper
-(``RasStoreMapHelper.exe``) by default. ``map_engine="fast-map"`` instead maps
-the products below through ``RasFim`` and the native Rust ``ras2fim-batch``
-engine from ``ras-commander-fast-map``.
+``ras2cng map`` maps the products below through ``RasFim`` and the native
+Rust ``ras2fim-batch`` engine from ``ras-commander-fast-map`` by default
+(:data:`DEFAULT_MAP_ENGINE`), and renders everything else through RAS Mapper
+(``RasStoreMapHelper.exe``). ``map_engine="rasmapper"`` (or
+``RAS2CNG_MAP_ENGINE=rasmapper``) forces RAS Mapper for every product. The
+render mode comes from the project's ``.rasmap``; with none stored, the plan
+goes to RAS Mapper, which applies its own default (:func:`render_settings`).
+:func:`preflight` checks scope, engine and render mode before any terrain
+work.
 
 **Scope: pure 2D models, built for FIM library creation, not general use
 across all model types.** Every product here is qualified against RAS Mapper
@@ -103,9 +108,19 @@ class FastMapUnavailable(RuntimeError):
     """The plan, profile, terrain or installation is outside fast-map's scope."""
 
 
+#: The engine ``ras2cng map`` uses when neither ``--engine`` nor
+#: ``RAS2CNG_MAP_ENGINE`` says otherwise.  fast-map maps what it is qualified
+#: for on pure 2D models and hands everything else to RAS Mapper per product
+#: group; ``rasmapper`` forces the native path for every product.
+DEFAULT_MAP_ENGINE = FAST_MAP
+
+
 def resolve_map_engine(engine: Optional[str] = None) -> str:
-    """Return the selected engine; ``None`` reads ``RAS2CNG_MAP_ENGINE``."""
-    value = engine if engine is not None else os.environ.get(MAP_ENGINE_ENV, RASMAPPER)
+    """Return the selected engine; ``None`` reads ``RAS2CNG_MAP_ENGINE``.
+
+    The default is :data:`DEFAULT_MAP_ENGINE` (fast-map).
+    """
+    value = engine if engine is not None else os.environ.get(MAP_ENGINE_ENV, DEFAULT_MAP_ENGINE)
     normalized = str(value).strip().lower().replace("_", "-")
     if normalized in ("fastmap", "rust"):
         normalized = FAST_MAP
@@ -186,9 +201,12 @@ def plan_terrain_name(plan_hdf: Path) -> Optional[str]:
 def render_settings(ras: Any, render_mode: Optional[str]) -> dict[str, Any]:
     """Resolve the water-surface render mode and slopingPretty flags.
 
-    An explicit ``render_mode`` overrides the mode. The slopingPretty flags
-    always come from the project's ``.rasmap``, as they do for RAS Mapper,
-    which keeps them when ``RasProcess`` sets only the mode.
+    The mode comes from the project's ``.rasmap``, as RAS Mapper takes it; an
+    explicit ``render_mode`` overrides it. When neither gives a mode, fast-map
+    does not guess: :class:`FastMapUnavailable` sends the plan to RAS Mapper,
+    which applies its own default. The slopingPretty flags always come from
+    the ``.rasmap``, as they do for RAS Mapper, which keeps them when
+    ``RasProcess`` sets only the mode.
     """
     stored: Optional[dict] = None
     try:
@@ -197,7 +215,12 @@ def render_settings(ras: Any, render_mode: Optional[str]) -> dict[str, Any]:
         stored = RasMap.get_water_surface_render_mode(ras_object=ras)
     except Exception:
         stored = None
-    mode = render_mode or (stored or {}).get("mode") or "horizontal"
+    mode = render_mode or (stored or {}).get("mode")
+    if not mode:
+        raise FastMapUnavailable(
+            "the project's .rasmap sets no water-surface render mode; RAS Mapper "
+            "renders with its own default"
+        )
     if mode not in FAST_MAP_RENDER_MODES:
         raise FastMapUnavailable(f"fast-map has no {mode!r} render mode")
     pretty = mode == "slopingPretty"
@@ -302,6 +325,22 @@ def _check_scope(RasFim: Any, plan_hdf: Path) -> None:
             f"model has {storage_areas} storage area(s); fast-map does not render "
             "storage-area surfaces, so they would be missing from the map"
         )
+
+
+def preflight(plan_hdf: Path, ras: Any, render_mode: Optional[str]) -> dict[str, Any]:
+    """Check a plan is fast-map's before any terrain work; return its render.
+
+    Raises :class:`FastMapUnavailable` when RasFim or the engine is missing,
+    the model has 1D elements or storage areas, or no render mode is set.
+    These are cheap HDF/XML reads, so an out-of-scope plan never triggers a
+    terrain export before it goes to RAS Mapper.
+    """
+    try:
+        from ras_commander import RasFim
+    except ImportError as exc:
+        raise FastMapUnavailable(f"ras-commander has no RasFim: {exc}") from exc
+    _check_scope(RasFim, Path(plan_hdf))
+    return render_settings(ras, render_mode)
 
 
 def _slug(value: str) -> str:

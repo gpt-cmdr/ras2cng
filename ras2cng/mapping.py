@@ -213,18 +213,23 @@ def generate_result_maps(
             selects :data:`DEFAULT_LOCAL_MAP_PERFORMANCE` when the canonical
             API is available. Pass ``StoreMapPerformanceOptions(max_workers=1)``
             for the legacy serial execution policy.
-        map_engine: ``"rasmapper"`` (default) renders every map type through
-            RAS Mapper. ``"fast-map"`` maps WSE and Depth through the Rust
-            ``ras-commander-fast-map`` engine, which is faster on 2D-only
-            models and matched RAS Mapper 7.0.1 bit for bit in ras-commander's
-            comparisons, and the inundation boundary through Rust
-            deterministic contours (much faster than RAS Mapper's export;
-            close to, not identical with, its polygons). Other map types still
-            use RAS Mapper. None reads ``RAS2CNG_MAP_ENGINE``. See
+        map_engine: ``"fast-map"`` (default) maps, on pure 2D models, the
+            products the Rust ``ras-commander-fast-map`` engine is qualified
+            for against RAS Mapper stored maps (Max WSE/Depth, arrival time,
+            percent inundated; velocity opt-in) and the inundation boundary
+            through deterministic contours (much faster than RAS Mapper's
+            export; close to, not identical with, its polygons). It is built
+            for FIM library creation, not every model type: 1D elements,
+            storage areas, other products and render modes fall back to RAS
+            Mapper per product group. ``"rasmapper"`` renders every map type
+            through RAS Mapper. None reads ``RAS2CNG_MAP_ENGINE``, else
+            ``fast_map.DEFAULT_MAP_ENGINE``. The render mode comes from the
+            project's ``.rasmap`` unless ``render_mode`` is given. See
             :mod:`ras2cng.fast_map` for scope.
         fast_map_terrain: Float32 GeoTIFF of the registered terrain (with
-            modifications) for fast-map. None exports the plan's terrain once
-            per run through RAS Mapper.
+            modifications) for fast-map. None maps on the priority-1 source
+            TIFF where the engine accepts it, else exports the plan's terrain
+            once per run through RAS Mapper.
         fast_map_threads: Rust worker count (default: CPUs - 1, max 64).
         fast_map_memory_mib: Planned engine memory budget in MiB (default: a
             quarter of physical RAM, 1-16 GiB). Not a hard RSS limit.
@@ -401,7 +406,20 @@ def generate_result_maps(
 
         try:
             fast_results: dict[str, list[Path]] = {}
+            fast_render = None
             if terrain_resolver is not None:
+                # Scope, engine and render mode first: an out-of-scope plan
+                # (1D, storage areas, no stored render mode) must not pay for
+                # a terrain export before going to RAS Mapper.
+                try:
+                    fast_render = _fast_map.preflight(plan_hdf, ras, render_mode)
+                except _fast_map.FastMapUnavailable as exc:
+                    if not fast_map_fallback:
+                        raise
+                    console.print(
+                        f"    [yellow]fast-map not used[/yellow] ({exc}); using RAS Mapper"
+                    )
+            if fast_render is not None:
                 # WSE/Depth and the boundary use different terrain inputs, so
                 # each falls back to RAS Mapper on its own.
                 def _fast_group(label, run):
@@ -444,7 +462,7 @@ def generate_result_maps(
                             plan_output,
                             map_types=requested_types,
                             profile=profile,
-                            render=_fast_map.render_settings(ras, render_mode),
+                            render=fast_render,
                             threads=fast_map_threads,
                             timeout=timeout,
                             max_working_mib=fast_map_memory_mib,
@@ -464,7 +482,7 @@ def generate_result_maps(
                             plan_output,
                             map_types=requested_types,
                             threshold=arrival_depth,
-                            render=_fast_map.render_settings(ras, render_mode),
+                            render=fast_render,
                             terrain_hdf=hdf,
                             threads=fast_map_threads,
                             timeout=timeout,
@@ -478,7 +496,7 @@ def generate_result_maps(
                         return _fast_map.map_boundary(
                             plan_hdf, tif, terrain_hdf, plan_output,
                             profile=profile,
-                            render=_fast_map.render_settings(ras, render_mode),
+                            render=fast_render,
                             threads=fast_map_threads,
                             timeout=timeout,
                             max_working_mib=fast_map_memory_mib,

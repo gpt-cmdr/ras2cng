@@ -1275,9 +1275,10 @@ def map_command(
     map_engine: Optional[str] = typer.Option(
         None, "--engine",
         help=(
-            "rasmapper (default) or fast-map: Rust WSE/Depth, faster for "
-            "2D-only models; other map types and out-of-scope plans use "
-            "RAS Mapper (env: RAS2CNG_MAP_ENGINE)"
+            "fast-map (default): Rust mapping for pure 2D models, qualified "
+            "against RAS Mapper stored maps; other products and out-of-scope "
+            "plans use RAS Mapper. rasmapper forces RAS Mapper for everything "
+            "(env: RAS2CNG_MAP_ENGINE)"
         ),
     ),
     fast_map_terrain: Optional[Path] = typer.Option(
@@ -1334,13 +1335,15 @@ def map_command(
     Renders completed plan results to GeoTIFF rasters using the HEC-RAS
     mapping engine via RasStoreMapHelper.exe (bundled with ras-commander).
 
-    With --engine fast-map, pure 2D models (the FIM library scope, not every
+    By default (--engine fast-map), pure 2D models (the FIM library scope, not every
     model type) are mapped by the Rust ras-commander-fast-map engine: Max WSE
     and Depth, plus arrival time and percent inundated, qualified against
     RAS Mapper 7.0.1 stored maps (identical pixels on the named models). It
     maps on the terrain's priority-1 source TIFF when it can, skipping the
     terrain export. Models with 1D reaches, cross sections or storage areas,
     non-Max profiles and the other map types still go through RAS Mapper.
+    The render mode comes from the project's .rasmap (or --render-mode).
+    --engine rasmapper renders everything through RAS Mapper.
 
     With --engine fast-map and --inundation-boundary, the boundary is also
     mapped in Rust (recommended: RAS Mapper's boundary export is very slow).
@@ -1486,8 +1489,10 @@ def map_hdf_command(
     map_engine: Optional[str] = typer.Option(
         None, "--engine",
         help=(
-            "rasmapper (default) or fast-map: Rust WSE/Depth, faster for "
-            "2D-only models (env: RAS2CNG_MAP_ENGINE)"
+            "fast-map (default): Rust mapping for pure 2D models, qualified "
+            "against RAS Mapper stored maps; other products and out-of-scope "
+            "plans use RAS Mapper. rasmapper forces RAS Mapper for everything "
+            "(env: RAS2CNG_MAP_ENGINE)"
         ),
     ),
     fast_map_terrain: Optional[Path] = typer.Option(

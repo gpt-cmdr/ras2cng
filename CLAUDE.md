@@ -73,7 +73,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - `postgis_sync.py` — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2 with automatic spatial index creation.
 - `terrain.py` — Terrain discovery, consolidation, and raster export. `discover_terrains()` finds terrain layers from rasmap. `consolidate_terrain()` provides a pure-Python publication mosaic. `export_modified_terrain()` delegates registered-terrain consolidation, exact 1x/2x/4x/8x downsampling, and modification rasterization to `RasTerrain.export_rasmapper_terrain()`; it does not use a geometry HDF or the deprecated row sampler. Native terrain export is qualified on Windows and Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1, with stable 7.1 forward-open behind ras-commander's exact managed-contract check. `export_mannings_raster()` separately wraps `HdfLandCover.compute_final_mannings_raster()` and still requires HEC-RAS 6.6+ on Windows.
 - `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0). Deletes the large `PostProcessing.hdf` cache from outputs unless `keep_postprocessing=True`. Whole-simulation types `arrival_time`/`duration`/`percent_inundated` (threshold via `arrival_depth`; correct RasMapperLib XML names are `arrival time`/`duration`/`fraction inundated`) pass through natively on newer ras-commander or via a rasmap pre-injection shim on older versions (capability-detected from `store_maps`' signature). `recession` is a warned no-op — RasMapperLib has no recession MapType, and only RasMapperLib-native outputs are produced (a derived arrival+duration approach is sketched in `feature_dev_notes/adr_maps_implementation_plan.md` but intentionally not shipped pending methodology verification).
-- `fast_map.py` — Optional Rust mapping for **pure 2D models (FIM library scope)** (`map --engine fast-map`, env `RAS2CNG_MAP_ENGINE`) via `RasFim` and `ras-commander-fast-map`, qualified against RAS Mapper stored maps. `map_plan()` does Max WSE/Depth (+ opt-in plain-sloping velocity), `map_whole_simulation()` arrival time and percent inundated, `map_boundary()` the boundary (original single-source terrain TIFF + HDF); each falls back to RAS Mapper on its own. `with_terrain()` tries the priority-1 source TIFF (no HEC-RAS export), its CRS-canonical copy after a CRS refusal, then the export; `MapResult.fast_map_terrain` records which. Storage areas, 1D, non-Max profiles and duration stay on RAS Mapper (`--fast-map-strict` raises instead). New capabilities are detected from `RasFim`'s methods/kwargs. See *Mapping engines* below.
+- `fast_map.py` — Rust mapping for **pure 2D models (FIM library scope)** (the default `map` engine; `--engine rasmapper` / env `RAS2CNG_MAP_ENGINE` forces RAS Mapper) via `RasFim` and `ras-commander-fast-map`, qualified against RAS Mapper stored maps. `map_plan()` does Max WSE/Depth (+ opt-in plain-sloping velocity), `map_whole_simulation()` arrival time and percent inundated, `map_boundary()` the boundary (original single-source terrain TIFF + HDF); each falls back to RAS Mapper on its own. `with_terrain()` tries the priority-1 source TIFF (no HEC-RAS export), its CRS-canonical copy after a CRS refusal, then the export; `MapResult.fast_map_terrain` records which. Storage areas, 1D, non-Max profiles and duration stay on RAS Mapper (`--fast-map-strict` raises instead). New capabilities are detected from `RasFim`'s methods/kwargs. See *Mapping engines* below.
 - `scaffold.py` — Barebones project synthesis for `map-hdf`. `read_plan_hdf_metadata()` extracts project name, plan number, ShortID, units, and projection WKT from a plan HDF; `build_scaffold()` synthesizes `.prj`/`.pNN`/`.rasmap` stubs, hardlinks the HDF under its canonical name, and builds the HEC-RAS terrain from raw TIFFs (`RasTerrain.create_terrain_from_rasters`) or imports a pre-built terrain HDF sidecar set. The ESRI projection is written to `Terrain\Projection.prj` — never in the project root, where it would collide with the HEC-RAS `.prj`. Scaffolds carry a `.ras2cng-scaffold` marker and are reused across runs when the source HDF is unchanged.
 
 **HDF engine**: ras-commander ≥0.110.1 reads HDF through the Rust `ras-commander-fast-hdf` engine by default (h5py fallback; `RAS_COMMANDER_FAST_HDF=auto|h5py|native`). ras2cng needs no code for this — `get_mesh_cell_polygons` alone is 4–19× faster.
@@ -82,18 +82,31 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 
 ## Mapping engines (agents: read before running `ras2cng map`)
 
-RAS Mapper stays the **default** engine. `--engine fast-map` is built for
-**FIM library creation on pure 2D models** (no 1D reaches or cross sections,
-no storage areas), not for general use across all model types. Every fast-map
-product is **qualified against RAS Mapper output**: pixel conformance against
-native HEC-RAS 7.0.1 stored maps on the named models. Everything else falls
-back to RAS Mapper. For pure 2D models, agents should **recommend and use**
-it for WSE, Depth, arrival time, percent inundated and especially
-**inundation boundaries**:
+**fast-map is the default** `ras2cng map` engine (`fast_map.DEFAULT_MAP_ENGINE`).
+It is built for **FIM library creation on pure 2D models** (no 1D reaches or
+cross sections, no storage areas), not for general use across all model
+types. Every fast-map product is **qualified against RAS Mapper output**:
+pixel conformance against native HEC-RAS 7.0.1 stored maps on the named
+models. Everything else falls back to RAS Mapper **per product group**, with
+the reason printed and recorded in `MapResult.engines`: 1D elements, storage
+areas, non-Max profiles, unsupported products (duration, Froude, shear,
+D x V) and render modes without qualification. `--engine rasmapper` (or
+`RAS2CNG_MAP_ENGINE=rasmapper`) forces RAS Mapper for every product;
+`--fast-map-strict` raises instead of falling back.
 
 ```bash
-ras2cng map <project> <out> --engine fast-map --inundation-boundary --ras-version 7.0.1
+ras2cng map <project> <out> --inundation-boundary --ras-version 7.0.1   # fast-map by default
+ras2cng map <project> <out> --engine rasmapper                            # native for everything
 ```
+
+- **Render mode comes from the project's `.rasmap`** (`RenderMode`, plus the
+  slopingPretty flags), as RAS Mapper takes it; `--render-mode` overrides
+  it. With no stored mode fast-map does not guess: the plan goes to RAS
+  Mapper, which applies its own default.
+- **Preflight before terrain work:** scope (1D, storage areas), engine and
+  render mode are checked from the HDF and `.rasmap` first, so an
+  out-of-scope plan goes to RAS Mapper without a terrain export (a
+  storage-area plan is refused in about 2 s).
 
 | Product (Max unless noted) | Qualification | Notes |
 |---|---|---|
@@ -132,9 +145,8 @@ ras2cng map <project> <out> --engine fast-map --inundation-boundary --ras-versio
   ras-commander with `RasFim.map_inundation_boundaries` (ras-commander PR
   #709 + fast-map PR #5, unreleased as of 2026-10-28); until then they fall
   back to RAS Mapper automatically.
-- Out-of-scope plans fall back to RAS Mapper per product group, with the
-  reason printed. Use `--fast-map-strict` when the user needs proof that Rust
-  ran. `MapResult.engines` records which engine produced each map type.
+- Use `--fast-map-strict` when the user needs proof that Rust ran.
+  `MapResult.engines` records which engine produced each map type.
   Outputs are named like RAS Mapper's (`WSE (Max).tif`,
   `Arrival Time (0.5ft hrs).tif`, `Percent Time Inundated (0.5ft).tif`);
   the boundary is `Inundation Boundary (Max).geojson` (RAS Mapper writes a

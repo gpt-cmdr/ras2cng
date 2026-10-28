@@ -352,3 +352,14 @@ def _gdal_raster_tiler_by_default(monkeypatch):
     Tests that exercise terrio set the variable themselves.
     """
     monkeypatch.setenv("RAS2CNG_RASTER_TILER", "gdal")
+
+
+@pytest.fixture(autouse=True)
+def _rasmapper_map_engine_by_default(monkeypatch):
+    """The older mapping tests mock RAS Mapper only, so pin that engine.
+
+    fast-map is the default ``ras2cng map`` engine; without this pin those
+    tests would run the fast-map preflight against mocked projects. Tests that
+    exercise the default set or delete ``RAS2CNG_MAP_ENGINE`` themselves.
+    """
+    monkeypatch.setenv("RAS2CNG_MAP_ENGINE", "rasmapper")
