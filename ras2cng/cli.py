@@ -1325,6 +1325,22 @@ def map_command(
             "(values match RAS Mapper; the drawn mask can differ at a few edge pixels)"
         ),
     ),
+    fast_map_invalid_cells: Optional[str] = typer.Option(
+        None, "--fast-map-invalid-cells",
+        help=(
+            "With --engine fast-map, pixel ownership for 2D cells whose faces do not form "
+            "a valid polygon: repair (engine default), hull, omit, or raise (refuse, so "
+            "RAS Mapper maps the plan). Recorded in the fast-map manifests"
+        ),
+    ),
+    fast_map_writer: Optional[str] = typer.Option(
+        None, "--fast-map-writer",
+        help=(
+            "With --engine fast-map, sloping GeoTIFF delivery: auto (default; native terrio "
+            "LZW when supported and no velocity), native, or rasterio. Identical pixels "
+            "(env RAS2CNG_FAST_MAP_WRITER)"
+        ),
+    ),
     fast_map_fallback: bool = typer.Option(
         True, "--fast-map-fallback/--fast-map-strict",
         help="Fall back to RAS Mapper when fast-map cannot map a plan, or fail",
@@ -1399,6 +1415,8 @@ def map_command(
             fast_map_source_terrain=fast_map_source_terrain,
             fast_map_whole_simulation=fast_map_whole_simulation,
             fast_map_velocity=fast_map_velocity,
+            fast_map_invalid_cells=fast_map_invalid_cells,
+            fast_map_writer=fast_map_writer,
             fast_map_fallback=fast_map_fallback,
         )
     except Exception as e:
@@ -1539,6 +1557,22 @@ def map_hdf_command(
             "(values match RAS Mapper; the drawn mask can differ at a few edge pixels)"
         ),
     ),
+    fast_map_invalid_cells: Optional[str] = typer.Option(
+        None, "--fast-map-invalid-cells",
+        help=(
+            "With --engine fast-map, pixel ownership for 2D cells whose faces do not form "
+            "a valid polygon: repair (engine default), hull, omit, or raise (refuse, so "
+            "RAS Mapper maps the plan). Recorded in the fast-map manifests"
+        ),
+    ),
+    fast_map_writer: Optional[str] = typer.Option(
+        None, "--fast-map-writer",
+        help=(
+            "With --engine fast-map, sloping GeoTIFF delivery: auto (default; native terrio "
+            "LZW when supported and no velocity), native, or rasterio. Identical pixels "
+            "(env RAS2CNG_FAST_MAP_WRITER)"
+        ),
+    ),
     fast_map_fallback: bool = typer.Option(
         True, "--fast-map-fallback/--fast-map-strict",
         help="Fall back to RAS Mapper when fast-map cannot map the plan, or fail",
@@ -1637,6 +1671,8 @@ def map_hdf_command(
             fast_map_source_terrain=fast_map_source_terrain,
             fast_map_whole_simulation=fast_map_whole_simulation,
             fast_map_velocity=fast_map_velocity,
+            fast_map_invalid_cells=fast_map_invalid_cells,
+            fast_map_writer=fast_map_writer,
             fast_map_fallback=fast_map_fallback,
         )
     except Exception as e:

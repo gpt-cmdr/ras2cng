@@ -208,6 +208,35 @@ timings). Arrival time is in hours since the simulation start.
 and `--fast-map-memory-mib` (planned working memory; default a quarter of
 RAM, 1–16 GiB).
 
+**Invalid cell polygons.** HEC-RAS can compute 2D cells whose face polylines
+cross. With ras-commander 0.110.2 or newer, fast-map maps those meshes under
+an explicit policy instead of refusing them:
+
+| `--fast-map-invalid-cells` | Pixel ownership of an invalid cell |
+|---|---|
+| `repair` (engine default) | polygonize the cell's faces, remove area owned by valid cells, keep the largest part |
+| `hull` | the face-point convex hull, with the same overlap removal |
+| `omit` | the cell owns no pixels |
+| `raise` | refuse; the products fall back to RAS Mapper (`--fast-map-strict` raises) |
+
+Hydraulic connectivity and interpolation always use the complete HDF
+topology; only pixel ownership changes. RAS Mapper's own rendering of such
+cells has not been qualified against `repair`. Every affected cell (mesh,
+cell id, reason, action, original and mapped area) is recorded as
+`fim-invalid-cells/1` in `MapResult.invalid_cells`, `fast_map_manifest.json`
+and `fast_map_whole_simulation_manifest.json`, and a non-zero count is printed.
+
+**GeoTIFF delivery.** With ras-commander-fast-map 0.11 the engine writes the
+sloping WSE/Depth GeoTIFFs itself (terrio, LZW) instead of handing float32
+arrays back to Python for rasterio. `--fast-map-writer auto` (default) uses
+it when the engine supports it and velocity is not requested;
+`native` requires it and `rasterio` keeps the previous path
+(`RAS2CNG_FAST_MAP_WRITER` sets the default). On Bald Eagle bridges p05 Max
+the two writers gave identical pixels and the same LZW strip layout; native
+files were about 4% smaller and the engine call used about 18% less peak
+memory. `--cog` converts either through the shared COG policy with identical
+results. `MapResult.fast_map_writer` records the writer.
+
 ### Inundation boundaries in Rust (recommended with fast-map)
 
 RAS Mapper's inundation-boundary export is very slow. With fast-map (the default engine),

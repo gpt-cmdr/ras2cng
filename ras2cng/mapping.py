@@ -65,6 +65,14 @@ class MapResult:
     # export), "source-canonical" (its CRS-canonical copy) or "export" (the
     # RAS Mapper terrain export).
     fast_map_terrain: dict[str, str] = field(default_factory=dict)
+    # For fast-map products, the engine's ``fim-invalid-cells/1`` record
+    # (ras-commander 0.110.2+): the policy, the count and every cell whose
+    # face polylines do not form a valid polygon, with the action taken.
+    # Absent for map types RAS Mapper produced or older ras-commander.
+    invalid_cells: dict[str, dict] = field(default_factory=dict)
+    # For fast-map sloping WSE/Depth/velocity, how the GeoTIFFs were written:
+    # "native" (terrio LZW, in the engine) or "rasterio".
+    fast_map_writer: dict[str, str] = field(default_factory=dict)
 
 
 # Map type names to RasProcess store_maps variable names
@@ -166,6 +174,8 @@ def generate_result_maps(
     fast_map_source_terrain: bool = True,
     fast_map_whole_simulation: bool = True,
     fast_map_velocity: bool = False,
+    fast_map_invalid_cells: Optional[str] = None,
+    fast_map_writer: Optional[str] = None,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -252,6 +262,18 @@ def generate_result_maps(
             Max velocity in Rust. On Bald Eagle bridges p05 every common pixel
             value matched RAS Mapper but about 2,000 of 973,000 pixels differ
             in the drawn mask, so it is off by default.
+        fast_map_invalid_cells: Pixel ownership for 2D cells whose face
+            polylines do not form a valid polygon: ``"repair"`` (the engine
+            default), ``"hull"``, ``"omit"`` or ``"raise"`` (refuse, so the
+            products fall back to RAS Mapper). None keeps the engine default.
+            Needs ras-commander 0.110.2+; the affected cells are recorded in
+            ``MapResult.invalid_cells`` and the fast-map manifests.
+        fast_map_writer: Sloping GeoTIFF delivery: ``"auto"`` (default;
+            native terrio LZW when the engine supports it and velocity is not
+            requested), ``"native"`` (required) or ``"rasterio"``. None reads
+            ``RAS2CNG_FAST_MAP_WRITER``. Both give identical pixels and the
+            same LZW strip layout; ``--cog`` still goes through
+            :mod:`ras2cng.cog`.
         fast_map_fallback: When a plan is outside fast-map's scope (1D
             elements, a non-Max profile, no usable terrain, engine missing or
             failed), render it through RAS Mapper instead. False raises.
@@ -261,6 +283,10 @@ def generate_result_maps(
     """
     from ras2cng import fast_map as _fast_map
     from ras2cng.project import resolve_project_path
+
+    # Validate fast-map options before any project or engine work.
+    fast_map_invalid_cells = _fast_map.normalize_invalid_cells(fast_map_invalid_cells)
+    fast_map_writer = _fast_map.resolve_product_writer(fast_map_writer)
 
     project_path = Path(project_path)
     output_dir = Path(output_dir)
@@ -436,6 +462,19 @@ def generate_result_maps(
                     console.print(
                         f"    fast-map: {', '.join(produced)} mapped in Rust"
                     )
+                    record = getattr(produced, "invalid_cells", None)
+                    writer = getattr(produced, "product_writer", None)
+                    for map_type in produced:
+                        if record is not None:
+                            map_result.invalid_cells[map_type] = record
+                        if writer is not None:
+                            map_result.fast_map_writer[map_type] = writer
+                    if record and record.get("count"):
+                        console.print(
+                            f"    [yellow]fast-map {label}:[/yellow] {record['count']} invalid "
+                            f"2D cell polygon(s) handled with invalid_cells="
+                            f"{record.get('policy')!r} (see the fast-map manifest)"
+                        )
                     return produced
 
                 def _on_terrain(label, run):
@@ -469,6 +508,8 @@ def generate_result_maps(
                             terrain_hdf=hdf,
                             velocity=fast_map_velocity,
                             terrain_kind=kind,
+                            invalid_cells=fast_map_invalid_cells,
+                            product_writer=fast_map_writer,
                         ),
                     )))
                 if fast_map_whole_simulation and any(
@@ -488,6 +529,7 @@ def generate_result_maps(
                             timeout=timeout,
                             max_working_mib=fast_map_memory_mib,
                             terrain_kind=kind,
+                            invalid_cells=fast_map_invalid_cells,
                         ),
                     )))
                 if fast_map_boundary and _fast_map.FAST_MAP_BOUNDARY in requested_types:
@@ -500,6 +542,7 @@ def generate_result_maps(
                             threads=fast_map_threads,
                             timeout=timeout,
                             max_working_mib=fast_map_memory_mib,
+                            invalid_cells=fast_map_invalid_cells,
                         )
                     fast_results.update(_fast_group("inundation boundary", _boundary))
 

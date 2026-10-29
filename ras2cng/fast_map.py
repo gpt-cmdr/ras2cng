@@ -60,6 +60,18 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   outside that footprint; a CRS refusal retries on the source's
   CRS-canonical copy, and any other refusal falls back to the export, which
   needs HEC-RAS (Windows or Wine). The export is made once per run.
+* **Invalid cell polygons** (ras-commander 0.110.2+). ``invalid_cells``
+  (:data:`INVALID_CELL_POLICIES`) sets pixel ownership for cells whose face
+  polylines cross; the engine default ``repair`` maps such meshes instead of
+  refusing them. The engine's ``fim-invalid-cells/1`` record is returned on
+  :class:`FastMapProducts` and kept in every manifest written here.
+* **Native GeoTIFF delivery** (fast-map 0.11, ras-commander 0.110.3).
+  :data:`PRODUCT_WRITERS`: sloping WSE/Depth written by the engine (terrio
+  LZW) instead of rasterio; pixel-identical, same layout. Velocity requests
+  keep rasterio.
+* **Not used: retained mapping state** (``RasFim.prepare_sloping_model``,
+  ``map_catalog``). ras2cng maps one Max request per plan, and prepared
+  models refuse ``terrain_hdf`` and velocity, so there is nothing to retain.
 """
 
 from __future__ import annotations
@@ -102,6 +114,34 @@ FAST_MAP_MANIFEST = "fast_map_manifest.json"
 FAST_MAP_BOUNDARY_MANIFEST = "fast_map_boundary_manifest.json"
 
 _COMPLETE_STATUSES = {"complete", "no_flooded_pixels"}
+
+# Pixel ownership for physical cells whose face polylines do not form a valid
+# polygon (ras-commander 0.110.2+, ``invalid_cells``). ``None`` leaves the
+# engine default ("repair"). The record is ``fim-invalid-cells/1``.
+INVALID_CELL_POLICIES = ("repair", "hull", "omit", "raise")
+INVALID_CELLS_SCHEMA = "fim-invalid-cells/1"
+
+# How fast-map delivers sloping WSE/Depth GeoTIFFs. ``native`` has the Rust
+# engine write the LZW TIFFs through terrio (fast-map 0.11
+# ``native_geotiff_outputs``, ras-commander 0.110.3 ``product_writer``)
+# instead of piping float32 arrays back to Python for rasterio. On Bald Eagle
+# bridges p05 both are pixel-identical with the same strip/LZW layout; native
+# files are ~4% smaller and peak memory ~18% lower. ``auto`` uses native when
+# the engine advertises it and the request allows it (no velocity).
+PRODUCT_WRITERS = ("auto", "native", "rasterio")
+PRODUCT_WRITER_ENV = "RAS2CNG_FAST_MAP_WRITER"
+
+
+class FastMapProducts(dict):
+    """``{map_type: [paths]}`` plus the engine's ``invalid_cells`` record.
+
+    ``invalid_cells`` is the ``fim-invalid-cells/1`` record ras-commander
+    attaches to the product manifest (``None`` on ras-commander < 0.110.2).
+    ``product_writer`` is the delivery path actually used.
+    """
+
+    invalid_cells: Optional[dict] = None
+    product_writer: Optional[str] = None
 
 
 class FastMapUnavailable(RuntimeError):
@@ -286,6 +326,129 @@ def velocity_supported() -> bool:
     except ImportError:
         return False
     return _has_kwargs(RasFim.map_sloping_profiles, "velocity")
+
+
+def normalize_invalid_cells(policy: Optional[str]) -> Optional[str]:
+    """Validate an ``invalid_cells`` policy; ``None`` keeps the engine default."""
+    if policy is None:
+        return None
+    value = str(policy).strip().lower()
+    if value not in INVALID_CELL_POLICIES:
+        raise ValueError(
+            f"invalid_cells must be one of {', '.join(INVALID_CELL_POLICIES)}; got {policy!r}"
+        )
+    return value
+
+
+def invalid_cells_supported() -> bool:
+    """True when RasFim applies an ``invalid_cells`` policy (ras-commander 0.110.2+)."""
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    return _has_kwargs(RasFim.map_sloping_profiles, "invalid_cells")
+
+
+class InvalidCellsUnsupported(RuntimeError):
+    """The installed ras-commander cannot apply the requested policy.
+
+    Deliberately not :class:`FastMapUnavailable`: that is a terrain refusal
+    and would move :func:`with_terrain` on to the next (exported) terrain.
+    """
+
+
+def _invalid_cells_kwargs(function: Any, policy: Optional[str]) -> dict[str, str]:
+    """``{"invalid_cells": policy}`` when ``function`` takes it, else ``{}``.
+
+    Before ras-commander 0.110.2 every mapping call assembled cell polygons
+    strictly, i.e. behaved as ``"raise"``; any other explicit policy cannot be
+    honoured there and is refused (the product group falls back to RAS Mapper).
+    """
+    policy = normalize_invalid_cells(policy)
+    if policy is None:
+        return {}
+    if _has_kwargs(function, "invalid_cells"):
+        return {"invalid_cells": policy}
+    if policy == "raise":
+        return {}
+    raise InvalidCellsUnsupported(
+        f"the installed ras-commander cannot apply invalid_cells={policy!r} "
+        "(needs ras-commander>=0.110.2)"
+    )
+
+
+def _invalid_cells_record(manifest: Any) -> Optional[dict]:
+    """The engine's ``fim-invalid-cells/1`` record from a manifest's attrs."""
+    record = getattr(manifest, "attrs", {}).get("invalid_cells")
+    return record if isinstance(record, dict) else None
+
+
+def resolve_product_writer(writer: Optional[str] = None) -> str:
+    """Return ``auto``/``native``/``rasterio``; ``None`` reads the env var."""
+    value = writer if writer is not None else os.environ.get(PRODUCT_WRITER_ENV, "auto")
+    normalized = str(value).strip().lower()
+    if normalized not in PRODUCT_WRITERS:
+        raise ValueError(
+            f"fast-map product writer must be one of {', '.join(PRODUCT_WRITERS)}; got {value!r}"
+        )
+    return normalized
+
+
+def native_writer_supported() -> bool:
+    """True when RasFim and the engine can write sloping GeoTIFFs natively.
+
+    Needs ``product_writer`` on ``RasFim.map_sloping_profiles``
+    (ras-commander 0.110.3) and an engine whose sloping method advertises
+    ``native_geotiff_outputs`` (fast-map 0.11). Checked up front: a refusal
+    inside the engine call would otherwise look like a terrain refusal.
+    """
+    try:
+        from ras_commander import RasFim
+        from ras_commander.fim import _engine
+    except ImportError:
+        return False
+    if not _has_kwargs(RasFim.map_sloping_profiles, "product_writer"):
+        return False
+    try:
+        method = _engine.engine_method(RasFim.find_engine())
+    except Exception:
+        return False
+    return bool((method.get("sloping") or {}).get("native_geotiff_outputs"))
+
+
+def _select_product_writer(writer: Optional[str], *, velocity: bool) -> Optional[str]:
+    """The ``product_writer`` to pass to sloping mapping, or ``None`` to omit it.
+
+    Native delivery excludes velocity (ras-commander refuses the combination),
+    so a velocity request uses rasterio. ``native`` is strict: it raises when
+    the installation cannot honour it.
+    """
+    choice = resolve_product_writer(writer)
+    if choice == "rasterio":
+        return "rasterio" if _product_writer_kwarg() else None
+    if velocity:
+        if choice == "native":
+            raise RuntimeError(
+                "fast-map native GeoTIFF delivery excludes velocity; use "
+                "--fast-map-writer auto or rasterio with --fast-map-velocity"
+            )
+        return "rasterio" if _product_writer_kwarg() else None
+    if native_writer_supported():
+        return "native"
+    if choice == "native":
+        raise RuntimeError(
+            "fast-map native GeoTIFF delivery needs ras-commander>=0.110.3 and an "
+            "engine advertising native_geotiff_outputs (ras-commander-fast-map>=0.11)"
+        )
+    return "rasterio" if _product_writer_kwarg() else None
+
+
+def _product_writer_kwarg() -> bool:
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    return _has_kwargs(RasFim.map_sloping_profiles, "product_writer")
 
 
 def plan_terrain_hdf(plan_hdf: Path, project_dir: Path) -> Optional[Path]:
@@ -567,7 +730,9 @@ def map_plan(
     terrain_hdf: Optional[Path] = None,
     velocity: bool = False,
     terrain_kind: Optional[str] = None,
-) -> dict[str, list[Path]]:
+    invalid_cells: Optional[str] = None,
+    product_writer: Optional[str] = None,
+) -> FastMapProducts:
     """Map one plan's Max WSE/Depth with the Rust engine into ``output_dir``.
 
     Products are named like RAS Mapper's (``WSE (Max).tif``,
@@ -575,6 +740,14 @@ def map_plan(
     product manifest is kept as ``fast_map_manifest.json``. Raises
     :class:`FastMapUnavailable` for anything outside fast-map's scope, and lets
     engine failures propagate.
+
+    ``invalid_cells`` (``repair``/``hull``/``omit``/``raise``; ``None`` = the
+    engine default, ``repair``) sets pixel ownership for cells whose face
+    polylines do not form a valid polygon. The engine's record of every such
+    cell is returned as ``result.invalid_cells`` and kept in the manifest.
+    ``product_writer`` (``auto``/``native``/``rasterio``; ``None`` reads
+    ``RAS2CNG_FAST_MAP_WRITER``) selects sloping GeoTIFF delivery; see
+    :data:`PRODUCT_WRITERS`.
     """
     requested = [name for name in map_types if name in FAST_MAP_RASTER_TYPES]
     # Velocity is opt-in and plain sloping only; anything else leaves it to
@@ -614,18 +787,23 @@ def map_plan(
             timeout=timeout,
             write_floodplain=False,
         )
+        writer: Optional[str] = None
         try:
             if render["mode"] == "horizontal":
+                # The cell table fixes the policy; mapping must be given the same one.
                 cells = RasFim.get_cells_from_plan_hdf(
                     plan_hdf, mesh_name="*", profile_name="wsel_max",
+                    **_invalid_cells_kwargs(RasFim.get_cells_from_plan_hdf, invalid_cells),
                 )
                 scope = {"terrain_hdf": terrain_hdf} if terrain_hdf is not None else {}
                 manifest = RasFim.map_horizontal_profiles(
                     cells, terrain_tif, work, profiles=["wsel_max"],
                     hdf_path=plan_hdf, **scope, **common,
+                    **_invalid_cells_kwargs(RasFim.map_horizontal_profiles, invalid_cells),
                 )
             else:
                 pretty = render["mode"] == "slopingPretty"
+                writer = _select_product_writer(product_writer, velocity=want_velocity)
                 manifest = RasFim.map_sloping_profiles(
                     plan_hdf, terrain_tif, work,
                     profiles={"Max": "Max"},
@@ -634,10 +812,13 @@ def map_plan(
                     use_depth_weighted_faces=pretty and render["use_depth_weighted_faces"],
                     **({"terrain_hdf": terrain_hdf} if terrain_hdf is not None else {}),
                     **({"velocity": True} if want_velocity else {}),
+                    **({"product_writer": writer} if writer is not None else {}),
+                    **_invalid_cells_kwargs(RasFim.map_sloping_profiles, invalid_cells),
                     **common,
                 )
         except FimUnsupportedError as exc:
             raise FastMapUnavailable(str(exc)) from exc
+        record = _invalid_cells_record(manifest)
 
         row = manifest.iloc[0]
         if row["status"] not in _COMPLETE_STATUSES:
@@ -649,7 +830,9 @@ def map_plan(
             FAST_MAP_VELOCITY: row.get("velocity_tif"),
         }
         labels = {"wse": "WSE", "depth": "Depth", FAST_MAP_VELOCITY: "Velocity"}
-        result: dict[str, list[Path]] = {}
+        result = FastMapProducts()
+        result.invalid_cells = record
+        result.product_writer = writer or (None if render["mode"] == "horizontal" else "rasterio")
         for name in requested:
             source = products.get(name)
             if not source or not Path(source).is_file():
@@ -661,12 +844,19 @@ def map_plan(
         engine_manifest = work / "fim_manifest.json"
         if engine_manifest.is_file():
             details = json.loads(engine_manifest.read_text(encoding="utf-8"))
+            # ras-commander 0.110.2+ writes the record itself; keep the attrs
+            # copy when it did not (it is the same record).
+            if record is not None:
+                details.setdefault("invalid_cells", record)
             details["ras2cng"] = {
                 "plan_hdf": str(plan_hdf),
                 "terrain": str(terrain_tif),
                 "terrain_hdf": str(terrain_hdf) if terrain_hdf is not None else None,
                 "terrain_kind": terrain_kind,
                 "render": render,
+                "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
+                "invalid_cells_count": (record or {}).get("count"),
+                "product_writer": result.product_writer,
                 "products": {k: [str(p) for p in v] for k, v in result.items()},
             }
             (output_dir / FAST_MAP_MANIFEST).write_text(
@@ -691,7 +881,8 @@ def map_whole_simulation(
     timeout: Optional[float] = None,
     max_working_mib: Optional[int] = None,
     terrain_kind: Optional[str] = None,
-) -> dict[str, list[Path]]:
+    invalid_cells: Optional[str] = None,
+) -> FastMapProducts:
     """Map arrival time and percent time inundated with the Rust engine.
 
     Qualified against RAS Mapper 7.0.1 stored maps (fast-map #12, ras-commander
@@ -702,6 +893,7 @@ def map_whole_simulation(
     since the simulation start. Products are named as RAS Mapper names them
     (``Arrival Time (0.5ft hrs).tif``, ``Percent Time Inundated (0.5ft).tif``).
     Duration is not produced here: the engine marks it unqualified.
+    ``invalid_cells`` is applied and recorded as in :func:`map_plan`.
     """
     requested = [t for t in map_types if t in FAST_MAP_WHOLE_SIMULATION_TYPES]
     if not requested:
@@ -740,9 +932,11 @@ def map_whole_simulation(
                     default_working_mib() if max_working_mib is None else int(max_working_mib)
                 ),
                 timeout=timeout,
+                **_invalid_cells_kwargs(RasFim.map_whole_simulation, invalid_cells),
             )
         except FimUnsupportedError as exc:
             raise FastMapUnavailable(str(exc)) from exc
+        record = _invalid_cells_record(manifest)
 
         unit = plan_units(plan_hdf)
         label = f"{float(threshold):g}{unit}"
@@ -751,7 +945,8 @@ def map_whole_simulation(
             "percent_inundated": f"Percent Time Inundated ({label}).tif",
         }
         rows = {str(r["product"]): r for _, r in manifest.iterrows()}
-        result: dict[str, list[Path]] = {}
+        result = FastMapProducts()
+        result.invalid_cells = record
         for name in requested:
             row = rows.get(name)
             if row is None or row["status"] not in _COMPLETE_STATUSES:
@@ -776,6 +971,8 @@ def map_whole_simulation(
             "render": render,
             "threshold": float(threshold),
             "threshold_units": unit,
+            "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
+            "invalid_cells": record,
             "products": {
                 name: {
                     "path": str(result[name][0]),
@@ -806,13 +1003,15 @@ def map_boundary(
     threads: Optional[int] = None,
     timeout: Optional[float] = None,
     max_working_mib: Optional[int] = None,
-) -> dict[str, list[Path]]:
+    invalid_cells: Optional[str] = None,
+) -> FastMapProducts:
     """Map one plan's Max inundation boundary with the Rust engine.
 
     Writes ``Inundation Boundary (Max).geojson`` (a MultiPolygon with holes
     in the model CRS) and ``fast_map_boundary_manifest.json``. A plan with no
     flooded area returns an empty list. Raises :class:`FastMapUnavailable`
-    for anything outside the boundary method's scope.
+    for anything outside the boundary method's scope. ``invalid_cells`` is
+    passed and recorded when the installed boundary API takes it.
     """
     if profile != "Max":
         raise FastMapUnavailable(
@@ -852,9 +1051,11 @@ def map_boundary(
                 max_working_mib=budget,
                 max_prepared_mib=budget,
                 timeout=timeout,
+                **_invalid_cells_kwargs(RasFim.map_inundation_boundaries, invalid_cells),
             )
         except FimUnsupportedError as exc:
             raise FastMapUnavailable(str(exc)) from exc
+        record = _invalid_cells_record(manifest)
 
         row = manifest.iloc[0]
         if row["status"] == "empty":
@@ -889,10 +1090,15 @@ def map_boundary(
                 for key in ("polygons", "holes", "vertices", "area", "crs")
             },
             "products": [str(path) for path in products],
+            "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
         }
+        if record is not None:
+            details.setdefault("invalid_cells", record)
         (output_dir / FAST_MAP_BOUNDARY_MANIFEST).write_text(
             json.dumps(details, indent=2, default=str), encoding="utf-8"
         )
-        return {FAST_MAP_BOUNDARY: products}
+        result = FastMapProducts({FAST_MAP_BOUNDARY: products})
+        result.invalid_cells = record
+        return result
     finally:
         shutil.rmtree(work, ignore_errors=True)
