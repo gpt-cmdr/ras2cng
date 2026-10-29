@@ -4153,7 +4153,7 @@ wheels = [
 
 [[package]]
 name = "ras-commander"
-version = "0.110.1"
+version = "0.110.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
@@ -4163,9 +4163,9 @@ dependencies = [
     { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "ras-commander-fast-hdf", marker = "(platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/72/e3/8eee3d9cc5b64413b0ee4a10f3de4e70b5f9fa3a94731f859b523f2ee1b4/ras_commander-0.110.1.tar.gz", hash = "sha256:6c35aaa62ef5e005a00a43b231f7a054033ab306e951284ec833e86b81720605", size = 4174979, upload-time = "2026-10-26T22:31:20.083Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/52/82730610d3712313c40d86ad622ab9d5eba5547cf0fc2b21c3491c2761b7/ras_commander-0.110.3.tar.gz", hash = "sha256:2e0568f84cd1decec2495eb7f2fa451b656220687f2c0c75ccc6de911b329f48", size = 4320486, upload-time = "2026-10-29T14:49:15.571Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/5e/69c4abfd82f75ab5d1b144cb09a1ca538ab0df6ab8c656a8a7be4742d3c4/ras_commander-0.110.1-py3-none-any.whl", hash = "sha256:6d54b5c428ff99a384302d898f3a06acf43749525ce6e3c3af6b9af66ac79a3e", size = 3093839, upload-time = "2026-10-26T22:31:17.44Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/d0/a3599112e8966f2efa8c6d3a5eccddaefdc534ca75bd84c1d21fbd2cef77/ras_commander-0.110.3-py3-none-any.whl", hash = "sha256:229ea432f1aef4811ae7c0a6955ca1869d1c3c4d6d392a42266a007bed3301b7", size = 3184414, upload-time = "2026-10-29T14:49:10.731Z" },
 ]
 
 [package.optional-dependencies]
@@ -4207,28 +4207,28 @@ full = [
 
 [[package]]
 name = "ras-commander-fast-hdf"
-version = "0.2.3"
+version = "0.2.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/25/64/3195ca36b0d436ba598967fb63d235ee666fdca32b48837597bfa356260c/ras_commander_fast_hdf-0.2.3.tar.gz", hash = "sha256:b8b4e4bed05c5bdcf206add5990fcebe4cd39d675710ca3815f7d5c08e99b322", size = 736398, upload-time = "2026-10-26T19:49:06.737Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/78/b0cc0a921bcb472da018502c41e1c08b99777ed23cad62faeae93fe89c88/ras_commander_fast_hdf-0.2.4.tar.gz", hash = "sha256:cf58db44dcf992925c991a1727de7d77899eb5ddf77671361fa4525277bd0813", size = 540069, upload-time = "2026-10-28T21:55:29.87Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/ee/cdf484884e605ed6dfc38d91116a71c1ddfce631da79a06378fc163c47a4/ras_commander_fast_hdf-0.2.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:559a452631513733afc9cd7c74d09586aab9301666d4c8ec5e678fcbf2dea5b1", size = 6536544, upload-time = "2026-10-26T19:48:59.473Z" },
-    { url = "https://files.pythonhosted.org/packages/26/71/b14d6765eb09bf73901a1f7bdf8f6acd1bef5f27fbb31e33b900597dfb0a/ras_commander_fast_hdf-0.2.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:11e970856f4ee2a901c25c25c743b3e802d4d6d6ea4cd6c7f25296ec5daaa8fc", size = 6670886, upload-time = "2026-10-26T19:49:01.242Z" },
-    { url = "https://files.pythonhosted.org/packages/c8/54/31b2f5bf591850257bb325087171bfb892dbd0fd9ff10f590655e1c8867e/ras_commander_fast_hdf-0.2.3-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:758e9310d6de3baecdb15f39029c376da30c368f216ce41cc30970a148c1b11c", size = 6662618, upload-time = "2026-10-26T19:49:03.278Z" },
-    { url = "https://files.pythonhosted.org/packages/02/f4/08392c74483217723819a7228d76113045bd321c123fcb6115d3080ddaea/ras_commander_fast_hdf-0.2.3-cp310-abi3-win_amd64.whl", hash = "sha256:592c3dbd0a1df2f991f9898d0c55835c81af5c57ba4232a0fbdfd30b539a61ed", size = 6756556, upload-time = "2026-10-26T19:49:05.114Z" },
+    { url = "https://files.pythonhosted.org/packages/07/66/2edaef77848c957f0d65abfcc528d42b4c7a31e24568c87be2a2eb2a72da/ras_commander_fast_hdf-0.2.4-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:7a6333c0ef61498625637aac86c6291ab1bff5254feaaaaf17d69a58039a76fc", size = 6843177, upload-time = "2026-10-28T21:55:23.887Z" },
+    { url = "https://files.pythonhosted.org/packages/95/6a/ea7b3dc3ca587bd91ef8689628f6221d5b0eaac04d2f8048e5586b737d79/ras_commander_fast_hdf-0.2.4-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:51cd4a9926c44b656c173b107d1a0602c2f4a539295fa077874acc188b355581", size = 7035145, upload-time = "2026-10-28T21:55:25.518Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/b9/c894bd7eeb27829b8bf2c90c22cf429294e1855d13d52648b4599b3da16d/ras_commander_fast_hdf-0.2.4-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c53e3048acbe887d0d232bb17d06921ff9c2a8a8afc8b1436a61d47c5627346c", size = 7027680, upload-time = "2026-10-28T21:55:27.205Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/b1/f522ef16d6c6b18c4d25547ca061d129c630f3939e2f2d847db1772bf474/ras_commander_fast_hdf-0.2.4-cp310-abi3-win_amd64.whl", hash = "sha256:a625348e20bffeb52f06261ce4a6eeb5e96770bc945e5fc8f49a4acaba62a968", size = 7062036, upload-time = "2026-10-28T21:55:28.6Z" },
 ]
 
 [[package]]
 name = "ras-commander-fast-map"
-version = "0.8.0"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/44/72/7844e9f7aa6a017e1d7822af9bfe179a544ce510fdf762f4bf00cc8a2c93/ras_commander_fast_map-0.8.0.tar.gz", hash = "sha256:882fa5faeda424015ddb19a6634072265e3456644ccfccbfc66bc543b8d4585a", size = 246029, upload-time = "2026-10-26T21:40:37.307Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/da/f4b26f0a9868b3f9c8f6cde169a920cbbc65caa35d99bec2ac135456811e/ras_commander_fast_map-0.11.0.tar.gz", hash = "sha256:459eeb47226ac8d6f7499774cc82c16b8d7a6f43efc995d637c081a4dd386c80", size = 310934, upload-time = "2026-10-29T14:08:52.796Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/63/493ec76c5ca9603451d983ad48173bfc34027fd81d43b4c0a20040578254/ras_commander_fast_map-0.8.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:b7b21870d862091409e4de1b5aea921d6ab180f4e32380fdc7a55e148fe73d40", size = 5673959, upload-time = "2026-10-26T21:40:33.968Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/21/5041465aafa966fee8212b6389aba14f097bfcf4e81538126de75ebfc75f/ras_commander_fast_map-0.8.0-py3-none-win_amd64.whl", hash = "sha256:c58b71936c80f47bd645066bdb43486ae184fa880d1e0f967f68f4f0517b27cb", size = 5337586, upload-time = "2026-10-26T21:40:35.983Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/1a/1e4177f97369f0d69727fcb19a3e6165a503a29a21d265cebdfb0ed37c8d/ras_commander_fast_map-0.11.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:c8e2d47be1b6d9518409b13dfab76c28df7202efd292712bc060b3d50a31a000", size = 7210567, upload-time = "2026-10-29T14:08:49.302Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/7a/6099459fd0a8e72ed97af6691a077b081fae64c7261ae57ec454c5f774dc/ras_commander_fast_map-0.11.0-py3-none-win_amd64.whl", hash = "sha256:2b45999a2925fdc61729b743b62d77d6545acf2af99ff08ce8c361ceaf7d90bd", size = 6775028, upload-time = "2026-10-29T14:08:51.265Z" },
 ]
 
 [[package]]
@@ -4332,9 +4332,9 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgis'", specifier = ">=2.9.0" },
     { name = "pyarrow", specifier = ">=14.0.0" },
-    { name = "ras-commander", extras = ["fast-hdf"], marker = "extra == 'fast-hdf'", specifier = ">=0.110.1" },
-    { name = "ras-commander", extras = ["fast-map"], marker = "extra == 'fast-map'", specifier = ">=0.110.1" },
-    { name = "ras-commander", extras = ["full"], specifier = ">=0.110.1" },
+    { name = "ras-commander", extras = ["fast-hdf"], marker = "extra == 'fast-hdf'", specifier = ">=0.110.3" },
+    { name = "ras-commander", extras = ["fast-map"], marker = "extra == 'fast-map'", specifier = ">=0.110.3" },
+    { name = "ras-commander", extras = ["full"], specifier = ">=0.110.3" },
     { name = "rasterio", marker = "extra == 'all'", specifier = ">=1.3.0" },
     { name = "rasterio", marker = "extra == 'pmtiles'", specifier = ">=1.3.0" },
     { name = "rich", specifier = ">=13.0.0" },
