@@ -384,9 +384,9 @@ def _write_geoparquet(gdf, output_path: Path, *, hilbert: bool = False) -> dict:
     Delegates to :func:`ras2cng.geoparquet.write_geoparquet`: ZSTD, a nullable
     ``bbox`` struct (``bbox.xmin`` ...) with ``covering`` metadata, rows
     grouped by ``layer`` with a row group ending at every layer boundary, and,
-    with ``hilbert=True``, Hilbert order within each layer. fast-hdf's native
-    writer is used when installed and the file fits its export contract;
-    otherwise pyarrow writes the identical layout. Returns the writer record
+    with ``hilbert=True``, Hilbert order within each layer. terrio's native
+    writer is used when installed; otherwise pyarrow writes the identical
+    layout. Returns the writer record
     stored in the manifest (``engine``, ``fallback_reason``, ``hilbert``...).
     """
     from ras2cng.geoparquet import write_geoparquet
@@ -413,7 +413,7 @@ def _report_writer(info: dict, sort: bool) -> None:
         detail += f", Hilbert: {info.get('hilbert') or 'not applied'}"
     console.print(detail)
     if info.get("fallback_reason"):
-        console.print(f"    [yellow]fast-hdf writer not used:[/yellow] {info['fallback_reason']}")
+        console.print(f"    [yellow]terrio writer not used:[/yellow] {info['fallback_reason']}")
     if sort and info.get("hilbert") == "numpy":
         console.print(
             "    [yellow]Warning:[/yellow] DuckDB spatial unavailable; Hilbert keys came "
@@ -637,7 +637,7 @@ def archive_project(
 
             console.print(f"  [{geom_id}] -> {parquet_name}")
             try:
-                # The writer applies the Hilbert order (natively when fast-hdf
+                # The writer applies the Hilbert order (natively when terrio
                 # is installed), so the layers are not sorted twice.
                 merged_gdf = merge_all_layers(
                     hdf_path=hdf_path,

@@ -4,38 +4,29 @@ One writer serves every consolidated archive file (``Model.g01.parquet``,
 ``Model.p01.parquet``). It has two engines that produce the same rows, row
 order, Arrow schema, GeoParquet metadata and row-group layout:
 
-``fast-hdf``
-    ``ras_commander_fast_hdf.export_geoparquet_ipc_files`` (fast-hdf #36, with
-    the archive types and layout options of #38/#39), used when the installed
-    extension has it. It is a strict, contract-bound profile: every layer
-    needs a stable (Utf8, Int64) row identity, contract types (see
-    :func:`_contract_type`; float32, nested lists/structs and tz-naive
-    timestamps pass), finite floats and 2D WKB. A file that does not fit
-    falls back to the Python engine as a whole, and the reason is returned so
-    the archive manifest can record it.
+``terrio``
+    ``terrio.write_geoparquet_layers(table, path, profile="archive", ...)``,
+    the one Rust implementation of the archive profile (terrio owns file
+    formats; fast-hdf's former ``export_geoparquet_ipc_files`` was retired in
+    its favour). Used when the installed terrio has it. It takes the same
+    Arrow table the Python engine writes, with each layer's row identity.
 
 ``python``
-    pyarrow, always available.
+    pyarrow, always available, and the oracle the terrio engine is checked
+    against.
 
 ``RAS2CNG_GEOPARQUET_WRITER`` = ``auto`` (default) | ``native`` | ``prefer-native`` | ``python``.
-``auto`` (and its alias ``prefer-native``) uses fast-hdf when the installed
-build supports the file, and otherwise writes it with ``python``, warning once
-per distinct reason and recording the reason in the manifest
-(``geometry[].geoparquet.fallback_reason``). ``native`` requires fast-hdf and
-raises when a file does not fit its contract; ``python`` never tries it.
+``auto`` (and its alias ``prefer-native``) uses terrio when it is installed,
+and otherwise (or when terrio refuses the file) writes it with ``python``,
+warning once per distinct reason and recording the reason in the manifest
+(``geometry[].geoparquet.fallback_reason``). ``native`` (aliases ``terrio``,
+``rust``) requires terrio and raises when it cannot write a file; ``python``
+never tries it.
 
-Trade-offs of the native default, measured on Bald Eagle p07 (16 files, all
-identical to the Python engine's rows, order, schema and metadata):
-
-- **Size:** +1.4% with ``statistics: "chunk"`` (pyarrow's statistics, no page
-  index), which ras2cng requests when the build accepts it; +4.4% with the
-  Rust default page indexes.
-- **Time:** not faster; on p07 the archive took 5-13 s longer (55-67 s vs
-  49-54 s). The Rust write (12-15 s) replaces pyarrow's write plus the Python
-  Hilbert keys (about 10 s), and staging the frames as Arrow IPC adds about
-  5 s. Most of the archive time is elsewhere: reading and merging the
-  geometry through ras-commander (12-14 s), frame-to-Arrow conversion (5 s),
-  row-identity checks (3 s) and the results read.
+Measured on Bald Eagle p07 (16 archive files, fresh process per file, loaded
+host): rows, order, schema and ``geo`` metadata identical to the Python
+engine; 19.9 s against 30.2 s, peak 580 MB against 1185 MB; files -5.4% to
++1.5% (geometry chunk statistics, which pyarrow drops above 4 KB).
 
 Layout (both engines):
 
@@ -78,12 +69,13 @@ ZSTD_LEVEL = 3
 GEOPARQUET_VERSION = "1.1.0"
 
 WRITER_ENV = "RAS2CNG_GEOPARQUET_WRITER"
-ENGINE_NATIVE = "fast-hdf"
+ENGINE_NATIVE = "terrio"
 ENGINE_PYTHON = "python"
 
-# Stable row identities of the layers ras2cng writes, for fast-hdf's export
-# contract (Utf8 namespace, optional Int64 local id). Layers not listed here
-# get a discovered identity, or send the file to the Python engine.
+# Stable row identities of the layers ras2cng writes (Utf8 namespace, optional
+# Int64 local id). A column that is an identity in every layer is written
+# non-nullable by both engines. Layers not listed here get a discovered
+# identity, or none.
 KNOWN_IDENTITY: dict[str, tuple[str, Optional[str]]] = {
     "mesh_cells": ("mesh_name", "cell_id"),
     "mesh_faces": ("mesh_name", "face_id"),
@@ -170,7 +162,7 @@ def hilbert_keys_numpy(bounds) -> tuple[np.ndarray, np.ndarray]:
 
     Returns ``(keys, valid)``; ``keys`` is uint32 and meaningless where
     ``valid`` is False (null or empty geometry). Bit-identical to DuckDB
-    spatial ``ST_Hilbert(x, y, extent)`` and to fast-hdf's archive writer.
+    spatial ``ST_Hilbert(x, y, extent)`` and to terrio's archive writer.
     """
 
     bounds = _as_bounds(bounds)
@@ -480,8 +472,8 @@ def _arrow_table(frame) -> pa.Table:
     fields = []
     for field in table.schema:
         if field.name == geometry_name:
-            # As fast-hdf writes it: the extension name only; the CRS lives in
-            # the GeoParquet ``geo`` metadata.
+            # The extension name only; the CRS lives in the GeoParquet ``geo``
+            # metadata (terrio reads it from there).
             field = field.with_type(pa.binary()).with_metadata(
                 {"ARROW:extension:name": "geoarrow.wkb"}
             )
@@ -499,54 +491,26 @@ def _arrow_table(frame) -> pa.Table:
 # ---------------------------------------------------------------------------
 
 
-_NATIVE_LAYOUT_OPTIONS = {"dictionary": "utf8"}
 _NATIVE_PROBE: dict[str, Optional[str]] = {}
 
 
 def native_writer_reason() -> Optional[str]:
-    """None when fast-hdf can write the archive layout, else why not.
-
-    Besides ``export_geoparquet_ipc_files`` the build must accept the layout
-    options (dictionary encoding on Utf8 columns only); a build without them
-    would write a different, larger file. Probed once per process with an
-    empty input list, which writes nothing.
-    """
+    """None when terrio can write the archive profile, else why not."""
 
     if "reason" in _NATIVE_PROBE:
         return _NATIVE_PROBE["reason"]
     try:
-        import ras_commander_fast_hdf as native
-    except Exception:
-        native = None
-    function = getattr(native, "export_geoparquet_ipc_files", None)
-    if not callable(function):
-        reason = "ras_commander_fast_hdf.export_geoparquet_ipc_files is not installed"
+        import terrio
+    except Exception as exc:  # pragma: no cover - depends on the install
+        reason = f"terrio is not installed ({type(exc).__name__}: {exc})"
     else:
-        reason = None
-        try:
-            function([], os.devnull, json.dumps(_NATIVE_LAYOUT_OPTIONS))
-        except Exception as exc:
-            if "unknown field" in str(exc):
-                reason = (
-                    "the installed fast-hdf export_geoparquet_ipc_files lacks the "
-                    f"archive layout options {sorted(_NATIVE_LAYOUT_OPTIONS)} ({exc})"
-                )
+        reason = (
+            None
+            if callable(getattr(terrio, "write_geoparquet_layers", None))
+            else "the installed terrio has no write_geoparquet_layers"
+        )
     _NATIVE_PROBE["reason"] = reason
     return reason
-
-
-def _native_accepts(option: str) -> bool:
-    key = f"accepts:{option}"
-    if key not in _NATIVE_PROBE:
-        import ras_commander_fast_hdf as native
-
-        try:
-            native.export_geoparquet_ipc_files([], os.devnull, json.dumps({option: "probe"}))
-            accepted = True
-        except Exception as exc:
-            accepted = "unknown field" not in str(exc)
-        _NATIVE_PROBE[key] = "yes" if accepted else ""
-    return bool(_NATIVE_PROBE[key])
 
 
 def native_writer_available() -> bool:
@@ -555,7 +519,8 @@ def native_writer_available() -> bool:
 
 def _requested_engine(engine: Optional[str]) -> str:
     choice = (engine or os.environ.get(WRITER_ENV, "") or "auto").strip().lower()
-    aliases = {"fast-hdf": "native", "rust": "native", "pyarrow": "python"}
+    # ``fast-hdf`` stays an alias of the native engine for old settings.
+    aliases = {"terrio": "native", "rust": "native", "fast-hdf": "native", "pyarrow": "python"}
     choice = aliases.get(choice, choice)
     if choice not in {"auto", "native", "prefer-native", "python"}:
         raise ValueError(f"{WRITER_ENV} must be one of auto, native, prefer-native, python; got {choice!r}")
@@ -564,65 +529,10 @@ def _requested_engine(engine: Optional[str]) -> str:
     return PREFER_NATIVE if choice == "prefer-native" else choice
 
 
-#: What ``auto`` (the default) means: prefer fast-hdf with a pyarrow fallback
+#: What ``auto`` (the default) means: prefer terrio with a pyarrow fallback
 #: (``True``), or always pyarrow (``False``).  The one switch for the default.
 AUTO_PREFERS_NATIVE = True
 PREFER_NATIVE = "prefer-native"
-
-
-_CONTRACT_SCALARS = (
-    pa.types.is_int64,
-    pa.types.is_uint64,
-    pa.types.is_float64,
-    pa.types.is_float32,
-    pa.types.is_boolean,
-    pa.types.is_string,
-    pa.types.is_binary,
-)
-
-
-def _contract_type(dtype: pa.DataType, *, top_level: bool = True) -> bool:
-    """Types fast-hdf's archive profile passes through.
-
-    Scalars above, timezone-naive timestamps (ms/us/ns), all-null columns at
-    the top level, and list / non-empty struct nested to any depth over those
-    scalars and timestamps.  As merged (fast-hdf #38/#39) the writer refuses
-    large_list, fixed_size_list and timestamps with a time zone, so those stay
-    on pyarrow rather than failing inside the engine.
-    """
-
-    if any(check(dtype) for check in _CONTRACT_SCALARS):
-        return True
-    if pa.types.is_timestamp(dtype):
-        return dtype.unit in ("ms", "us", "ns") and dtype.tz is None
-    if pa.types.is_null(dtype):
-        return top_level
-    if pa.types.is_list(dtype):
-        return _contract_type(dtype.value_type, top_level=False)
-    if pa.types.is_struct(dtype):
-        return dtype.num_fields > 0 and all(
-            _contract_type(dtype.field(i).type, top_level=False) for i in range(dtype.num_fields)
-        )
-    return False
-
-
-
-def _crs_evidence(frame) -> dict:
-    crs = frame.crs
-    if crs is None:
-        raise ValueError("no CRS")
-    projjson = json.loads(crs.to_json())
-    units = crs.axis_info[0].unit_name if crs.axis_info else ""
-    if not units:
-        raise ValueError("CRS has no axis units")
-    return {
-        "wkt": crs.to_wkt(),
-        "projjson": projjson,
-        "units": units,
-        "axis_order": "xy",
-        "resolved": True,
-        "geographic_wgs84": bool(crs.is_geographic and crs.to_epsg() == 4326),
-    }
 
 
 def _unique_identity(table: pa.Table, namespace: str, local: Optional[str]) -> bool:
@@ -684,48 +594,16 @@ def _layer_identities(table: pa.Table, slices, layer_column) -> list:
 
 
 def _required_fields(identities: list) -> set[str]:
-    """Fields fast-hdf writes as non-nullable: an identity in every layer.
+    """Fields written as non-nullable: an identity in every layer.
 
-    The native writer unifies per-layer schemas whose identity fields are
-    non-nullable; the Python engine applies the same rule so both write the
-    same schema.
+    terrio makes a column non-nullable when it is an identity of every layer;
+    the Python engine applies the same rule so both write the same schema.
     """
 
     if not identities or any(identity is None for identity in identities):
         return set()
     sets = [{name for name in identity if name} for identity in identities]
     return set.intersection(*sets)
-
-
-def _native_ineligible_reason(frame, table: pa.Table, identities, slices, layer_column) -> Optional[str]:
-    import shapely
-
-    try:
-        _crs_evidence(frame)
-    except Exception as exc:
-        return f"CRS not usable for the export contract ({exc})"
-    for field in table.schema:
-        if field.name == layer_column:
-            continue
-        if not _contract_type(field.type):
-            return f"column {field.name!r} has type {field.type}, outside the export contract"
-        if field.name.lower() in {"fid", "_ras_fid"}:
-            return f"column {field.name!r} is a reserved name"
-        if pa.types.is_float64(field.type):
-            values = table[field.name].to_numpy(zero_copy_only=False)
-            if np.isinf(values[~np.isnan(values)]).any():
-                return f"column {field.name!r} has infinite values"
-    geoms = np.asarray(frame.geometry.values, dtype=object)
-    present = ~(shapely.is_missing(geoms))
-    if shapely.has_z(geoms[present]).any():
-        return "geometry has Z coordinates"
-    if 7 in set(shapely.get_type_id(geoms[present]).tolist()):
-        return "geometry collections are outside the export contract"
-    for (name, _), identity in zip(slices, identities):
-        if identity is None:
-            label = name or "<single>"
-            return f"layer {label!r} has no unique (Utf8, Int64) row identity"
-    return None
 
 
 def _write_python(
@@ -760,7 +638,7 @@ def _write_python(
             compression_level=level,
             use_dictionary=dictionary or False,
             # pyarrow's default compliant nesting names list items "element",
-            # as fast-hdf's writer does since #39, so both engines match.
+            # as terrio's writer does, so both engines match.
         ) as writer:
             offset = 0
             for _, rows in slices:
@@ -774,7 +652,6 @@ def _write_python(
 
 
 def _write_native(
-    frame,
     table: pa.Table,
     identities,
     slices,
@@ -787,79 +664,33 @@ def _write_native(
     compression_level: Optional[int],
     hilbert_column: Optional[str] = None,
 ) -> dict:
-    import tempfile
+    """Write ``table`` (layer column last) with terrio's archive profile."""
 
-    import pyarrow.ipc as ipc
-    import ras_commander_fast_hdf as native
+    import terrio
 
     from ras2cng.cog import atomic_output
 
-    evidence = _crs_evidence(frame)
-    base = table.drop_columns([layer_column]) if layer_column and layer_column in table.schema.names else table
-    identity_options = {}
-    with tempfile.TemporaryDirectory(prefix=".ras2cng-gpq-", dir=output.parent) as scratch:
-        inputs = []
-        for index, ((name, rows), (namespace, local)) in enumerate(zip(slices, identities)):
-            if len(slices) == 1:
-                layer = base
-            elif len(rows) and rows[-1] - rows[0] + 1 == len(rows) and bool(np.all(np.diff(rows) == 1)):
-                # Layers are contiguous blocks in every archive frame seen so
-                # far; a zero-copy slice saves the 2-3 s ``take`` cost on p07.
-                layer = base.slice(int(rows[0]), len(rows))
-            else:
-                layer = base.take(pa.array(rows))
-            identity_options[name or ""] = {"namespace": namespace, "local": local}
-            fields = []
-            for field in layer.schema:
-                if field.name == "geometry":
-                    field = pa.field(
-                        "geometry",
-                        pa.binary(),
-                        nullable=True,
-                        metadata={
-                            "ARROW:extension:name": "geoarrow.wkb",
-                            "ARROW:extension:metadata": json.dumps(
-                                {"crs": evidence["projjson"], "crs_type": "projjson"}
-                            ),
-                        },
-                    )
-                else:
-                    field = field.remove_metadata().with_nullable(field.name not in (namespace, local))
-                fields.append(field)
-            schema = pa.schema(fields, metadata={"ras:export:v1": json.dumps(evidence)})
-            layer = pa.Table.from_arrays(layer.columns, schema=schema)
-            path = Path(scratch) / f"layer{index}.arrow"
-            with pa.OSFile(str(path), "wb") as stream, ipc.new_file(stream, schema) as sink:
-                for batch in layer.to_batches(max_chunksize=ROW_GROUP_ROWS):
-                    sink.write_batch(batch)
-            del layer
-            inputs.append((name, str(path)))
-        options: dict[str, Any] = {
-            "compression": "zstd",
-            "row_group_rows": int(row_group_rows),
-            "bbox_covering": covering,
-            "order": "hilbert" if hilbert else "input",
-            "identity": identity_options,
+    named = layer_column is not None and slices[0][0] is not None
+    kwargs: dict[str, Any] = dict(
+        profile="archive",
+        layer_column=layer_column if named else "",
+        compression="zstd",
+        compression_level=int(ZSTD_LEVEL if compression_level is None else compression_level),
+        row_group_rows=int(row_group_rows),
+        bbox_covering=covering,
+        bbox_column="bbox",
+        order="hilbert" if hilbert else "input",
+        hilbert_column=hilbert_column if hilbert and hilbert_column else "",
+    )
+    if named:
+        kwargs["identity"] = {
+            name: [c for c in ident if c] for (name, _), ident in zip(slices, identities) if ident
         }
-        options["compression_level"] = int(ZSTD_LEVEL if compression_level is None else compression_level)
-        if layer_column and slices[0][0] is not None:
-            options["layer_column"] = layer_column
-        # Layout options newer fast-hdf builds accept (requested from
-        # fh-fixes); an older build refuses unknown keys, which sends the file
-        # to the Python engine rather than writing a different layout.
-        options.update(_NATIVE_LAYOUT_OPTIONS)
-        if hilbert_column:
-            options["hilbert_column"] = hilbert_column
-        # pyarrow's statistics: chunk-level, untruncated, no page index.  The
-        # Rust default adds page indexes (+4.4% on Bald Eagle p07; +1.4% left
-        # with chunk statistics).  Builds without the option keep their default.
-        if _native_accepts("statistics"):
-            options["statistics"] = "chunk"
-        with atomic_output(output, suffix=".parquet") as staged:
-            metrics = json.loads(
-                native.export_geoparquet_ipc_files(inputs, str(staged), json.dumps(options))
-            )
-    return metrics
+    elif identities and identities[0]:
+        kwargs["identity"] = [c for c in identities[0] if c]
+    with atomic_output(output, suffix=".parquet") as staged:
+        report = terrio.write_geoparquet_layers(table, str(staged), **kwargs)
+    return dict(report)
 
 
 def write_geoparquet(
@@ -876,9 +707,9 @@ def write_geoparquet(
 ) -> dict:
     """Write an archive GeoParquet; return how it was written.
 
-    The result dict carries ``engine`` (``fast-hdf`` or ``python``),
-    ``fallback_reason`` (why fast-hdf was not used, empty otherwise),
-    ``hilbert`` (``fast-hdf``, ``duckdb``, ``numpy`` or empty when not
+    The result dict carries ``engine`` (``terrio`` or ``python``),
+    ``fallback_reason`` (why terrio was not used, empty otherwise),
+    ``hilbert`` (``terrio``, ``duckdb``, ``numpy`` or empty when not
     ordered), ``bbox_covering``, ``rows`` and ``row_groups``.
     """
 
@@ -912,17 +743,9 @@ def write_geoparquet(
         available = reason is None
         if available and len(frame) == 0:
             reason = "empty table"
-        elif available:
-            reason = _native_ineligible_reason(frame, table, identities, slices, layer_column)
         if reason is None:
-            # Builds without the hilbert_column option still write the file;
-            # the spatial-index pass then adds the key.
-            native_column = (
-                hilbert_column if hilbert and hilbert_column and _native_accepts("hilbert_column") else None
-            )
             try:
                 metrics = _write_native(
-                    frame,
                     table,
                     identities,
                     slices,
@@ -932,22 +755,22 @@ def write_geoparquet(
                     hilbert=hilbert,
                     row_group_rows=row_group_rows,
                     compression_level=compression_level,
-                    hilbert_column=native_column,
+                    hilbert_column=hilbert_column,
                 )
                 info.update(
                     engine=ENGINE_NATIVE,
                     hilbert=ENGINE_NATIVE if hilbert else "",
                     row_groups=int(metrics.get("row_groups", 0)),
-                    hilbert_column=native_column or "",
+                    hilbert_column=(hilbert_column or "") if hilbert else "",
                 )
                 return info
             except Exception as exc:
                 if requested == "native":
                     raise
-                reason = f"fast-hdf refused the file ({exc})"
+                reason = f"terrio refused the file ({exc})"
         if requested == "native":
             raise RuntimeError(
-                f"{WRITER_ENV}=native, but the fast-hdf writer cannot write {output_path.name}: {reason}"
+                f"{WRITER_ENV}=native, but terrio cannot write {output_path.name}: {reason}"
             )
         warned_key = f"warned:{reason}"
         # An empty file has nothing to write natively; that is not news.
@@ -1008,9 +831,8 @@ def write_geoparquet(
     metadata = dict(table.schema.metadata or {})
     if b"geo" in metadata:
         geo = json.loads(geo_metadata_with_covering(metadata[b"geo"], covering, file_bbox=file_bbox))
-        geo.pop("creator", None)  # identical to the fast-hdf engine's metadata
-        # geometry_types stays sorted (GeoPandas); fast-hdf's order varies run to
-        # run, so the two engines agree on it as a set.
+        geo.pop("creator", None)  # identical to the terrio engine's metadata
+        # geometry_types stays sorted (GeoPandas), as terrio writes it.
         metadata[b"geo"] = json.dumps(geo).encode("utf-8")
     table = table.replace_schema_metadata(metadata)
     info["row_groups"] = _write_python(

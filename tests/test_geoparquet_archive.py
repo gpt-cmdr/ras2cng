@@ -19,8 +19,8 @@ from ras2cng.geometry import _hilbert_sort
 
 
 # ---------------------------------------------------------------------------
-# Reference Hilbert encoder, transcribed from fast-hdf's Rust
-# (src/exports/geoparquet.rs::hilbert_encode_16), scalar and independent of
+# Reference Hilbert encoder, transcribed from the Rust encoder (terrio::geoparquet)
+# (crates/terrio/src/geoparquet.rs::hilbert_encode_16), scalar and independent of
 # ras2cng's vectorised port.
 # ---------------------------------------------------------------------------
 
@@ -244,13 +244,13 @@ def test_writer_can_still_write_legacy_flat_columns(tmp_path: Path):
     assert geoparquet.bbox_covering(schema) == "columns"
 
 
-def test_python_engine_records_why_fast_hdf_was_not_used(monkeypatch, tmp_path: Path):
+def test_python_engine_records_why_terrio_was_not_used(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
-        geoparquet, "native_writer_reason", lambda: "export_geoparquet_ipc_files is not installed"
+        geoparquet, "native_writer_reason", lambda: "terrio is not installed"
     )
     monkeypatch.setattr(geoparquet, "_NATIVE_PROBE", {})
     monkeypatch.delenv(geoparquet.WRITER_ENV, raising=False)
-    # auto (the default) prefers fast-hdf: it falls back, says why, warns once.
+    # auto (the default) prefers terrio: it falls back, says why, warns once.
     with pytest.warns(RuntimeWarning, match="not installed"):
         info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "auto.parquet")
     assert info["engine"] == "python" and "not installed" in info["fallback_reason"]
@@ -272,7 +272,7 @@ def test_python_engine_records_why_fast_hdf_was_not_used(monkeypatch, tmp_path: 
 
 needs_native = pytest.mark.skipif(
     not geoparquet.native_writer_available(),
-    reason=f"fast-hdf archive writer unusable: {geoparquet.native_writer_reason()}",
+    reason=f"terrio archive writer unusable: {geoparquet.native_writer_reason()}",
 )
 
 
@@ -282,7 +282,7 @@ def test_native_and_python_engines_write_identical_files(tmp_path: Path):
     native_path, python_path = tmp_path / "native.parquet", tmp_path / "python.parquet"
     native = geoparquet.write_geoparquet(merged, native_path, hilbert=True, row_group_rows=64, engine="native")
     python = geoparquet.write_geoparquet(merged, python_path, hilbert=True, row_group_rows=64, engine="python")
-    assert native["engine"] == "fast-hdf" and python["engine"] == "python"
+    assert native["engine"] == "terrio" and python["engine"] == "python"
 
     a, b = pq.read_table(python_path), pq.read_table(native_path)
     assert a.schema.equals(b.schema, check_metadata=False)
@@ -290,7 +290,7 @@ def test_native_and_python_engines_write_identical_files(tmp_path: Path):
     assert a.equals(b)  # rows and order
     geo = [json.loads(pq.ParquetFile(p).metadata.metadata[b"geo"]) for p in (python_path, native_path)]
     for meta in geo:
-        # A set in the spec; fast-hdf's order varies from run to run.
+        # A set in the spec; both engines write it sorted.
         meta["columns"]["geometry"]["geometry_types"].sort()
     assert geo[0] == geo[1]
     groups = [
@@ -307,7 +307,7 @@ def test_native_engine_writes_float32_and_nested_columns(tmp_path: Path):
     merged["stations"] = [[float(i), float(i) + 1.0] for i in range(len(merged))]
     native, python = tmp_path / "n.parquet", tmp_path / "p.parquet"
     info = geoparquet.write_geoparquet(merged, native, hilbert=True, hilbert_column="hilbert_index", engine="native")
-    assert info["engine"] == "fast-hdf" and info["hilbert_column"] == "hilbert_index"
+    assert info["engine"] == "terrio" and info["hilbert_column"] == "hilbert_index"
     geoparquet.write_geoparquet(
         merged, python, hilbert=True, hilbert_column="hilbert_index", engine="python"
     )
@@ -317,16 +317,72 @@ def test_native_engine_writes_float32_and_nested_columns(tmp_path: Path):
     assert b.schema.field("weir_coef").type == pa.float32()
 
 
+def _assert_same_file(python_path: Path, native_path: Path) -> None:
+    a, b = pq.read_table(python_path), pq.read_table(native_path)
+    assert all(x.equals(y, check_metadata=True) for x, y in zip(a.schema, b.schema))
+    assert a.equals(b)
+    geo = [json.loads(pq.ParquetFile(p).metadata.metadata[b"geo"]) for p in (python_path, native_path)]
+    assert geo[0] == geo[1]
+    groups = [
+        [m.row_group(i).num_rows for i in range(m.num_row_groups)]
+        for m in (pq.ParquetFile(python_path).metadata, pq.ParquetFile(native_path).metadata)
+    ]
+    assert groups[0] == groups[1]
+
+
 @needs_native
-def test_native_engine_falls_back_on_z_coordinates(tmp_path: Path):
+def test_native_engine_writes_z_coordinates_like_pyarrow(tmp_path: Path):
     from shapely import force_3d
 
     merged = _mesh_layers()
     merged.geometry = force_3d(merged.geometry.values)
-    with pytest.warns(RuntimeWarning, match="Python GeoParquet engine"):
-        info = geoparquet.write_geoparquet(merged, tmp_path / "f.parquet", engine="prefer-native")
-    assert info["engine"] == "python"
-    assert "Z coordinates" in info["fallback_reason"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        info = geoparquet.write_geoparquet(merged, tmp_path / "n.parquet", hilbert=True, engine="native")
+    assert info["engine"] == "terrio" and info["fallback_reason"] == ""
+    geoparquet.write_geoparquet(merged, tmp_path / "p.parquet", hilbert=True, engine="python")
+    _assert_same_file(tmp_path / "p.parquet", tmp_path / "n.parquet")
+
+
+@needs_native
+@pytest.mark.parametrize("covering", ["struct", "columns"])
+def test_native_engine_matches_pyarrow_without_layer_column_or_order(tmp_path: Path, covering):
+    single = _mesh_layers(50)
+    single = single[single["layer"] == "mesh_cells"].drop(columns=["layer"])
+    for name, kwargs in [("single", dict(layer_column=None)), ("input", dict(hilbert=False))]:
+        frame = single if name == "single" else _mesh_layers(50)
+        n, p = tmp_path / f"{name}_n.parquet", tmp_path / f"{name}_p.parquet"
+        info = geoparquet.write_geoparquet(frame, n, covering=covering, engine="native", **kwargs)
+        assert info["engine"] == "terrio"
+        geoparquet.write_geoparquet(frame, p, covering=covering, engine="python", **kwargs)
+        _assert_same_file(p, n)
+
+
+@needs_native
+def test_native_engine_matches_pyarrow_on_wider_types(tmp_path: Path):
+    """Types the retired fast-hdf contract refused: large lists, tz-aware time."""
+    merged = _mesh_layers(40)
+    merged["when"] = pd.Timestamp("2026-10-29T12:00:00Z")
+    n, p = tmp_path / "n.parquet", tmp_path / "p.parquet"
+    info = geoparquet.write_geoparquet(merged, n, hilbert=True, engine="native")
+    assert info["engine"] == "terrio"
+    geoparquet.write_geoparquet(merged, p, hilbert=True, engine="python")
+    _assert_same_file(p, n)
+
+
+def test_native_failure_falls_back_or_raises(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(geoparquet, "native_writer_reason", lambda: None)
+    monkeypatch.setattr(geoparquet, "_NATIVE_PROBE", {})
+
+    def refuse(*args, **kwargs):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(geoparquet, "_write_native", refuse)
+    with pytest.warns(RuntimeWarning, match="terrio refused the file"):
+        info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet", engine="prefer-native")
+    assert info["engine"] == "python" and "boom" in info["fallback_reason"]
+    with pytest.raises(ValueError, match="boom"):
+        geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "b.parquet", engine="native")
 
 
 # ---------------------------------------------------------------------------
@@ -440,43 +496,6 @@ def test_writer_stores_hilbert_index_and_post_pass_keeps_the_file(tmp_path: Path
     assert pq.read_table(path).equals(written)
 
 
-def test_fast_hdf_without_layout_options_falls_back_once(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(
-        geoparquet,
-        "native_writer_reason",
-        lambda: "the installed fast-hdf export_geoparquet_ipc_files lacks the archive layout options",
-    )
-    monkeypatch.setattr(geoparquet, "_NATIVE_PROBE", {})
-    with pytest.warns(RuntimeWarning, match="lacks the archive layout"):
-        info = geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "a.parquet", engine="prefer-native")
-    assert info["engine"] == "python" and "layout" in info["fallback_reason"]
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        geoparquet.write_geoparquet(_mesh_layers(), tmp_path / "b.parquet", engine="prefer-native")
-
-
-@pytest.mark.parametrize(
-    ("dtype", "accepted"),
-    [
-        (pa.float32(), True),
-        (pa.timestamp("ns"), True),
-        (pa.timestamp("ns", tz="UTC"), False),
-        (pa.timestamp("s"), False),
-        (pa.list_(pa.list_(pa.float64())), True),
-        (pa.list_(pa.struct([("a", pa.float64()), ("b", pa.string())])), True),
-        (pa.large_list(pa.float64()), False),
-        (pa.list_(pa.float64(), 2), False),
-        (pa.struct([]), False),
-        (pa.list_(pa.null()), False),
-        (pa.null(), True),
-        (pa.int32(), False),
-    ],
-)
-def test_contract_types_match_the_merged_native_writer(dtype, accepted):
-    """fast-hdf #38/#39 refuse large/fixed-size lists and tz-aware timestamps."""
-    assert geoparquet._contract_type(dtype) is accepted
-
-
 def test_auto_engine_default_is_one_switch(monkeypatch):
     monkeypatch.delenv(geoparquet.WRITER_ENV, raising=False)
     assert geoparquet._requested_engine(None) == geoparquet.PREFER_NATIVE
@@ -485,3 +504,5 @@ def test_auto_engine_default_is_one_switch(monkeypatch):
     assert geoparquet._requested_engine(None) == "python"
     assert geoparquet._requested_engine("prefer-native") == geoparquet.PREFER_NATIVE
     assert geoparquet._requested_engine("rust") == "native"
+    assert geoparquet._requested_engine("terrio") == "native"
+    assert geoparquet._requested_engine("fast-hdf") == "native"  # old setting

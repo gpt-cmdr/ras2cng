@@ -390,7 +390,7 @@ def _hilbert_sort(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     The key is DuckDB spatial ``ST_Hilbert(x, y, extent)`` of the bbox centre
     over the extent of all the rows' bboxes (16 bits per axis), the same
-    order fast-hdf's archive writer produces. Ties keep input order; rows
+    order terrio's archive writer produces. Ties keep input order; rows
     with null or empty geometry go last. If the DuckDB spatial extension
     cannot be loaded, a warning is issued and ras2cng's bit-identical NumPy
     port is used, so the order never silently degrades.

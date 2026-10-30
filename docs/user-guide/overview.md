@@ -65,7 +65,7 @@ never next to the HEC-RAS `.prj`, which would break project resolution.
 ## Key Design Decisions
 
 - **Spatial post-processing by default**: `archive_project()` runs the archive index pass unless `sort=False` or `--no-sort` is used. The CLI command `ras2cng spatial-index ARCHIVE_DIR` runs the same pass later for extraction-only archives.
-- **ZSTD compression for archives**: `archive_project()` uses ZSTD compression with a GeoParquet 1.1 `bbox` struct and `covering` metadata for spatial predicate pushdown, row groups that end at layer boundaries, and Hilbert order within each layer (`ras2cng.geoparquet`; fast-hdf's native writer when installed). Post-processing preserves that metadata and order while adding `hilbert_index`. Legacy single-file exports still use snappy for maximum read performance
+- **ZSTD compression for archives**: `archive_project()` uses ZSTD compression with a GeoParquet 1.1 `bbox` struct and `covering` metadata for spatial predicate pushdown, row groups that end at layer boundaries, and Hilbert order within each layer (`ras2cng.geoparquet`; terrio's native writer when installed). Post-processing preserves that metadata and order while adding `hilbert_index`. Legacy single-file exports still use snappy for maximum read performance
 - **snake_case columns**: ras-commander normalizes all column names (e.g., "Maximum Depth" → `maximum_depth`)
 - **Table alias `_`**: DuckDB queries always use `_` as the table name — consistent, short, collision-free
 - **Suffix-based detection**: File type is determined from the file extension, not file inspection — fast and predictable

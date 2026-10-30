@@ -3,7 +3,7 @@
 The archive writer extracts data first, then this module adds persisted spatial
 ordering/index columns. Geometry parquet files get a ``hilbert_index`` column:
 DuckDB spatial ``ST_Hilbert`` of each row's bbox centre over its layer's
-extent, the key the archive writer (and fast-hdf's native writer) orders rows
+extent, the key the archive writer (and terrio's native engine) orders rows
 by, so for a freshly written archive the re-sort is a no-op. Layers keep their
 first-appearance order and a row group ends at every layer boundary.
 Geometryless result tables get a ``join_index`` column and, when possible,
