@@ -25,8 +25,8 @@ never tries it.
 
 Measured on Bald Eagle p07 (16 archive files, fresh process per file, loaded
 host): rows, order, schema and ``geo`` metadata identical to the Python
-engine; 19.9 s against 30.2 s, peak 580 MB against 1185 MB; files -5.4% to
-+1.5% (geometry chunk statistics, which pyarrow drops above 4 KB).
+engine; 10.4 s against 12.7 s, peak 561 MB against 1184 MB; files -5.4% to
++2.2% (geometry chunk statistics, which pyarrow drops above 4 KB).
 
 Layout (both engines):
 
