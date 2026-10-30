@@ -114,6 +114,15 @@ def archive_command(
         "--crs",
         help="Validated project CRS override when it is absent from source HDF files",
     ),
+    archive_engine: Optional[str] = typer.Option(
+        None,
+        "--archive-engine",
+        help=(
+            "Archive path: auto (direct terrio path when installed, else Python), "
+            "native (direct, error instead of falling back), or python. "
+            "Default: RAS2CNG_ARCHIVE_ENGINE, else auto"
+        ),
+    ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -144,6 +153,7 @@ def archive_command(
         archive_project(
             project,
             output,
+            archive_engine=archive_engine,
             include_results=results,
             include_terrain=terrain,
             include_plan_geometry=plan_geometry,

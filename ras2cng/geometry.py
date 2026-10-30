@@ -11,7 +11,7 @@ from __future__ import annotations
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import geopandas as gpd
 import numpy as np
@@ -423,6 +423,7 @@ def merge_all_layers(
     text_path: Optional[Path] = None,
     *,
     sort: bool = True,
+    hdf_layers: Optional[Sequence[str]] = None,
 ) -> Optional[gpd.GeoDataFrame]:
     """Extract and merge all geometry layers into a single GeoDataFrame.
 
@@ -434,6 +435,8 @@ def merge_all_layers(
         hdf_path: Path to ``*.g??.hdf`` geometry file (or None)
         text_path: Path to ``*.g??`` text geometry file (or None)
         sort: If True, apply Hilbert spatial sort within each layer
+        hdf_layers: Only these HDF layers (default: every one). The direct
+            archive path uses this to read what the engine does not write.
 
     Returns:
         A merged GeoDataFrame with ``layer`` column, or None if nothing extracted
@@ -442,7 +445,7 @@ def merge_all_layers(
 
     # --- HDF layers ---
     if hdf_path is not None:
-        for layer_name in ALL_HDF_LAYERS:
+        for layer_name in ALL_HDF_LAYERS if hdf_layers is None else hdf_layers:
             try:
                 gdf = _extract_hdf_layer(hdf_path, layer_name)
             except Exception as e:

@@ -34,6 +34,7 @@ from ras2cng.catalog import (
     ManifestTerrainEntry,
     ManifestTerrainModificationEntry,
     ManifestTerrainSourceEntry,
+    PYTHON_PATH_SCHEMA_VERSION,
 )
 from ras2cng.geometry import (
     export_all_hdf_layers,
@@ -421,6 +422,49 @@ def _report_writer(info: dict, sort: bool) -> None:
         )
 
 
+def _report_direct(record: dict) -> None:
+    """Print what the direct path wrote natively and what came from Python."""
+    python_layers = record.get("python_layers") or {}
+    console.print(
+        f"    direct: {len(record.get('native_layers') or [])} native, "
+        f"{len(python_layers)} Python layer(s); CRS from {record.get('crs_source')}"
+    )
+    for item in record.get("refused") or []:
+        state = "filled from Python" if item.get("filled") else "not readable in Python either"
+        console.print(
+            f"    [yellow]Engine refused[/yellow] {item.get('layer')}: {state} ({item.get('reason')})"
+        )
+
+
+def _layer_crs_label(parquet_path: Path) -> Optional[str]:
+    """The manifest CRS label of a written file: the EPSG code, else the definition."""
+    from pyproj import CRS
+
+    from ras2cng.archive_direct import stored_crs
+
+    stored = stored_crs(parquet_path)
+    if stored is None:
+        return None
+    parsed = CRS.from_user_input(stored)
+    try:
+        epsg = parsed.to_epsg()
+        if epsg:
+            return f"EPSG:{epsg}"
+    except Exception:
+        pass
+    return str(parsed)
+
+
+def _geom_parquet(output_dir: Path, manifest: Manifest, geom_num: str) -> Optional[Path]:
+    """The archived geometry file a plan joins to, whose CRS its results share."""
+    for entry in manifest.geometry:
+        if entry.get("geom_id") == f"g{geom_num}" and entry.get("parquet"):
+            path = output_dir / entry["parquet"]
+            if path.exists():
+                return path
+    return None
+
+
 def _frame_has_geometry(frame) -> bool:
     if "geometry" not in getattr(frame, "columns", []):
         return False
@@ -523,6 +567,7 @@ def archive_project(
     ras_version: Optional[str] = None,
     rasprocess_path: Optional[Path] = None,
     crs: Optional[str] = None,
+    archive_engine: Optional[str] = None,
 ) -> Manifest:
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -559,6 +604,9 @@ def archive_project(
         ras_version: HEC-RAS version for RasProcess mapping
         rasprocess_path: Path to RasProcess.exe (required on Linux/Wine)
         crs: Validated project CRS override when it is absent from source HDF files
+        archive_engine: ``auto``, ``prefer-native``, ``native`` or ``python``
+            (default: ``RAS2CNG_ARCHIVE_ENGINE``, else ``auto``). See
+            :mod:`ras2cng.archive_direct`.
 
     Returns:
         Manifest: The completed project manifest (also written to output_dir/manifest.json)
@@ -574,6 +622,27 @@ def archive_project(
             f"Unsupported results_geometry: {results_geometry}. "
             f"Expected one of {sorted(VALID_RESULTS_GEOMETRY_MODES)}"
         )
+
+    from ras2cng.archive_direct import (
+        DirectArchiveRequired,
+        fallback_text,
+        options_reason,
+        plan_options_reason,
+        read_mesh_cells,
+        resolve_engine,
+        write_geometry,
+        write_plan,
+    )
+
+    engine = resolve_engine(archive_engine)
+    geometry_off = options_reason(sort=sort) if engine.active else None
+    plan_off = (
+        geometry_off or plan_options_reason(results_layout=results_layout, results_geometry=results_geometry)
+        if engine.active and include_results
+        else None
+    )
+    if engine.strict and (geometry_off or plan_off):
+        raise DirectArchiveRequired(f"RAS2CNG_ARCHIVE_ENGINE=native: {geometry_off or plan_off}")
 
     project_dir, prj_file = resolve_project_path(project_path)
     console.print(f"\n[bold cyan]ras2cng archive[/bold cyan] -> {output_dir}")
@@ -597,6 +666,8 @@ def archive_project(
         plan_count=plan_count,
         geom_count=geom_count,
     )
+    if not engine.active:
+        manifest.schema_version = PYTHON_PATH_SCHEMA_VERSION
 
     # -----------------------------------------------------------------
     # Step 1: Export geometry from all geometry files (consolidated)
@@ -604,6 +675,14 @@ def archive_project(
     console.print(f"\n[bold]Geometry:[/bold] {geom_count} file(s)")
 
     mesh_cells_by_geom: dict[str, object] = {}  # geom_number -> mesh_cells GeoDataFrame
+    # geom_number -> file holding mesh_cells. The direct path keeps no frame; a
+    # plan that has to join in Python reads the layer back from this file.
+    mesh_cells_files: dict[str, Path] = {}
+
+    def mesh_cells_for(number: str):
+        if number not in mesh_cells_by_geom and number in mesh_cells_files:
+            mesh_cells_by_geom[number] = read_mesh_cells(mesh_cells_files[number])
+        return mesh_cells_by_geom.get(number)
 
     if ras.geom_df is not None and not ras.geom_df.empty:
         for _, row in ras.geom_df.iterrows():
@@ -637,9 +716,54 @@ def archive_project(
 
             console.print(f"  [{geom_id}] -> {parquet_name}")
             try:
+                direct, direct_done = None, False
+                if engine.active:
+                    if geometry_off:
+                        geom_entry.archive = engine.fallback(geometry_off)
+                    elif not hdf_path:
+                        geom_entry.archive = engine.not_applicable("no geometry HDF")
+                    else:
+                        try:
+                            direct = write_geometry(
+                                hdf_path,
+                                text_path,
+                                parquet_path,
+                                project_crs=crs,
+                                engine=engine,
+                            )
+                            direct_done = True
+                        except DirectArchiveRequired:
+                            raise
+                        except Exception as exc:
+                            geom_entry.archive = engine.fallback(fallback_text(exc))
+                            console.print(
+                                f"    [yellow]Direct path not used:[/yellow] "
+                                f"{geom_entry.archive['fallback_reason']}"
+                            )
+                if direct is not None:
+                    geom_entry.geoparquet = direct.geoparquet
+                    geom_entry.archive = direct.archive
+                    _report_writer(geom_entry.geoparquet, sort)
+                    _report_direct(direct.archive)
+                    file_types.append("hdf")
+                    if any(layer["layer"].endswith("_text") for layer in direct.layers):
+                        file_types.append("text")
+                    layer_crs = _layer_crs_label(parquet_path)
+                    for layer in direct.layers:
+                        geom_entry.add_layer(ManifestLayer(
+                            layer=layer["layer"],
+                            filter_value=layer["layer"],
+                            rows=layer["rows"],
+                            geometry_type=layer["geometry_type"],
+                            crs=layer_crs,
+                        ))
+                        if layer["layer"] == "mesh_cells":
+                            mesh_cells_files[geom_num] = parquet_path
+                    geom_entry.size_bytes = parquet_path.stat().st_size
+
                 # The writer applies the Hilbert order (natively when terrio
                 # is installed), so the layers are not sorted twice.
-                merged_gdf = merge_all_layers(
+                merged_gdf = None if direct_done else merge_all_layers(
                     hdf_path=hdf_path,
                     text_path=text_path,
                     sort=False,
@@ -691,6 +815,8 @@ def archive_project(
                             mc_gdf, geometry="geometry"
                         )
 
+            except DirectArchiveRequired:
+                raise
             except Exception as e:
                 console.print(f"  [yellow]Warning:[/yellow] Geometry extraction failed for {geom_id}: {e}")
                 if not skip_errors:
@@ -866,7 +992,7 @@ def archive_project(
             geom_num = str(row.get("geometry_number", "")).zfill(2)
             unsteady = row.get("unsteady_number")
             flow_id = f"u{str(unsteady).zfill(2)}" if unsteady else None
-            mesh_cells_gdf = mesh_cells_by_geom.get(geom_num) if results_geometry == "polygon" else None
+            mesh_cells_gdf = None
 
             # Determine completed status from results_df if available
             completed = None
@@ -959,7 +1085,69 @@ def archive_project(
                     del unsteady_results
                     gc.collect()
 
-                if not has_steady_results and results_layout == "variable":
+                direct_plan = None
+                if not has_steady_results and engine.active:
+                    direct_off = plan_off or (
+                        None
+                        if geom_num in mesh_cells_files or geom_num in mesh_cells_by_geom
+                        else f"no mesh_cells archived for g{geom_num}"
+                    )
+                    if direct_off:
+                        plan_entry.archive = engine.fallback(direct_off)
+                    else:
+                        try:
+                            direct_plan = write_plan(
+                                plan_hdf,
+                                parquet_path,
+                                selected=selected_summary_variables(plan_hdf, result_variables),
+                                crs_from=_geom_parquet(output_dir, manifest, geom_num),
+                                project_crs=crs,
+                                mesh_cells=lambda number=geom_num: mesh_cells_for(number),
+                                engine=engine,
+                            )
+                        except DirectArchiveRequired:
+                            raise
+                        except Exception as exc:
+                            plan_entry.archive = engine.fallback(fallback_text(exc))
+                            console.print(
+                                f"    [yellow]Direct path not used:[/yellow] "
+                                f"{plan_entry.archive['fallback_reason']}"
+                            )
+                        else:
+                            if direct_plan is None:
+                                plan_entry.archive = {
+                                    "path": "none",
+                                    "fallback_reason": "",
+                                    "note": "no summary variables selected",
+                                }
+                elif engine.active:
+                    plan_entry.archive = engine.not_applicable(
+                        "steady results are written by the Python path"
+                    )
+                nothing_to_write = plan_entry.archive.get("path") == "none"
+                if direct_plan is None and not nothing_to_write and not has_steady_results:
+                    mesh_cells_gdf = (
+                        mesh_cells_for(geom_num) if results_geometry == "polygon" else None
+                    )
+
+                if direct_plan is not None:
+                    plan_entry.geoparquet = direct_plan.geoparquet
+                    plan_entry.archive = direct_plan.archive
+                    _report_writer(plan_entry.geoparquet, sort)
+                    _report_direct(direct_plan.archive)
+                    for layer in direct_plan.layers:
+                        plan_entry.add_variable(ManifestResultVariable(
+                            variable=layer["layer"],
+                            filter_value=layer["layer"],
+                            rows=layer["rows"],
+                            geometry_mode=results_geometry,
+                            index_column=layer["index_column"],
+                            geometry_filter=layer["geometry_filter"],
+                        ))
+                    plan_entry.size_bytes = parquet_path.stat().st_size
+                elif nothing_to_write:
+                    pass
+                elif not has_steady_results and results_layout == "variable":
                     selected_variables = selected_summary_variables(plan_hdf, result_variables)
                     for variable in selected_variables:
                         variable_slug = result_variable_slug(variable)
@@ -1027,6 +1215,8 @@ def archive_project(
                         plan_entry.size_bytes = parquet_path.stat().st_size
                     del results_gdf
                     gc.collect()
+            except DirectArchiveRequired:
+                raise
             except Exception as e:
                 console.print(f"  [yellow]Warning:[/yellow] Results export failed for {plan_id}: {e}")
                 if not skip_errors:

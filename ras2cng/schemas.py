@@ -4,7 +4,7 @@ The archive layers inherit many source-specific columns from ras-commander, so t
 describe the stable discriminator/join columns and mark the remaining surface as dynamic.
 """
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 # Columns every archive GeoParquet file carries in addition to its DataFrame
 # contract (manifest schema 2.7+). Archives from manifest schema <= 2.6 carry
@@ -51,7 +51,7 @@ DATAFRAME_SCHEMAS = {
         "archive_columns": ARCHIVE_GEOPARQUET_COLUMNS,
     },
     "mesh_cell_results": {
-        "description": "Per-cell HEC-RAS result values, with variable-specific value/time columns.",
+        "description": "Per-cell HEC-RAS result values, with variable-specific value/time columns. Plan files from the direct archive path (manifest 3.0) omit the all-null columns of geometry layers.",
         "accessor": "ras2cng.extract_results_variable_no_geometry(...) or archive_project(..., include_results=True)",
         "source": "ras2cng.results.extract_results_variable_no_geometry",
         "extra_columns": True,
@@ -63,7 +63,7 @@ DATAFRAME_SCHEMAS = {
         "archive_columns": ARCHIVE_GEOPARQUET_COLUMNS,
     },
     "mesh_face_results": {
-        "description": "Per-face HEC-RAS result values, with variable-specific value/time columns.",
+        "description": "Per-face HEC-RAS result values, with variable-specific value/time columns. Plan files from the direct archive path (manifest 3.0) omit the all-null columns of geometry layers.",
         "accessor": "ras2cng.extract_results_variable_no_geometry(...) or archive_project(..., include_results=True)",
         "source": "ras2cng.results.extract_results_variable_no_geometry",
         "extra_columns": True,

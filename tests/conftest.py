@@ -355,6 +355,16 @@ def _gdal_raster_tiler_by_default(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _python_archive_path_by_default(monkeypatch):
+    """The archive tests mock ras-commander, so pin the Python path.
+
+    With a terrio that has the direct path, ``auto`` would hand the engine the
+    mocks' empty HDF files. Tests of the direct path pass ``archive_engine``.
+    """
+    monkeypatch.setenv("RAS2CNG_ARCHIVE_ENGINE", "python")
+
+
+@pytest.fixture(autouse=True)
 def _rasmapper_map_engine_by_default(monkeypatch):
     """The older mapping tests mock RAS Mapper only, so pin that engine.
 

@@ -271,6 +271,7 @@ def test_archive_defaults(monkeypatch, tmp_path: Path):
                 "ras_version": None,
                 "rasprocess_path": None,
                 "crs": None,
+                "archive_engine": None,
             },
         }
     ]

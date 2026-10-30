@@ -83,7 +83,7 @@ def test_manifest_create(tmp_path):
     assert m.project["name"] == "TestProject"
     assert m.project["crs"] == "EPSG:4326"
     assert m.project["plan_count"] == 3
-    assert m.schema_version == "2.7"
+    assert m.schema_version == SCHEMA_VERSION
     assert m.geometry == []
     assert m.results == []
     assert m.terrain == []
@@ -204,7 +204,7 @@ def test_manifest_to_json_is_valid(tmp_path):
     m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
     json_str = m.to_json()
     parsed = json.loads(json_str)
-    assert parsed["schema_version"] == "2.7"
+    assert parsed["schema_version"] == SCHEMA_VERSION
     assert "project" in parsed
     assert "project_parquet" in parsed
 
