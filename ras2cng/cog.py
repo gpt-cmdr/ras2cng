@@ -200,6 +200,33 @@ def terrio_cog_writer():
     return terrio
 
 
+#: Tag names terrio writes from its own measurement when it can
+#: (``report_metadata``, gpt-cmdr/terrio #23).  A re-COGed ras2cng COG carries
+#: them in its source tags; terrio refuses a report name also given in
+#: ``metadata``, so they are dropped from the copied source tags.
+_TERRIO_REPORT_TAGS = {
+    "area_ratios": "overview_area_ratios",
+    "base_valid_pixels": "overview_base_valid_pixels",
+}
+
+
+def terrio_writes_report(terrio: Any) -> bool:
+    """Whether terrio writes the area-matched report into the default domain.
+
+    Capability-detected (gpt-cmdr/terrio #23): ``Raster.write`` takes
+    ``report_metadata=`` (the measured ``overview_area_ratios`` /
+    ``overview_base_valid_pixels`` go into the header with the overviews) and
+    ``area_matched_nan_valid=`` (NaN under a numeric nodata counts as valid,
+    as rasterio's mask and :func:`build_area_matched_overviews` treat it).
+    With both, the :func:`_scan_area_matched` pre-pass is unnecessary.
+    """
+
+    raster = getattr(terrio, "Raster", None)
+    return raster is not None and _terrio_signature_has(
+        getattr(raster, "write", None), "report_metadata", "area_matched_nan_valid"
+    )
+
+
 def terrio_cog_validator():
     """Return ``terrio.validate_cog`` when available (gpt-cmdr/terrio #10), else ``None``."""
 
@@ -680,8 +707,13 @@ class OverviewReport:
     #: Where ``area_ratios`` came from: ``builder`` (the GDAL path's own
     #: levels), ``scan`` (one streamed pass, terrio without a report) or
     #: ``scan+terrio`` (that pass, confirmed by terrio's report, gpt-cmdr/terrio
-    #: #18).  Not written as a tag: the values are identical either way.
+    #: #18) or ``terrio`` (measured and written by terrio itself, no scan,
+    #: gpt-cmdr/terrio #23).  Not written as a tag: the values are identical
+    #: either way.
     ratio_source: str = "builder"
+    #: NaN samples under a numeric nodata, counted as valid (as rasterio's
+    #: mask does).  Reported by terrio #23 only; not written as a tag.
+    nan_pixels: int | None = None
 
     def as_tags(self) -> dict[str, str]:
         tags = {
@@ -1093,10 +1125,14 @@ def _terrio_area_matched_cog(
     only runs where the overviews are the GDAL path's (lossless output is
     pixel-identical; LERC output is within MAX_Z_ERROR of the same lossless
     pyramid, encoded by terrio rather than GDAL): one band, an explicit
-    nodata and no other mask, within :data:`MAX_AREA_MATCHED_PIXELS`, every
-    creation option one terrio acts on, and no NaN under a numeric nodata
-    (terrio treats NaN as invalid; rasterio's mask treats it as a wet value).
-    Anything else returns ``None`` and the GDAL path reports it as before.
+    nodata and no other mask, within :data:`MAX_AREA_MATCHED_PIXELS`, and
+    every creation option one terrio acts on.  With terrio #23
+    (:func:`terrio_writes_report`) terrio writes the area report itself and
+    NaN under a numeric nodata is valid there too; without it,
+    :func:`_scan_area_matched` computes the tags first and a raster with such
+    NaN goes to GDAL (older terrio treats NaN as invalid; rasterio's mask
+    treats it as a wet value).  Anything else returns ``None`` and the GDAL
+    path reports it as before.
     """
 
     import rasterio
@@ -1114,7 +1150,13 @@ def _terrio_area_matched_cog(
             return None
         if source.dtypes[0] in {"complex64", "complex128", "complex_int16"}:
             return None
-        base_valid, ratios, has_nan = _scan_area_matched(source, factors)
+        writes_report = terrio_writes_report(terrio)
+        if writes_report:
+            # terrio measures the ratios and the valid count in the pass that
+            # builds the levels and writes them into the header itself.
+            base_valid, ratios, has_nan = None, [], False
+        else:
+            base_valid, ratios, has_nan = _scan_area_matched(source, factors)
         # The VRT route carries the source's default-domain items, including
         # GDAL's TIFFTAG_* (HEC-RAS writes TIFFTAG_IMAGEDESCRIPTION/ARTIST),
         # which terrio does not read back as metadata; pass them on explicitly.
@@ -1141,7 +1183,7 @@ def _terrio_area_matched_cog(
     report = OverviewReport(
         method=method,
         factors=list(factors),
-        base_valid_pixels=base_valid,
+        base_valid_pixels=base_valid or 0,
         area_ratios=ratios,
         compression=compress,
         lossy_max_z_error=tolerance,
@@ -1168,6 +1210,11 @@ def _terrio_area_matched_cog(
     # quantization step (<= 2 x MAX_Z_ERROR) away from a GDAL-written file;
     # the nodata mask is identical.  Pinned by tests/test_terrio_equivalence.py.
     raster = terrio.open(str(source_path))
+    if writes_report:
+        return _terrio_cog_with_report(
+            raster, destination, report, creation=creation, categorical=categorical,
+            source_tags=source_tags, band_metadata=band_metadata,
+        )
     try:
         with atomic_output(destination) as staged:
             native_report = raster.write(
@@ -1200,6 +1247,89 @@ def _terrio_area_matched_cog(
 
 class _TerrioReportMismatch(RuntimeError):
     """terrio's area-matched report does not describe the tagged pyramid."""
+
+
+class _TerrioDeclined(RuntimeError):
+    """terrio wrote a file the GDAL path labels differently (an empty raster)."""
+
+
+def _terrio_cog_with_report(
+    raster: Any,
+    destination: Path,
+    report: OverviewReport,
+    *,
+    creation: Mapping[str, str],
+    categorical: bool,
+    source_tags: Mapping[str, str],
+    band_metadata: Any,
+) -> OverviewReport | None:
+    """Write with terrio's own report in the default domain; no scan.
+
+    terrio (gpt-cmdr/terrio #23) writes ``overview_area_ratios`` and
+    ``overview_base_valid_pixels`` from the pass that builds the levels, so
+    the tags are what it measured by construction, formatted as
+    :meth:`OverviewReport.as_tags` formats them.  NaN under a numeric nodata
+    is valid (``area_matched_nan_valid``), as in rasterio's mask and the GDAL
+    path's builder, so such rasters stay on terrio.  The returned report is
+    still checked: a missing report or different factors discard the staged
+    file and the GDAL path runs.  An empty raster also goes to GDAL, which
+    labels it ``average`` with a ``fallback_reason``.
+    """
+
+    expected = "area_matched_mode" if categorical else "area_matched"
+    tags = {k: v for k, v in source_tags.items() if k not in _TERRIO_REPORT_TAGS.values()}
+    try:
+        with atomic_output(destination) as staged:
+            native = raster.write(
+                str(staged),
+                driver="COG",
+                options=dict(creation),
+                overview_resampling=expected,
+                metadata={**tags, **report.as_tags()},
+                band_metadata=band_metadata,
+                report_metadata=dict(_TERRIO_REPORT_TAGS),
+                area_matched_nan_valid=True,
+            )
+            _check_terrio_written_report(native, report, expected)
+    except _TerrioDeclined:
+        return None
+    except _TerrioReportMismatch as error:
+        warnings.warn(
+            f"terrio's overview report for {destination.name} is unusable ({error}); using GDAL",
+            RuntimeWarning,
+            stacklevel=4,
+        )
+        return None
+    report.base_valid_pixels = int(native["base_valid_pixels"][0])
+    report.area_ratios = [float(r) for r in native["area_ratios"][0]]
+    nan = list(native.get("nan_pixels") or [])
+    report.nan_pixels = int(nan[0]) if nan else None
+    report.ratio_source = "terrio"
+    return report
+
+
+def _check_terrio_written_report(native: Any, report: OverviewReport, expected: str) -> None:
+    """Raise unless terrio's report describes one band with ``report.factors``.
+
+    :class:`_TerrioReportMismatch` for a missing or inconsistent report,
+    :class:`_TerrioDeclined` for an empty raster (no valid pixels).
+    """
+
+    if not isinstance(native, Mapping):
+        raise _TerrioReportMismatch("terrio returned no overview report")
+    problems = []
+    if native.get("method") != expected:
+        problems.append(f"method {native.get('method')!r} != {expected!r}")
+    if list(native.get("factors") or []) != list(report.factors):
+        problems.append(f"factors {native.get('factors')} != {report.factors}")
+    base = list(native.get("base_valid_pixels") or [])
+    ratios = list(native.get("area_ratios") or [])
+    if len(base) != 1 or len(ratios) != 1 or len(ratios[0]) != len(report.factors):
+        problems.append(f"expected one band, got {base} / {ratios}")
+    if problems:
+        raise _TerrioReportMismatch("; ".join(problems))
+    if int(base[0]) == 0:
+        raise _TerrioDeclined("no valid pixels")
 
 
 def _check_terrio_report(native: Mapping[str, Any], report: OverviewReport) -> None:

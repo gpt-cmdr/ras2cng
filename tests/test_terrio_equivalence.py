@@ -237,15 +237,38 @@ def test_native_categorical_cog_matches_the_gdal_path(tmp_path, monkeypatch):
     _assert_same_cog(tmp_path / "gdal.tif", tmp_path / "native.tif")
 
 
+needs_report = pytest.mark.skipif(
+    cog.terrio_cog_writer() is None or not cog.terrio_writes_report(cog.terrio_cog_writer()),
+    reason="installed terrio does not write the area report (gpt-cmdr/terrio #23)",
+)
+
+
 @needs_writer
-def test_nan_under_a_numeric_nodata_keeps_the_gdal_path(tmp_path, monkeypatch):
-    """terrio treats NaN as invalid; rasterio's mask does not. Never mix them."""
+def test_nan_under_a_numeric_nodata_keeps_the_gdal_path_without_the_report(tmp_path, monkeypatch):
+    """Older terrio treats NaN as invalid; rasterio's mask does not. Never mix them."""
     data = _flood(nodata=-9999.0)
     data[600, 500] = np.nan
     source = _write(tmp_path / "nan.tif", data, nodata=-9999.0)
     monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+    monkeypatch.setattr(cog, "terrio_writes_report", lambda terrio: False)
     report = cog.area_matched_cog(source, tmp_path / "out.tif", blocksize=128, lerc_max_z_error=None)
     assert report.engine == "gdal" and report.method == "area_matched_mean"
+
+
+@needs_report
+def test_nan_under_a_numeric_nodata_stays_on_terrio_with_the_report(tmp_path, monkeypatch):
+    """terrio #23 counts NaN as valid, as rasterio's mask does: same file as GDAL."""
+    data = _flood(nodata=-9999.0)
+    data[600, 500] = np.nan
+    data[17, 500:505] = np.nan
+    source = _write(tmp_path / "nan.tif", data, nodata=-9999.0)
+    reference, native = _both_engines(
+        monkeypatch, source, tmp_path, blocksize=128, lerc_max_z_error=None
+    )
+    assert (reference.engine, native.engine, native.ratio_source) == ("gdal", "terrio", "terrio")
+    assert native.nan_pixels == 6
+    _same_report(reference, native)
+    _assert_same_cog(tmp_path / "gdal.tif", tmp_path / "native.tif")
 
 
 @needs_writer
@@ -346,7 +369,7 @@ def test_report_mismatch_discards_the_terrio_file_and_uses_gdal(tmp_path, monkey
 
     monkeypatch.setattr(cog, "_terrio_area_matched_cog", with_report)
     out = tmp_path / "out.tif"
-    with pytest.warns(RuntimeWarning, match="overview report disagrees"):
+    with pytest.warns(RuntimeWarning, match="overview report (disagrees|for out.tif is unusable)"):
         report = cog.area_matched_cog(source, out, blocksize=128, lerc_max_z_error=None)
     assert report.engine == "gdal" and report.ratio_source == "builder"
     assert not list(tmp_path.glob(".out.tif.partial-*"))
@@ -359,6 +382,7 @@ def test_terrio_report_equals_the_scanned_tags(tmp_path, monkeypatch, nodata):
     """The tag the scan wrote is what terrio's writer measured, digit for digit."""
     source = _flood_source(tmp_path, "report", nodata)
     monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+    monkeypatch.setattr(cog, "terrio_writes_report", lambda terrio: False)
     report = cog.area_matched_cog(source, tmp_path / "out.tif", blocksize=128)
     assert report.engine == "terrio"
     if report.ratio_source != "scan+terrio":
@@ -370,6 +394,98 @@ def test_terrio_report_equals_the_scanned_tags(tmp_path, monkeypatch, nodata):
     assert ",".join(
         f"{float(r):.6f}" for r in native["OVERVIEW_AREA_RATIOS"].split(",")
     ) == tags["overview_area_ratios"]
+
+
+# ---------------------------------------------------------------------------
+# terrio writes the report itself (gpt-cmdr/terrio #23): no scan, same file
+# ---------------------------------------------------------------------------
+
+
+def _scan_oracle(path: Path, blocksize: int):
+    with rasterio.open(path) as probe:
+        factors = cog.overview_factors(probe.width, probe.height, blocksize=blocksize)
+        return factors, cog._scan_area_matched(probe, factors)
+
+
+@needs_report
+@pytest.mark.parametrize(
+    ("name", "nodata", "kwargs"),
+    [
+        ("lossless", -9999.0, {"lerc_max_z_error": None}),
+        ("lerc_nan", np.nan, {}),
+        ("terrain", -9999.0, {"creation_options": cog.TERRAIN_CREATION_OPTIONS}),
+    ],
+)
+def test_report_path_writes_the_scan_paths_file(tmp_path, monkeypatch, name, nodata, kwargs):
+    """Dropping the scan changes nothing on disk: byte-identical to the scan path."""
+    source = _flood_source(tmp_path, name, nodata)
+    monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+    calls = []
+    real_scan = cog._scan_area_matched
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return real_scan(*args, **kwargs)
+
+    monkeypatch.setattr(cog, "_scan_area_matched", counted)
+    native = cog.area_matched_cog(source, tmp_path / "report.tif", blocksize=128, **kwargs)
+    assert calls == [] and native.engine == "terrio" and native.ratio_source == "terrio"
+    monkeypatch.setattr(cog, "terrio_writes_report", lambda terrio: False)
+    scanned = cog.area_matched_cog(source, tmp_path / "scan.tif", blocksize=128, **kwargs)
+    assert calls == [1] and scanned.ratio_source in ("scan", "scan+terrio")
+    assert (tmp_path / "report.tif").read_bytes() == (tmp_path / "scan.tif").read_bytes()
+    factors, (base_valid, ratios, _) = _scan_oracle(source, 128)
+    assert native.factors == factors and native.base_valid_pixels == base_valid
+    assert [f"{r:.6f}" for r in native.area_ratios] == [f"{r:.6f}" for r in ratios]
+    assert native.as_tags() == scanned.as_tags()
+    with rasterio.open(tmp_path / "report.tif") as src:
+        tags = src.tags()
+    assert tags["overview_area_ratios"] == ",".join(f"{r:.6f}" for r in ratios)
+    assert tags["overview_base_valid_pixels"] == str(base_valid)
+
+
+@needs_report
+def test_report_path_drops_stale_report_tags_from_a_recogged_source(tmp_path, monkeypatch):
+    """A ras2cng COG fed back in carries the report tags; terrio rewrites them."""
+    source = _flood_source(tmp_path, "first", -9999.0)
+    monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+    cog.area_matched_cog(source, tmp_path / "first_cog.tif", blocksize=128, lerc_max_z_error=None)
+    with rasterio.open(tmp_path / "first_cog.tif") as src:
+        assert "overview_area_ratios" in src.tags()
+    again = cog.area_matched_cog(
+        tmp_path / "first_cog.tif", tmp_path / "again.tif", blocksize=256, lerc_max_z_error=None
+    )
+    assert again.engine == "terrio" and again.ratio_source == "terrio"
+    factors, (base_valid, ratios, _) = _scan_oracle(tmp_path / "first_cog.tif", 256)
+    with rasterio.open(tmp_path / "again.tif") as src:
+        assert src.tags()["overview_area_ratios"] == ",".join(f"{r:.6f}" for r in ratios)
+        assert src.tags()["overview_factors"] == ",".join(str(f) for f in factors)
+        assert src.tags()["overview_base_valid_pixels"] == str(base_valid)
+
+
+@needs_report
+def test_report_path_sends_an_empty_raster_to_gdal(tmp_path, monkeypatch):
+    data = np.full((700, 900), -9999.0, dtype="float32")
+    source = _write(tmp_path / "empty.tif", data, nodata=-9999.0)
+    monkeypatch.setenv(cog.COG_ENGINE_ENV, "auto")
+    report = cog.area_matched_cog(source, tmp_path / "out.tif", blocksize=128)
+    assert report.engine == "gdal" and report.fallback_reason
+    assert not list(tmp_path.glob(".out.tif.partial-*"))
+
+
+def test_written_report_check_refuses_inconsistent_reports():
+    report = cog.OverviewReport(method="area_matched_mean", factors=[2, 4])
+    good = {"method": "area_matched", "factors": [2, 4], "base_valid_pixels": [5],
+            "area_ratios": [[1.0, 1.0]], "nan_pixels": [0]}
+    cog._check_terrio_written_report(good, report, "area_matched")
+    for change in ({"method": "area_matched_mode"}, {"factors": [2]}, {"area_ratios": [[1.0]]},
+                   {"base_valid_pixels": [1, 2]}, {"area_ratios": []}):
+        with pytest.raises(cog._TerrioReportMismatch):
+            cog._check_terrio_written_report({**good, **change}, report, "area_matched")
+    with pytest.raises(cog._TerrioReportMismatch):
+        cog._check_terrio_written_report(None, report, "area_matched")
+    with pytest.raises(cog._TerrioDeclined):
+        cog._check_terrio_written_report({**good, "base_valid_pixels": [0]}, report, "area_matched")
 
 
 # ---------------------------------------------------------------------------

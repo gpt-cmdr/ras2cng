@@ -169,17 +169,29 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
   the GDAL path must ask for lossless** (`lerc_max_z_error=None` or
   `RAS2CNG_LERC_MAX_Z_ERROR=off`). It is lossless output that is identical
   across engines, not LERC output.
-- `overview_area_ratios` and `overview_base_valid_pixels` come from one
-  streamed pass over level 0, made before the write because the tags go into
-  the COG header. That pass is exact: the selection keeps `round(valid / f²)`
-  cells, or every partly wet cell when there are fewer. It is also the check
-  for NaN under a numeric nodata (below). terrio with gpt-cmdr/terrio #18
-  returns its own measurement from `Raster.write()`; ras2cng compares the
-  factors, the valid count and every ratio at the tag's precision against the
-  scan, and on any difference discards terrio's file and writes the GDAL path
-  instead. The pass costs about 45% of terrio's write time (Depth 1.1 s of
-  2.5 s, Terrain50 12.2 s of 25.8 s); removing it needs terrio to write the
-  report into the default domain itself, which is a draft on the gpt-cmdr fork.
+- `overview_area_ratios` and `overview_base_valid_pixels`:
+    - **terrio with gpt-cmdr/terrio #23** (`report_metadata=` and
+      `area_matched_nan_valid=` on `Raster.write`, capability-detected)
+      measures them in the pass that builds the levels and writes them into
+      the header itself, formatted as ras2cng formats them. ras2cng makes
+      **no pre-scan**. NaN under a numeric nodata counts as valid, as in
+      rasterio's mask, so those rasters stay on terrio and match the GDAL
+      path. Report tags carried by a re-COGed ras2cng COG are dropped from
+      the copied source tags and rewritten. The returned report is still
+      checked: a missing report or different factors discard terrio's file
+      and the GDAL path runs; an empty raster goes to the GDAL path, which
+      labels it `average` with a `fallback_reason`. The files are
+      byte-identical to the scan path's (measured below).
+    - **Older terrio**: one streamed pass over level 0, made before the
+      write because the tags go into the COG header. That pass is exact: the
+      selection keeps `round(valid / f²)` cells, or every partly wet cell
+      when there are fewer. It is also the check for NaN under a numeric
+      nodata (below). terrio with gpt-cmdr/terrio #18 returns its own
+      measurement from `Raster.write()`; ras2cng compares the factors, the
+      valid count and every ratio at the tag's precision against the scan,
+      and on any difference discards terrio's file and writes the GDAL path
+      instead. The pass cost about 45% of terrio's write time. It remains
+      the fallback and the oracle the tests compare #23's tags against.
 - ras2cng never passes overview factors to terrio's COG writer: it relies on
   the automatic pyramid, which halves until a level fits one block, exactly
   as `overview_factors()` does. Since gpt-cmdr/terrio #19 explicit factors are
@@ -191,8 +203,8 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
     - an internal mask or alpha band;
     - a raster above the pixel ceiling;
     - a creation option terrio does not act on;
-    - **NaN under a numeric nodata**. terrio treats NaN as dry, but rasterio's
-      mask treats it as a wet value.
+    - **NaN under a numeric nodata, on terrio without #23**. That terrio
+      treats NaN as dry, but rasterio's mask treats it as a wet value.
 
   Each fallback reports exactly what it did before.
 
@@ -211,6 +223,20 @@ against each other. Before #22 the `LERC_DEFLATE` Depth file was 2.262 MB
 (+0.8%). On this Depth COG, 4.5% of base pixels differ from GDAL's, by at
 most 0.0197, and every level is within 0.01 of the lossless pyramid with an
 identical mask.
+
+Dropping the pre-scan (terrio #23, T13, 2026-10-30; `area_matched_cog`
+in-process time, fresh process each, two rounds, default `LERC_DEFLATE`):
+
+| artifact | scan + terrio write | terrio with report | peak (process) | output |
+|---|---|---|---|---|
+| Terrain50 1x (197,179,058 valid px, terrain options) | 13.0–14.2 s | 6.0–6.7 s | 1.94–2.04 → 1.92 GiB | byte-identical |
+| p07 Depth (Max) (1,345,691 valid px) | 0.82 s | 0.32–0.35 s | unchanged (~0.3–0.37 GiB) | byte-identical |
+| p07 WSE (Max) | 0.82 s | 0.33 s | unchanged | byte-identical |
+
+Tags are identical by construction (`overview_area_ratios`
+`1.000000,1.000000,1.000000,1.000000,1.000002` and
+`overview_base_valid_pixels` `197179058` on Terrain50). Peak memory does not
+change, because the scan streamed and terrio holds the base level whole.
 
 terrio reads the base level whole, so peak memory is still about the
 raster's size. Only the NumPy accumulators go.
