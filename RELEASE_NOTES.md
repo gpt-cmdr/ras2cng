@@ -6,6 +6,7 @@
 - Tile weight is bounded by each tileset's minimum zoom instead. Mesh cells and faces start at the detail floor: z13, raised for fine meshes to the first zoom where the median cell spans two screen pixels.
 - Raw results joined to mesh cells or faces move to a new `results-detail.pmtiles` tileset that shares the detail floor. Results joined to sparse features (cross sections, reference lines and points) stay in `results.pmtiles` at every zoom.
 - New `RAS2CNG_VECTOR_TILER` (`auto`, `tippecanoe`, `freestiler`) for every vector PMTiles writer. `auto` prefers a freestiler build with Arrow input, then tippecanoe when its CLIs are on PATH, then any freestiler, so Windows hosts without tippecanoe can build vector tiles. Install it with `pip install "ras2cng[freestiler]"` (also part of `all` on platforms with prebuilt wheels).
+- `ras2cng archive` writes geometry and `--results` through terrio's direct HEC-RAS path when the installed terrio has it, as manifest 3.0, with the Python path as per-file fallback (`RAS2CNG_ARCHIVE_ENGINE`, `--archive-engine`). Bald Eagle p07 with results: 29.1 s to 12.5 s, peak 4.0 GB to 0.76 GB. Each file's `archive` record says what was native, what came from Python and what was refused. Evidence: `feature_dev_notes/rust_engines/T11.md`.
 
 ## Upgrade note
 

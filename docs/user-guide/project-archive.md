@@ -85,6 +85,10 @@ WHERE layer = 'mesh_cells'
     - `auto` (default; `prefer-native` is the same) uses terrio when the installed build has `write_geoparquet_layers`, and otherwise (or when terrio refuses a file) writes it with pyarrow, warning once per reason and recording the reason in the manifest's `geoparquet.fallback_reason`. terrio takes any Arrow column type, Z coordinates and geometry collections; only an empty table goes to pyarrow.
     - `native` (aliases `terrio`, `rust`; the old `fast-hdf` value is accepted) requires terrio and raises when it cannot write a file; `python` never tries it.
     - **Measured on Bald Eagle p07** (16 files, fresh process per file, loaded host): 10.4 s against 12.7 s for pyarrow, peak memory 561 MB against 1184 MB. Files are -5.4% to +2.2% the size of pyarrow's: terrio keeps min/max statistics on large WKB values, which pyarrow drops. Set `RAS2CNG_GEOPARQUET_WRITER=python` to keep the pyarrow writer.
+- **Direct path (default with a capable terrio)**: geometry and `--results` go through terrio's `write_hecras_archive`, straight from the HDF with no GeoDataFrame for the expensive layers. `RAS2CNG_ARCHIVE_ENGINE` or `--archive-engine` = `auto|prefer-native|native|python`:
+    - `auto` (default; `prefer-native` is the same, except that `auto` also stays on Python under `RAS2CNG_GEOPARQUET_WRITER=python`) uses it when the installed terrio has it, and otherwise writes exactly what earlier versions wrote, as manifest 2.7. `native` (aliases `direct`, `terrio`, `rust`) raises rather than sending a whole file to the Python path. `python` never tries it.
+    - **What comes from where:** `mesh_cells`, `mesh_faces` and 2D summary variables are native. All other geometry layers and all `*_text` layers come from Python, because the engine does not hold all their columns. A layer or variable the engine refuses is filled from Python; if Python cannot read it either, it is absent from both paths and recorded with `filled: false`. Any other problem sends that file to the Python path. `--no-sort`, `--results-layout variable`, `--results-geometry point|none` and steady plans use the Python path.
+    - **Measured** (`--results`, median of three, shared host): Bald Eagle p07 29.1 s to 12.5 s, peak 4.0 GB to 0.76 GB; Spring (HEC-RAS 5.0.7) 22.4 s to 16.2 s, 3.0 GB to 2.0 GB; Spring_BLE (6.1) 27.9 s to 24.7 s, 4.0 GB to 3.1 GB, because its plan stores no summary `Location` and stays on Python. Layers, rows and non-null columns are equal to the Python path; geometry files are byte-identical. Plan files no longer carry the all-null columns of geometry layers (191 columns to 20 on p07).
 - **Result join indexes** — Geometryless result tables get `join_index`; when matching mesh geometry exists, they inherit `hilbert_index` through `mesh_name` plus `cell_id` or `face_id`
 - **Text layer suffix** — Text geometry layers get a `_text` suffix (e.g., `cross_sections_text`) to avoid collision with HDF layers
 
@@ -317,11 +321,11 @@ manifest = archive_project(
 
 ## manifest.json Schema
 
-Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 2.7 switches archive GeoParquet to the `bbox` struct covering and adds a `geoparquet` writer record to geometry and plan entries (`engine`, `fallback_reason`, `hilbert`, `bbox_covering`, `rows`, `row_groups`). Schema 2.5 added spatial post-processing metadata, composite raw-result joins, named-terrain provenance, terrain source footprints, and terrain-modification vectors.
+Every archive includes a `manifest.json` that catalogs all exported layers for downstream tooling (DuckDB, PostGIS sync, PMTiles generation, etc.). Schema 3.0 adds an `archive` record to geometry and plan entries when the direct path is active (`path`, `fallback_reason`, `native_layers`, `python_layers`, `refused`, `crs_source`, `seconds`); layers, columns and the `bbox`/`hilbert_index` layout are unchanged, so 2.7 readers keep working. Schema 2.7 switches archive GeoParquet to the `bbox` struct covering and adds a `geoparquet` writer record to geometry and plan entries (`engine`, `fallback_reason`, `hilbert`, `bbox_covering`, `rows`, `row_groups`). Schema 2.5 added spatial post-processing metadata, composite raw-result joins, named-terrain provenance, terrain source footprints, and terrain-modification vectors.
 
 ```json
 {
-  "schema_version": "2.7",
+  "schema_version": "3.0",
   "project": {
     "name": "BaldEagleDamBrk",
     "prj_file": "BaldEagleDamBrk.prj",

@@ -6,7 +6,7 @@
 ras2cng/
 ├── cli.py           — Typer CLI for archive, extraction, mapping, MapLibre packaging, and validation
 ├── project.py       — Full-project orchestration: inspect, archive, metadata export
-├── catalog.py       — Manifest schema v2.7 for archive catalogs (manifest.json)
+├── catalog.py       — Manifest schema v3.0 for archive catalogs (manifest.json)
 ├── geometry.py      — HDF + text geometry export via ras-commander (20 HDF + 3 text layers)
 ├── results.py       — Plan HDF results export with polygon/point/geometryless modes and cell/face join keys
 ├── precipitation.py — Gridded precipitation GeoTIFF export from HDF meteorology results
@@ -40,7 +40,7 @@ geometry.py / results.py          precipitation.py / mapping.py / terrain.py
      ▼                                  ▼
 GeoParquet/Parquet (ZSTD, bbox, indexes)  GeoTIFF rasters + terrain HDFs
      │
-     ├── catalog.py         →  manifest.json (schema v2.7)
+     ├── catalog.py         →  manifest.json (schema v3.0)
      ├── duckdb_session.py  →  SQL analytics
      ├── pmtiles.py         →  GeoJSON → tippecanoe → PMTiles
      └── postgis_sync.py    →  SQLAlchemy → PostGIS + GIST index

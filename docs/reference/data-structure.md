@@ -279,7 +279,7 @@ All geometry is stored as **GeoParquet** (Apache Parquet + GeoArrow encoding):
 - Rows are grouped by `layer` (a row group ends at every layer boundary and every 65,536 rows) and Hilbert ordered within each layer: DuckDB spatial `ST_Hilbert` of each bbox centre over the layer extent
 - Spatial post-processing stores that key as `hilbert_index` (uint64, null for null/empty geometry) and keeps the order; `--no-sort` skips ordering and indexing during extraction and `ras2cng spatial-index ARCHIVE_DIR` can run it later
 - Geometryless archive result tables get `join_index` and, when matching mesh geometry exists, inherit `hilbert_index` through `mesh_name` plus `cell_id` or `face_id`
-- `manifest.json` schema 2.5 records index metadata, including `sort_order`, `index_column`, `geometry_filter`, and `index_status`, plus named terrain sources and modifications
+- `manifest.json` schema 3.0 adds an `archive` record per geometry and plan file saying which path wrote it (direct or Python) and why, and direct plan files omit the all-null columns of geometry layers. Schema 2.5 records index metadata, including `sort_order`, `index_column`, `geometry_filter`, and `index_status`, plus named terrain sources and modifications
 
 ```python
 import geopandas as gpd
