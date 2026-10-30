@@ -147,8 +147,8 @@ FAST_MAP_DERIVED_LABELS = {
 FAST_MAP_DERIVED_RENDER_MODES = ("horizontal", "sloping")
 DERIVED_MAX_METHOD = "reduce_max/1"
 # Output times rendered concurrently in the Max derived pass. On bridges p05
-# (433 times, 7 threads) 1 took 213 s / 1.45 GiB and 3 took 147 s / 2.5 GiB
-# (RAS Mapper: 206 s / 2.3 GiB), with identical output. The engine still
+# (433 times, 7 threads) 1 took 213 s / 1,448 MiB and 3 took 147 s / 2,592 MiB
+# (RAS Mapper: 206 s / 2,316 MiB), with identical output. The engine still
 # admits each in-flight time against max_working_mib.
 DERIVED_MAX_INFLIGHT = 3
 STORAGE_AREA_METHOD = "storage-area-level-pool/1"

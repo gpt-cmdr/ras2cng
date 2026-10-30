@@ -229,8 +229,8 @@ in-process time, fresh process each, two rounds, default `LERC_DEFLATE`):
 
 | artifact | scan + terrio write | terrio with report | peak (process) | output |
 |---|---|---|---|---|
-| Terrain50 1x (197,179,058 valid px, terrain options) | 13.0–14.2 s | 6.0–6.7 s | 1.94–2.04 → 1.92 GiB | byte-identical |
-| p07 Depth (Max) (1,345,691 valid px) | 0.82 s | 0.32–0.35 s | unchanged (~0.3–0.37 GiB) | byte-identical |
+| Terrain50 1x (197,179,058 valid px, terrain options) | 13.0–14.2 s | 6.0–6.7 s | 1,941–2,042 → 1,922 MiB | byte-identical |
+| p07 Depth (Max) (1,345,691 valid px) | 0.82 s | 0.32–0.35 s | unchanged (308–375 MiB) | byte-identical |
 | p07 WSE (Max) | 0.82 s | 0.33 s | unchanged | byte-identical |
 
 Tags are identical by construction (`overview_area_ratios`
