@@ -87,8 +87,9 @@ terrio = [
 ]
 freestiler = [
   # In-process vector tiler; an alternative to the tippecanoe + pmtiles CLIs.
-  # Selected by RAS2CNG_VECTOR_TILER (auto falls back to it when tippecanoe is
-  # absent, e.g. on Windows).  See ras2cng/vector_tiles.py.
+  # Selected by RAS2CNG_VECTOR_TILER. auto prefers a build with Arrow input over
+  # tippecanoe, and uses an older build only when tippecanoe is absent, e.g. on
+  # Windows.  See ras2cng/vector_tiles.py.
   "freestiler>=0.3.0",
 ]
 webgis = [

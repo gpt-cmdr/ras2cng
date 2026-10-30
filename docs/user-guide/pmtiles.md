@@ -10,7 +10,8 @@ serve flood map tiles directly from S3, Cloudflare R2, or GitHub Pages with no t
 
 Vector tiles need either the `tippecanoe` + `pmtiles` CLIs or the in-process
 freestiler tiler (`pip install ras2cng[freestiler]`); `RAS2CNG_VECTOR_TILER`
-chooses between them (`auto`, the default, uses tippecanoe when it is on PATH).
+chooses between them (`auto`, the default, prefers a freestiler build with Arrow
+input, then tippecanoe when it is on PATH, then any freestiler).
 See [MapLibre delivery](maplibre.md#vector-tiler). External CLI tools:
 
 | Tool | Source | Purpose |
@@ -23,7 +24,8 @@ See [MapLibre delivery](maplibre.md#vector-tiler). External CLI tools:
 
 ```
 GeoParquet → GeoJSON (temp) → tippecanoe → PMTiles
-GeoParquet → freestiler → PMTiles                      (RAS2CNG_VECTOR_TILER=freestiler)
+GeoParquet → Arrow → freestiler → PMTiles              (freestiler with Arrow input)
+GeoParquet → GeoDataFrame → freestiler → PMTiles       (older freestiler)
 ```
 
 Without `--min-zoom`/`--max-zoom`, tippecanoe guesses the zoom range (`-zg`);

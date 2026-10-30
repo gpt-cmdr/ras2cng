@@ -75,9 +75,9 @@ Vector PMTiles are built by one of two interchangeable backends, chosen with
 
 | Value | Backend | Notes |
 |---|---|---|
-| `auto` (default) | tippecanoe when `tippecanoe` and `pmtiles` are on PATH, otherwise freestiler | Windows without tippecanoe gets freestiler automatically |
-| `tippecanoe` | `tippecanoe` + `pmtiles` CLIs | Smallest archives |
-| `freestiler` | In-process Rust tiler, `pip install ras2cng[freestiler]` | No external tools; 8-20x faster; archives about 40-50% larger; with a freestiler that has `freestile_layers`, one layer of a tileset in memory at a time |
+| `auto` (default) | freestiler when the build has Arrow input; otherwise tippecanoe when `tippecanoe` and `pmtiles` are on PATH; otherwise any freestiler | An older freestiler keeps the previous preference |
+| `tippecanoe` | `tippecanoe` + `pmtiles` CLIs | Always available by name. Smaller sparse low-zoom layers |
+| `freestiler` | In-process Rust tiler, `pip install ras2cng[freestiler]` | No external tools. Bald Eagle p07 viewer with vector results: 36 s against 1,745 s for tippecanoe. Total size +5% with feature IDs, -10% without; Davis +12% and +3%. One layer of a tileset in memory at a time when the build has `freestile_layers` |
 
 freestiler options (tippecanoe ignores them; its tiles never carry feature IDs):
 
@@ -85,9 +85,18 @@ freestiler options (tippecanoe ignores them; its tiles never carry feature IDs):
 |---|---|---|
 | `RAS2CNG_VECTOR_TILE_IDS`, CLI `--feature-ids/--no-feature-ids` | on | `0` / `--no-feature-ids` omits MVT feature IDs (`generate_ids=False`). Bald Eagle 87k-cell mesh, z10-15: 1.7 MB smaller (-14%). The ras2cng viewer does not use IDs; keep them if a consumer uses MapLibre `feature-state` without `promoteId` |
 | `RAS2CNG_VECTOR_TILE_GZIP_LEVEL` | 6 | Tile gzip level 0-9, when the installed freestiler accepts `gzip_level` (freestiler's own default is 1). Same mesh: -14%, tile contents unchanged |
+| `RAS2CNG_FREESTILER_INPUT` | `auto` | `auto` / `arrow` hand layers over as Arrow with no GeoJSON step (`arrow` fails on a build without Arrow input); `geojson` keeps the older path. Decoded tiles are identical on Bald Eagle p07 and Davis |
+
+With Arrow input, mesh cell and face layers that are not joined to results go
+from the archive GeoParquet to freestiler in the model CRS and are reprojected
+in Rust. Other layers are already reprojected for the viewer metadata and join,
+and travel as EPSG:4326 Arrow tables. freestiler refuses CRSs that PROJ shifts by
+datum grids (NAD83(HARN), NAD27 and a few others); those layers are reprojected
+in Python with pyproj, with a warning, and still skip GeoJSON. A layer with no
+CRS is refused. The clip buffer is always `buffer=5` when the build accepts it.
 
 Multi-layer tilesets use `freestiler.freestile_layers` when available, reading
-each layer's GeoJSON source only when its turn comes. If that build's
+each layer's source only when its turn comes. If that build's
 `freestile_layers` has no `gzip_level`, ras2cng warns once and those tilesets
 keep freestiler's default compression.
 

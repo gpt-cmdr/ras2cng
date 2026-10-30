@@ -40,8 +40,9 @@ uv run ras2cng --help
 ## PMTiles External CLI Tools
 
 Vector tiles can be built without any external tools by installing the
-freestiler extra, which is chosen automatically when tippecanoe is not on PATH
-(for example on Windows):
+freestiler extra. `auto` prefers a freestiler build with Arrow input over
+tippecanoe; an older build is chosen only when tippecanoe is not on PATH (for
+example on Windows):
 
 ```bash
 pip install "ras2cng[freestiler]"
