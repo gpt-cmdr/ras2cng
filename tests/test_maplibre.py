@@ -1051,6 +1051,9 @@ def test_auto_backend_prefers_tippecanoe_then_freestiler(monkeypatch) -> None:
     from ras2cng import vector_tiles
 
     monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "auto")
+    # An older freestiler build (no Arrow input): test_vector_tiles_arrow.py
+    # covers the build that auto prefers over tippecanoe.
+    monkeypatch.setattr(vector_tiles, "freestiler_preferred", lambda: False)
     monkeypatch.setattr(vector_tiles.shutil, "which", lambda command: f"/usr/bin/{command}")
     assert vector_tiles.vector_tiler_backend() == "tippecanoe"
 

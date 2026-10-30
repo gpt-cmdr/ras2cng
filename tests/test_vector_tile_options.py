@@ -155,6 +155,7 @@ def test_stock_freestiler_without_new_api(monkeypatch, tmp_path):
     assert calls["freestile"] == [{"layers": ["cells", "faces"], "generate_ids": True}]
     assert vector_tiles.freestiler_capabilities(sys.modules["freestiler"]) == {
         "layers": False, "gzip": False, "layers_gzip": False,
+        "buffer": False, "layers_buffer": False, "arrow": False,
     }
 
 

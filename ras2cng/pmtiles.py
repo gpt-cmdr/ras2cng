@@ -4,7 +4,9 @@ Vector tiles:
 - GeoParquet -> reproject to EPSG:4326 -> newline-delimited GeoJSON ->
   tippecanoe -> PMTiles, or GeoParquet -> freestiler -> PMTiles when
   ``RAS2CNG_VECTOR_TILER`` resolves to freestiler (see
-  :mod:`ras2cng.vector_tiles`)
+  :mod:`ras2cng.vector_tiles`). A freestiler with Arrow input reads the
+  GeoParquet as an Arrow table and reprojects it in Rust (in Python with
+  pyproj when it refuses the CRS); older builds get a GeoDataFrame.
 
 Raster tiles:
 - delegated to :mod:`ras2cng.maplibre`, which colorizes at native resolution,
@@ -172,6 +174,45 @@ _DEFAULT_MIN_ZOOM = 0
 _DEFAULT_MAX_ZOOM = 14
 
 
+def _arrow_layer(input_file: Path):
+    """A GeoParquet file as one freestiler Arrow layer in its own CRS.
+
+    The same rules as the GeoDataFrame path: bbox covering columns are index
+    data and are dropped, a file with no CRS is refused, and property values
+    are shaped as freestiler received them from a GeoDataFrame. Returns None
+    for a geometry column that is not WKB (native GeoArrow): the Python CRS
+    fallback reads WKB only, so that file takes the GeoDataFrame path.
+    """
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from ras2cng import vector_tiles
+    from ras2cng.geoparquet import covering_column_names
+
+    schema = pq.read_schema(input_file)
+    try:
+        geometry_column, crs = vector_tiles.geoparquet_crs(schema)
+    except ValueError:
+        raise ValueError(
+            f"GeoParquet layer has no CRS, so it cannot be reprojected for tiling: {input_file}. "
+            "Set a CRS on the source before generating tiles."
+        ) from None
+    geometry_type = schema.field(geometry_column).type
+    if not (pa.types.is_binary(geometry_type) or pa.types.is_large_binary(geometry_type)):
+        return None
+    if not pq.ParquetFile(input_file).metadata.num_rows:
+        raise ValueError(f"No features to tile in {input_file}")
+    covering = set(covering_column_names(schema.names))
+    columns = [name for name in schema.names if name not in covering]
+
+    def load():
+        table = pq.read_table(input_file, columns=columns)
+        return vector_tiles.delivery_table(table, geometry_column, geojson_nested=False)
+
+    return vector_tiles.ArrowLayer(load=load, crs=crs, geometry_column=geometry_column)
+
+
 def generate_vector_pmtiles(
     input_file: Path,
     output: Path,
@@ -191,6 +232,17 @@ def generate_vector_pmtiles(
 
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    if backend == vector_tiles.FREESTILER and vector_tiles.arrow_input_enabled():
+        layer = _arrow_layer(Path(input_file))
+        if layer is not None:
+            vector_tiles.run_freestiler(
+                output,
+                {layer_name: layer},
+                _DEFAULT_MIN_ZOOM if min_zoom is None else min_zoom,
+                _DEFAULT_MAX_ZOOM if max_zoom is None else max_zoom,
+            )
+            return
 
     from ras2cng.geoparquet import drop_covering_columns
 
