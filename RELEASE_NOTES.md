@@ -1,3 +1,11 @@
+# Unreleased
+
+## Highlights
+
+- Requires ras-commander 0.111.0 (`ras-commander[full]>=0.111.0`; was 0.100.0), which reads HEC-RAS HDF results natively where the HDF engine proves the layout.
+- Results without geometry (`--results-geometry none` and other DRY attribute-table archives) now come from ras-commander's value table (`HdfResultsMesh.get_mesh_summary_output(..., include_geometry=False)`) instead of a separate h5py reader in ras2cng. Rows, columns, dtypes and values are unchanged: identical on all 202 readable summary variables of the 28 public 2D plans in the HEC-RAS test corpus; the 79 variables that are not value summaries (for example `Starting Differences *`, `Cell Cumulative Iter Lookup`) still raise `ValueError`.
+- Cell results joined to mesh-cell polygons no longer build the cell-center points that were discarded before the join (identical output on the same 202 variables).
+
 # ras2cng 0.12.0
 
 ## Highlights
