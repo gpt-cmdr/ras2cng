@@ -151,19 +151,21 @@ to RAS Mapper without a terrain export.
 | Product | fast-map | Qualification against RAS Mapper |
 |---|---|---|
 | WSE, Depth (Max) | yes | identical float32 values and masks on five models (1.2–3.6× faster for horizontal and plain sloping, 1.8–7.3× for depth-weighted sloping faces; [evidence](https://rascommander.info/ras/development/fim-mapping-performance/)); Davis p02 and Bald Eagle bridges p05 again on the source-terrain path |
-| Arrival time, percent time inundated | yes (`--no-fast-map-whole-simulation` to opt out) | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft, horizontal and plain sloping |
-| Velocity (Max) | opt-in, `--fast-map-velocity`, plain sloping only | identical values on every common pixel; on bridges p05 the drawn mask differs on 1,196 + 826 of 973,902 pixels (Davis p02: equal masks, 3 pixels within 3e-8) |
-| Duration | no | the engine marks it unqualified |
-| Froude, shear stress, D × V, D × V² | no | not rendered by the engine |
-| Inundation boundary | yes (see below) | deterministic contours, not vector parity |
+| WSE, Depth with storage areas | yes, as RAS Mapper level pools, when the engine advertises `storage-area-level-pool/1` | identical on Bald Eagle p07 and p04 in every render mode (466,912 / 461,639 storage-area px); p07 Max sloping through `ras2cng map`: 0 mask and 0 bit differences on 1,345,691 px |
+| Arrival time, percent time inundated | yes (`--no-fast-map-whole-simulation` to opt out) | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft, horizontal and plain sloping; with a storage area, p07 (1,333,183 px) |
+| Duration | yes, when the engine advertises RAS Mapper's recession rule (`rasmapper-backward-window-recession/1`); not with storage areas | identical on Davis p02 and bridges p05 at 0.5 ft |
+| Velocity (Max) | yes in plain sloping and horizontal when the engine advertises `velocity_depth`; slopingPretty opt-in (`--fast-map-velocity`); `--no-fast-map-velocity` to opt out; not with storage areas | bridges p05: 0 value and 0 mask differences in sloping (973,902 px) and horizontal (973,532 px). slopingPretty: identical values on every common pixel, but its mask follows the slopingPretty depth, which differs on bridges Max (75 + 28 px). Older engines: opt-in, plain sloping only |
+| D × V, D × V², Froude (Max) | yes in plain sloping and horizontal (`--no-fast-map-derived` to opt out); not with storage areas or slopingPretty | per-time product, pixelwise Max over every output time, as RAS Mapper computes it: 0 / 0 on bridges p05 over 433 times (973,956 px sloping); Davis within 2 ulp on ≤ 5 px |
+| Shear stress | no | not implemented in the engine |
+| Inundation boundary | yes (see below); not with storage areas | deterministic contours, not vector parity |
 
 A plan is sent to RAS Mapper instead when:
 
 | Condition | Why |
 |---|---|
 | 1D river reaches or cross sections | Outside the engine's method (`RasFim.validate_2d_model`) |
-| Storage areas | fast-map does not render storage-area surfaces. On a Bald Eagle dam-break plan, every 2D-mesh pixel matched RAS Mapper bit for bit, but the 466,912 storage-area pixels were blank |
-| A profile other than `Max` | Timestep mapping is not wired through ras2cng yet |
+| Storage areas, with an engine that does not advertise `storage-area-level-pool/1` | It would leave the storage-area pixels blank |
+| A profile other than `Max` (per-profile products only; arrival, duration and percent are whole-simulation) | Timestep mapping is not wired through ras2cng yet. Decided before any terrain work |
 | No usable terrain | See below |
 | Engine missing or failed | No arithmetic fallback inside fast-map |
 
@@ -176,13 +178,23 @@ it. ras2cng then:
 
 1. retries on the source's CRS-canonical copy, only when the refusal was
    about the CRS (Davis);
-2. otherwise exports the plan's terrain once per run through RAS Mapper
+2. otherwise builds the **native effective terrain** once per run, when the
+   engine advertises `rasmapper-effective-terrain/1` and RasFim has
+   `build_effective_terrain`: RAS Mapper's multi-source mosaic (stitch TIN
+   first, then each source in priority order) rebuilt in Rust from the
+   source TIFFs, their level-0 masks and the stitch TIN, without HEC-RAS. On
+   Bald Eagle Terrain50 the valid mask is identical on 197,179,058 px and 8
+   values differ, all in stitch-TIN corners where RAS Mapper's own exports
+   disagree (max 1.53 ft); it took 7.0 s and 1.4 GB, against about 190 s
+   for the export. Terrains with modifications are refused;
+3. otherwise exports the plan's terrain once per run through RAS Mapper
    (`RasTerrain.export_rasmapper_terrain`, HEC-RAS 6.4.1/6.5/6.6/7.0.1/7.1;
    pass `--ras-version`).
 
 `--fast-map-terrain` supplies a float32 export (with modifications) instead,
-and `--no-fast-map-source-terrain` always exports. Modified terrains and
-lower-priority sources are not mapped from source TIFFs. `map-hdf` with a
+`--no-fast-map-effective-terrain` skips step 2, and
+`--no-fast-map-source-terrain` skips the source TIFF. Modified terrains are
+never mapped from source TIFFs or the effective terrain. `map-hdf` with a
 single raw `--terrain` TIFF passes that TIFF directly.
 
 Measured on a shared, loaded host:
@@ -194,16 +206,30 @@ Measured on a shared, loaded host:
 | bridges p05, same five, nothing supplied | 181 s (≈160 s is the HEC-RAS export; arrival/percent were refused on the source) | source, then export |
 | RAS Mapper, bridges p05 | ≈215 s for the seven Max products; ≈26 s for arrival/percent | |
 | Davis p02, all five | 5.4 s, no HEC-RAS | CRS-canonical source copy |
+| bridges p05 sloping, nine products (adds velocity, D × V, D × V², Froude, duration) | 251 s / 1.5 GB with one output time in flight in the derived pass; the derived pass alone is now 141 s / 2.6 GB | source; effective terrain for arrival/duration/percent |
+| RAS Mapper, the same nine | 235 s / 2.4 GB; derived only 206 s / 2.3 GB; the other six 34 s | |
+| fast-map, the other six | 25 s / 1.5 GB | source and effective |
+| Bald Eagle p07 (storage area), WSE + Depth | 18.7 s / 1.5 GB (RAS Mapper: 12.2 s / 1.2 GB) | native effective terrain (the source TIFF is refused: 28 storage-area pixels outside it) |
+| p07, arrival + percent | 31 s (RAS Mapper: 82 s) | native effective terrain |
+
+Every fast-map product in the bridges and p07 rows was compared with RAS
+Mapper 7.0.1 stored maps: 0 mask and 0 bit differences (bridges: 18 products
+over sloping and horizontal; p07: 1,345,691 and 1,333,183 px).
 
 **Output.** Products are named like RAS Mapper's (`WSE (Max).tif`,
-`Depth (Max).tif`, `Velocity (Max).tif`, `Arrival Time (0.5ft hrs).tif`,
-`Percent Time Inundated (0.5ft).tif`) on the terrain's pixel grid, with NaN
-nodata, next to `fast_map_manifest.json` and
+`Depth (Max).tif`, `Velocity (Max).tif`, `D _ V (Max).tif`,
+`D _ V^2 (Max).tif`, `Froude (Max).tif`, `Arrival Time (0.5ft hrs).tif`,
+`Duration (0.5ft hrs).tif`, `Percent Time Inundated (0.5ft).tif`) on the
+terrain's pixel grid, with NaN nodata, next to `fast_map_manifest.json`,
+`fast_map_velocity_manifest.json`, `fast_map_derived_manifest.json` and
 `fast_map_whole_simulation_manifest.json` (engine version, method, terrain,
-timings). Arrival time is in hours since the simulation start.
+storage areas, timings). Arrival time is in hours since the simulation start.
 `MapResult.engines` records which engine produced each map type, and
 `MapResult.fast_map_terrain` which terrain fast-map used (`source`,
-`source-canonical`, `export` or `supplied`). `--min-depth`, `--wgs84` and
+`source-canonical`, `effective`, `export` or `supplied`). Velocity is its own
+engine call, so a velocity refusal never costs WSE/Depth, and WSE/Depth keep
+the native GeoTIFF writer; in horizontal mode it is rendered plain sloping
+and clipped with the horizontal depth, as RAS Mapper does. `--min-depth`, `--wgs84` and
 `--cog` apply unchanged. Other options: `--fast-map-threads` (default CPUs − 1)
 and `--fast-map-memory-mib` (planned working memory; default a quarter of
 RAM, 1–16 GiB).
@@ -278,7 +304,9 @@ back to RAS Mapper on its own, so the rasters can still use Rust):
 | Terrain with more than one source TIFF | The method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them |
 | Terrain modifications | Refused by the engine (it cannot infer modifications from a TIFF/HDF pair) |
 | `slopingPretty` render mode | Contours support horizontal and plain sloping only |
-| ras-commander without `RasFim.map_inundation_boundaries` | Needs ras-commander PR #709 and ras-commander-fast-map PR #5 (unreleased as of 2026-10-27) |
+| ras-commander without `RasFim.map_inundation_boundaries` | Needs ras-commander #755 (supersedes #709; ras-commander-fast-map #5 is released) |
+| Storage areas | The contour method draws 2D cells only; the level pool would be missing |
+| A terrain CRS the engine and rasterio read differently (Davis) | ras-commander needs a caller-verified `terrain_crs_fnv1a64`; ras2cng does not guess one |
 
 **Output.** `Inundation Boundary (Max).geojson`: a MultiPolygon with holes, in
 the model CRS. RAS Mapper writes a shapefile. It sits next to

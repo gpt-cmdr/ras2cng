@@ -57,7 +57,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - `postgis_sync.py` — GeoParquet → PostGIS via SQLAlchemy/GeoAlchemy2 with automatic spatial index creation.
 - `terrain.py` — Terrain discovery, consolidation, and raster export. `discover_terrains()` finds terrain layers from rasmap. `consolidate_terrain()` provides a pure-Python publication mosaic. `export_modified_terrain()` delegates registered-terrain consolidation, exact 1x/2x/4x/8x downsampling, and modification rasterization to `RasTerrain.export_rasmapper_terrain()`; it does not use a geometry HDF or the deprecated row sampler. Native terrain export is qualified on Windows and Wine for HEC-RAS 6.4.1, 6.5, 6.6, and 7.0.1, with stable 7.1 forward-open behind ras-commander's exact managed-contract check. `export_mannings_raster()` separately wraps `HdfLandCover.compute_final_mannings_raster()` and still requires HEC-RAS 6.6+ on Windows.
 - `mapping.py` — Result raster generation. `generate_result_maps()` generates WSE/Depth/Velocity/etc. GeoTIFFs via `RasProcess.store_maps()` using `RasStoreMapHelper.exe`. Supports `depth_x_velocity_sq` and `inundation_boundary` map types (ras-commander ≥0.92.0).
-- `fast_map.py` — Rust mapping for **pure 2D models (FIM library scope)** (the default `map` engine; `--engine rasmapper` / env `RAS2CNG_MAP_ENGINE` forces RAS Mapper) via `RasFim` and `ras-commander-fast-map`, qualified against RAS Mapper stored maps. `map_plan()` does Max WSE/Depth (+ opt-in plain-sloping velocity), `map_whole_simulation()` arrival time and percent inundated, `map_boundary()` the boundary (original single-source terrain TIFF + HDF); each falls back to RAS Mapper on its own. `with_terrain()` tries the priority-1 source TIFF (no HEC-RAS export), its CRS-canonical copy after a CRS refusal, then the export; `MapResult.fast_map_terrain` records which. Storage areas, 1D, non-Max profiles and duration stay on RAS Mapper (`--fast-map-strict` raises instead). `invalid_cells` (`--fast-map-invalid-cells`, ras-commander 0.110.2+) sets pixel ownership for cells whose faces do not form a valid polygon; the engine's `fim-invalid-cells/1` record lands in `MapResult.invalid_cells` and every fast-map manifest. Sloping WSE/Depth are written by the engine (terrio LZW, `--fast-map-writer auto`) when it advertises `native_geotiff_outputs`. New capabilities are detected from `RasFim`'s methods/kwargs. See *Mapping engines* below.
+- `fast_map.py` — Rust mapping for **pure 2D models (FIM library scope)** (the default `map` engine; `--engine rasmapper` / env `RAS2CNG_MAP_ENGINE` forces RAS Mapper) via `RasFim` and `ras-commander-fast-map`, qualified against RAS Mapper stored maps. `map_plan()` does Max WSE/Depth, `map_velocity()` Max velocity, `map_derived()` Max D x V / D x V^2 / Froude (`RasFim.map_derived_max`, one `reduce_max/1` time-series pass), `map_whole_simulation()` arrival time, percent inundated and duration, `map_boundary()` the boundary (original single-source terrain TIFF + HDF); each product group falls back to RAS Mapper on its own, and `velocity_plan()` / `derived_plan()` / `whole_simulation_types()` route products before any terrain work. Storage areas are drawn as level pools when the engine advertises `storage-area-level-pool/1` (`storage_areas_supported()`; WSE/Depth/arrival/percent only). `with_terrain()` tries the priority-1 source TIFF (no HEC-RAS export), its CRS-canonical copy after a CRS refusal, the native effective terrain (`RasFim.build_effective_terrain`, unmodified terrains), then the export; `MapResult.fast_map_terrain` records which. 1D, non-Max profiles, shear stress and unqualified render modes stay on RAS Mapper (`--fast-map-strict` raises for engine failures and non-Max profiles). `invalid_cells` (`--fast-map-invalid-cells`, ras-commander 0.110.2+) sets pixel ownership for cells whose faces do not form a valid polygon; the engine's `fim-invalid-cells/1` record lands in `MapResult.invalid_cells` and every fast-map manifest. Sloping WSE/Depth are written by the engine (terrio LZW, `--fast-map-writer auto`) when it advertises `native_geotiff_outputs`. New capabilities are detected from `RasFim`'s methods/kwargs. See *Mapping engines* below.
 
 **Data flow**: HEC-RAS files → ras-commander → GeoDataFrame → GeoParquet (ZSTD compression, bbox columns, Hilbert sorted). Archive output uses `_write_geoparquet()` which adds `covering` metadata for spatial predicate pushdown.
 
@@ -65,15 +65,18 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 
 **fast-map is the default** `ras2cng map` engine (`fast_map.DEFAULT_MAP_ENGINE`).
 It is built for **FIM library creation on pure 2D models** (no 1D reaches or
-cross sections, no storage areas), not for general use across all model
-types. Every fast-map product is **qualified against RAS Mapper output**:
-pixel conformance against native HEC-RAS 7.0.1 stored maps on the named
-models. Everything else falls back to RAS Mapper **per product group**, with
-the reason printed and recorded in `MapResult.engines`: 1D elements, storage
-areas, non-Max profiles, unsupported products (duration, Froude, shear,
-D x V) and render modes without qualification. `--engine rasmapper` (or
-`RAS2CNG_MAP_ENGINE=rasmapper`) forces RAS Mapper for every product;
-`--fast-map-strict` raises instead of falling back.
+cross sections; storage areas drawn as level pools), not for general use
+across all model types. Every fast-map product is **qualified against RAS
+Mapper output**: pixel conformance against native HEC-RAS 7.0.1 stored maps
+on the named models. Everything else falls back to RAS Mapper **per product
+group**, with the reason printed and recorded in `MapResult.engines`: 1D
+elements, non-Max profiles, shear stress, products not qualified with
+storage areas, and render modes without qualification. What fast-map maps
+depends on what the installed engine advertises (capability-detected from
+`ras2fim-batch method` and `RasFim`); older installs keep the earlier
+behaviour. `--engine rasmapper` (or `RAS2CNG_MAP_ENGINE=rasmapper`) forces
+RAS Mapper for every product; `--fast-map-strict` raises instead of falling
+back when an engine call fails.
 
 ```bash
 ras2cng map <project> <out> --inundation-boundary --ras-version 7.0.1   # fast-map by default
@@ -84,18 +87,22 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   slopingPretty flags), as RAS Mapper takes it; `--render-mode` overrides
   it. With no stored mode fast-map does not guess: the plan goes to RAS
   Mapper, which applies its own default.
-- **Preflight before terrain work:** scope (1D, storage areas), engine and
-  render mode are checked from the HDF and `.rasmap` first, so an
-  out-of-scope plan goes to RAS Mapper without a terrain export (a
-  storage-area plan is refused in about 2 s).
+- **Preflight before terrain work:** scope (1D; storage areas on an engine
+  without level pools), engine, render mode, profile and each product's
+  qualification are checked from the HDF, `.rasmap` and engine method
+  record first, so an out-of-scope plan or product goes to RAS Mapper
+  without a terrain export.
 
 | Product (Max unless noted) | Qualification | Notes |
 |---|---|---|
 | WSE, Depth | identical values and masks (five-model ras-commander comparison; Davis p02, Bald Eagle bridges p05) | horizontal, sloping, slopingPretty |
-| Arrival time, percent time inundated | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft | horizontal and plain sloping; threshold `--arrival-depth`; `--no-fast-map-whole-simulation` to opt out |
-| Duration | not qualified | stays on RAS Mapper |
-| Velocity | identical values on every common pixel; mask differs on bridges p05 (1,196 / 826 of 973,902 px) | **opt-in** `--fast-map-velocity`, plain sloping only |
-| Inundation boundary | deterministic contours, **not** vector parity | see below |
+| WSE, Depth with storage areas (fast-map #18, `storage-area-level-pool/1`) | identical on Bald Eagle p07 and p04 in every mode (T06); p07 Max sloping through `ras2cng map`: 0 mask / 0 bit differences on 1,345,691 px | level pools; older engines send the plan to RAS Mapper |
+| Arrival time, percent time inundated | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft; with storage areas p07 1,333,183 px | horizontal and plain sloping; threshold `--arrival-depth`; `--no-fast-map-whole-simulation` to opt out |
+| Duration (fast-map #20 `duration_rule`) | identical on Davis p02 and bridges p05 at 0.5 ft | default when the engine advertises `rasmapper-backward-window-recession/1`; not with storage areas (engine refuses) |
+| Velocity (fast-map #20 `velocity_depth`) | 0 value / 0 mask differences on bridges p05 Max, sloping (973,902 px) and horizontal (973,532 px); the earlier 1,196 / 826 px mask difference was a reference artifact | **default** in sloping and horizontal; slopingPretty opt-in (`--fast-map-velocity`: mask follows the slopingPretty depth, which differs on bridges Max); not with storage areas; older engines: opt-in, plain sloping |
+| D x V, D x V², Froude, Max (fast-map #20 `reduce_max/1`) | bridges p05 Max over 433 times, sloping and horizontal: 0 / 0; Davis ≤5 px within 2 ulp | **default** in sloping and horizontal (`--no-fast-map-derived`); slopingPretty and storage areas stay on RAS Mapper |
+| Shear stress | not implemented | RAS Mapper |
+| Inundation boundary | deterministic contours, **not** vector parity | see below; not with storage areas |
 
 - **Terrain without the export.** With ras-commander's
   `RasFim.top_priority_terrain_source` (ras-commander #724, fast-map #11),
@@ -104,14 +111,36 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   engine refuses when a wet cell would draw outside that source's footprint
   (bridges p05 whole-simulation: 28 such pixels); ras2cng then exports once
   per run. A CRS refusal (Davis) retries on the source's CRS-canonical copy
-  first. `--fast-map-terrain` supplies an export instead;
-  `--no-fast-map-source-terrain` always exports. `MapResult.fast_map_terrain`
-  records `source`, `source-canonical`, `export` or `supplied` per product.
+  first. Any other refusal tries the **native effective terrain** next
+  (fast-map #19 via `RasFim.build_effective_terrain`, wired in the T13
+  ras-commander integration branch): RAS Mapper's multi-source mosaic rebuilt
+  in Rust from the source TIFFs, level-0 masks and stitch TIN, with no
+  HEC-RAS. Bald Eagle Terrain50: identical valid mask on 197,179,058 px, 8
+  values differ (stitch-TIN corners, max 1.53 ft, where RAS Mapper's own
+  exports disagree); 7.0 s / 1.4 GB through RasFim against ~190 s for the
+  export. Terrains with modifications are refused and go to the export.
+  `--no-fast-map-effective-terrain` skips it; `--fast-map-terrain` supplies
+  an export instead; `--no-fast-map-source-terrain` skips the source TIFF.
+  `MapResult.fast_map_terrain` records `source`, `source-canonical`,
+  `effective`, `export` or `supplied` per product.
 - **Measured (shared, loaded host):** bridges p05 WSE + Depth on the source
   TIFF 4.5 s end to end with no HEC-RAS (0 differences on 973,902 px);
   all five products on a reused export 16.6 s; RAS Mapper took about 215 s
   for the seven Max products and 26 s for arrival/percent. Davis p02, all
   five products on the canonical source copy: 5.4 s, no HEC-RAS.
+- **Measured end to end with the fast-map #18-#20 engine (T13, fresh
+  process, peak RSS of the process tree, shared host; RAS Mapper 7.0.1 on a
+  project copy).** Bridges p05 sloping, nine products (WSE, Depth, Velocity,
+  D x V, D x V², Froude, arrival, duration, percent at 0.5 ft): every one 0
+  mask / 0 bit differences, in sloping and horizontal. Derived Max only:
+  141 s / 2.6 GB vs RAS Mapper 206 s / 2.3 GB (it was 213 s / 1.45 GB with
+  one output time in flight; `DERIVED_MAX_INFLIGHT = 3`). The other six: 25 s
+  / 1.5 GB vs 34 s / 1.1 GB (arrival/duration/percent on the effective
+  terrain, where the source TIFF is refused). Bald Eagle p07 (storage area)
+  sloping WSE + Depth: 18.7 s / 1.5 GB on the effective terrain vs RAS Mapper
+  **12.2 s** / 1.2 GB, so storage areas are about Linux/no-HEC-RAS mapping
+  and FIM batches, not speed, for a single plan; arrival + percent 31 s vs
+  82 s. Details: `feature_dev_notes/rust_engines/T13.md`.
 - **Inundation boundaries are the strongest case.** RAS Mapper's boundary
   export is very slow. In ras-commander's Davis comparison the Rust batch
   (Max plus one timestep) took 3.5 s against 85 s for the two native calls.
@@ -122,10 +151,13 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   Max: 66 vs 65 holes, ~7,400 ft² difference, almost all one hole). Say so
   when reporting; never claim vector parity. Boundaries need a
   **single-source, unmodified** terrain (original TIFF + terrain HDF;
-  `--fast-map-terrain-hdf`) and horizontal or plain sloping render mode, and
-  ras-commander with `RasFim.map_inundation_boundaries` (ras-commander PR
-  #709 + fast-map PR #5, unreleased as of 2026-10-28); until then they fall
-  back to RAS Mapper automatically.
+  `--fast-map-terrain-hdf`) and horizontal or plain sloping render mode, no
+  storage areas, and ras-commander with `RasFim.map_inundation_boundaries`
+  (ras-commander #755, which supersedes #709; fast-map #5 is released); until
+  then they fall back to RAS Mapper automatically. A terrain whose CRS the
+  engine and rasterio read differently (Davis) is refused unless the caller
+  pins `terrain_crs_fnv1a64`; ras2cng does not guess it, so such boundaries go
+  to RAS Mapper.
 - **Invalid cell polygons.** HEC-RAS can compute cells whose face polylines
   cross (a "bowtie"). Since ras-commander 0.110.2 fast-map maps such meshes
   instead of refusing them: `--fast-map-invalid-cells` / `fast_map_invalid_cells`
@@ -161,14 +193,25 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   is nothing to reuse. Revisit if ras2cng maps timesteps or AOI tiles.
 - Use `--fast-map-strict` when the user needs proof that Rust ran.
   `MapResult.engines` records which engine produced each map type.
-  Outputs are named like RAS Mapper's (`WSE (Max).tif`,
-  `Arrival Time (0.5ft hrs).tif`, `Percent Time Inundated (0.5ft).tif`);
-  the boundary is `Inundation Boundary (Max).geojson` (RAS Mapper writes a
-  shapefile). Manifests: `fast_map_manifest.json`,
-  `fast_map_whole_simulation_manifest.json`, `fast_map_boundary_manifest.json`.
+  Outputs are named like RAS Mapper's (`WSE (Max).tif`, `Velocity (Max).tif`,
+  `D _ V (Max).tif`, `D _ V^2 (Max).tif`, `Froude (Max).tif`,
+  `Arrival Time (0.5ft hrs).tif`, `Duration (0.5ft hrs).tif`,
+  `Percent Time Inundated (0.5ft).tif`); the boundary is
+  `Inundation Boundary (Max).geojson` (RAS Mapper writes a shapefile).
+  Manifests: `fast_map_manifest.json`, `fast_map_velocity_manifest.json`,
+  `fast_map_derived_manifest.json`, `fast_map_whole_simulation_manifest.json`,
+  `fast_map_boundary_manifest.json`.
+- Velocity is its own engine call (`map_velocity`), separate from WSE/Depth,
+  so a velocity refusal never costs WSE/Depth and WSE/Depth keep native
+  GeoTIFF delivery. In horizontal mode it renders plain sloping clipped by
+  the horizontal depth (`velocity_depth="horizontal"`), as RAS Mapper does.
 - The new capabilities need ras-commander with #724 (merged 2026-10-28,
-  unreleased) and a fast-map engine from its `main` (#11-#13). Older
-  installs are capability-detected and keep the previous behaviour.
+  unreleased) and a fast-map engine from its `main` (#11-#13). Storage
+  areas, effective terrain, duration, velocity in all modes and the Max
+  derived products need the unreleased fast-map #18-#20 and ras-commander
+  #755/#757/#758 plus the T13 `build_effective_terrain` wiring (see
+  `feature_dev_notes/rust_engines/T13.md`). Older installs are
+  capability-detected and keep the previous behaviour.
 
 ## Archive Output Structure
 
