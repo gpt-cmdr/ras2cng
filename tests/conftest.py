@@ -373,3 +373,20 @@ def _rasmapper_map_engine_by_default(monkeypatch):
     exercise the default set or delete ``RAS2CNG_MAP_ENGINE`` themselves.
     """
     monkeypatch.setenv("RAS2CNG_MAP_ENGINE", "rasmapper")
+
+
+@pytest.fixture(autouse=True)
+def _no_installed_fast_map_engine_capabilities(monkeypatch):
+    """Keep the mapping tests independent of the installed fast-map engine.
+
+    Velocity, derived products, duration, storage areas and the effective
+    terrain are routed from the engine's method record (and RasFim
+    capability calls). The routing tests mock RasFim, so read an engine that
+    advertises none of them; tests of those paths patch the capability
+    functions themselves.
+    """
+    from ras2cng import fast_map
+
+    monkeypatch.setattr(fast_map, "engine_method", lambda kind: {})
+    monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: False)
+    monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: False)

@@ -826,20 +826,21 @@ def test_no_fast_map_whole_simulation_keeps_rasmapper(
 @patch("ras2cng.mapping._configure_rasprocess")
 @patch("ras2cng.mapping.init_ras_project")
 @patch("ras2cng.fast_map.render_settings", return_value=_SLOPING)
-@patch("ras2cng.fast_map.map_plan")
-def test_fast_map_velocity_flag_sends_velocity_to_map_plan(
-    mock_map_plan, _render, mock_init, _config, mock_gen, tmp_path,
+@patch("ras2cng.fast_map.map_velocity")
+def test_fast_map_velocity_flag_sends_velocity_to_map_velocity(
+    mock_map_velocity, _render, mock_init, _config, mock_gen, tmp_path, monkeypatch,
 ):
+    monkeypatch.setattr(fast_map, "velocity_supported", lambda: True)
     ras, project_dir = _fake_ras(tmp_path)
     mock_init.return_value = ras
     terrain = tmp_path / "dem.tif"
     terrain.write_bytes(b"x")
     vel = tmp_path / "maps" / "p01" / "Velocity (Max).tif"
-    mock_map_plan.return_value = {"velocity": [vel]}
+    mock_map_velocity.return_value = {"velocity": [vel]}
     results = generate_result_maps(
         project_dir, tmp_path / "maps", wse=False, depth=False, velocity=True,
         map_engine="fast-map", fast_map_terrain=terrain, fast_map_velocity=True,
     )
-    assert mock_map_plan.call_args.kwargs["velocity"] is True
+    assert mock_map_velocity.call_args.kwargs["velocity_depth"] == "rendered"
     assert results[0].engines == {"velocity": "fast-map"}
     mock_gen.assert_not_called()

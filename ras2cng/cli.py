@@ -1325,14 +1325,32 @@ def map_command(
         True, "--fast-map-whole-simulation/--no-fast-map-whole-simulation",
         help=(
             "With --engine fast-map, map --arrival-time and --percent-inundated in Rust "
-            "(threshold --arrival-depth; duration stays on RAS Mapper)"
+            "(threshold --arrival-depth), and --duration when the engine has RAS Mapper's "
+            "recession rule and the plan has no storage areas"
         ),
     ),
-    fast_map_velocity: bool = typer.Option(
-        False, "--fast-map-velocity",
+    fast_map_velocity: Optional[bool] = typer.Option(
+        None, "--fast-map-velocity/--no-fast-map-velocity",
         help=(
-            "Opt-in: with --engine fast-map in plain sloping mode, map Max velocity in Rust "
-            "(values match RAS Mapper; the drawn mask can differ at a few edge pixels)"
+            "With --engine fast-map, Max velocity in Rust. Default: on in plain sloping and "
+            "horizontal mode when the engine has the qualified velocity rules. "
+            "--fast-map-velocity also maps slopingPretty (mask follows the slopingPretty "
+            "depth) and plain sloping on older engines; --no-fast-map-velocity leaves it "
+            "to RAS Mapper"
+        ),
+    ),
+    fast_map_derived: bool = typer.Option(
+        True, "--fast-map-derived/--no-fast-map-derived",
+        help=(
+            "With --engine fast-map, map Max --froude, --dv and --dv-sq in Rust (one "
+            "time-series pass; plain sloping and horizontal)"
+        ),
+    ),
+    fast_map_effective_terrain: bool = typer.Option(
+        True, "--fast-map-effective-terrain/--no-fast-map-effective-terrain",
+        help=(
+            "With --engine fast-map, try RAS Mapper's effective terrain rebuilt in Rust "
+            "before exporting the terrain through HEC-RAS (unmodified terrains only)"
         ),
     ),
     fast_map_invalid_cells: Optional[str] = typer.Option(
@@ -1425,6 +1443,8 @@ def map_command(
             fast_map_source_terrain=fast_map_source_terrain,
             fast_map_whole_simulation=fast_map_whole_simulation,
             fast_map_velocity=fast_map_velocity,
+            fast_map_derived=fast_map_derived,
+            fast_map_effective_terrain=fast_map_effective_terrain,
             fast_map_invalid_cells=fast_map_invalid_cells,
             fast_map_writer=fast_map_writer,
             fast_map_fallback=fast_map_fallback,
@@ -1557,14 +1577,32 @@ def map_hdf_command(
         True, "--fast-map-whole-simulation/--no-fast-map-whole-simulation",
         help=(
             "With --engine fast-map, map --arrival-time and --percent-inundated in Rust "
-            "(threshold --arrival-depth; duration stays on RAS Mapper)"
+            "(threshold --arrival-depth), and --duration when the engine has RAS Mapper's "
+            "recession rule and the plan has no storage areas"
         ),
     ),
-    fast_map_velocity: bool = typer.Option(
-        False, "--fast-map-velocity",
+    fast_map_velocity: Optional[bool] = typer.Option(
+        None, "--fast-map-velocity/--no-fast-map-velocity",
         help=(
-            "Opt-in: with --engine fast-map in plain sloping mode, map Max velocity in Rust "
-            "(values match RAS Mapper; the drawn mask can differ at a few edge pixels)"
+            "With --engine fast-map, Max velocity in Rust. Default: on in plain sloping and "
+            "horizontal mode when the engine has the qualified velocity rules. "
+            "--fast-map-velocity also maps slopingPretty (mask follows the slopingPretty "
+            "depth) and plain sloping on older engines; --no-fast-map-velocity leaves it "
+            "to RAS Mapper"
+        ),
+    ),
+    fast_map_derived: bool = typer.Option(
+        True, "--fast-map-derived/--no-fast-map-derived",
+        help=(
+            "With --engine fast-map, map Max --froude, --dv and --dv-sq in Rust (one "
+            "time-series pass; plain sloping and horizontal)"
+        ),
+    ),
+    fast_map_effective_terrain: bool = typer.Option(
+        True, "--fast-map-effective-terrain/--no-fast-map-effective-terrain",
+        help=(
+            "With --engine fast-map, try RAS Mapper's effective terrain rebuilt in Rust "
+            "before exporting the terrain through HEC-RAS (unmodified terrains only)"
         ),
     ),
     fast_map_invalid_cells: Optional[str] = typer.Option(
@@ -1681,6 +1719,8 @@ def map_hdf_command(
             fast_map_source_terrain=fast_map_source_terrain,
             fast_map_whole_simulation=fast_map_whole_simulation,
             fast_map_velocity=fast_map_velocity,
+            fast_map_derived=fast_map_derived,
+            fast_map_effective_terrain=fast_map_effective_terrain,
             fast_map_invalid_cells=fast_map_invalid_cells,
             fast_map_writer=fast_map_writer,
             fast_map_fallback=fast_map_fallback,

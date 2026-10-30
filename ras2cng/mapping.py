@@ -173,9 +173,11 @@ def generate_result_maps(
     fast_map_terrain_hdf: Optional[Path] = None,
     fast_map_source_terrain: bool = True,
     fast_map_whole_simulation: bool = True,
-    fast_map_velocity: bool = False,
+    fast_map_velocity: Optional[bool] = None,
     fast_map_invalid_cells: Optional[str] = None,
     fast_map_writer: Optional[str] = None,
+    fast_map_derived: bool = True,
+    fast_map_effective_terrain: bool = True,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -225,21 +227,24 @@ def generate_result_maps(
             for the legacy serial execution policy.
         map_engine: ``"fast-map"`` (default) maps, on pure 2D models, the
             products the Rust ``ras-commander-fast-map`` engine is qualified
-            for against RAS Mapper stored maps (Max WSE/Depth, arrival time,
-            percent inundated; velocity opt-in) and the inundation boundary
-            through deterministic contours (much faster than RAS Mapper's
-            export; close to, not identical with, its polygons). It is built
-            for FIM library creation, not every model type: 1D elements,
-            storage areas, other products and render modes fall back to RAS
-            Mapper per product group. ``"rasmapper"`` renders every map type
+            for against RAS Mapper stored maps (Max WSE/Depth, velocity, D x V,
+            D x V², Froude, arrival time, percent inundated, duration, each as
+            far as the installed engine advertises it; storage areas as level
+            pools) and the inundation boundary through deterministic contours
+            (much faster than RAS Mapper's export; close to, not identical
+            with, its polygons). It is built for FIM library creation, not
+            every model type: 1D elements, shear stress, other profiles and
+            unqualified render modes fall back to RAS Mapper per product
+            group. ``"rasmapper"`` renders every map type
             through RAS Mapper. None reads ``RAS2CNG_MAP_ENGINE``, else
             ``fast_map.DEFAULT_MAP_ENGINE``. The render mode comes from the
             project's ``.rasmap`` unless ``render_mode`` is given. See
             :mod:`ras2cng.fast_map` for scope.
         fast_map_terrain: Float32 GeoTIFF of the registered terrain (with
             modifications) for fast-map. None maps on the priority-1 source
-            TIFF where the engine accepts it, else exports the plan's terrain
-            once per run through RAS Mapper.
+            TIFF where the engine accepts it, else on the native effective
+            terrain, else exports the plan's terrain once per run through RAS
+            Mapper.
         fast_map_threads: Rust worker count (default: CPUs - 1, max 64).
         fast_map_memory_mib: Planned engine memory budget in MiB (default: a
             quarter of physical RAM, 1-16 GiB). Not a hard RSS limit.
@@ -256,12 +261,23 @@ def generate_result_maps(
             ras-commander with ``RasFim.top_priority_terrain_source``.
         fast_map_whole_simulation: With fast-map, also map
             ``arrival_time`` and ``percent_inundated`` in Rust (threshold
-            ``arrival_depth``; horizontal and plain sloping). ``duration``
-            stays on RAS Mapper. Needs ``RasFim.map_whole_simulation``.
-        fast_map_velocity: Opt-in: with fast-map in plain sloping mode, map
-            Max velocity in Rust. On Bald Eagle bridges p05 every common pixel
-            value matched RAS Mapper but about 2,000 of 973,000 pixels differ
-            in the drawn mask, so it is off by default.
+            ``arrival_depth``; horizontal and plain sloping), and ``duration``
+            when the engine advertises RAS Mapper's recession rule (fast-map
+            #20) and the plan has no storage areas. Needs
+            ``RasFim.map_whole_simulation``.
+        fast_map_velocity: ``None`` (default): map Max velocity in Rust in
+            plain sloping and horizontal mode when the engine has the
+            fast-map #20 velocity rules (0 value / 0 mask differences on
+            bridges p05). ``True`` also maps slopingPretty velocity (opt-in:
+            its mask follows the slopingPretty depth, which differs from RAS
+            Mapper's on bridges Max) and plain sloping on older engines.
+            ``False`` leaves velocity to RAS Mapper.
+        fast_map_derived: With fast-map, map Max D x V, D x V² and Froude in
+            Rust (one time-series pass, ``reduce_max/1``) in plain sloping and
+            horizontal mode. False leaves them to RAS Mapper.
+        fast_map_effective_terrain: Before exporting the terrain through RAS
+            Mapper, try RAS Mapper's effective terrain rebuilt in Rust
+            (fast-map #19; unmodified terrains only). False skips it.
         fast_map_invalid_cells: Pixel ownership for 2D cells whose face
             polylines do not form a valid polygon: ``"repair"`` (the engine
             default), ``"hull"``, ``"omit"`` or ``"raise"`` (refuse, so the
@@ -302,15 +318,18 @@ def generate_result_maps(
     terrain_resolver = None
     if engine == _fast_map.FAST_MAP:
         rust_products = ["WSE/Depth"]
-        if fast_map_velocity:
-            rust_products.append("velocity (sloping)")
+        if fast_map_velocity is not False:
+            rust_products.append("velocity")
+        if fast_map_derived:
+            rust_products.append("D x V/Froude (Max)")
         if fast_map_whole_simulation:
-            rust_products.append("arrival time/percent inundated")
+            rust_products.append("arrival time/percent inundated/duration")
         if fast_map_boundary:
             rust_products.append("inundation boundary")
         console.print(
             f"  Engine  : fast-map (Rust) for {', '.join(rust_products)} on pure 2D "
-            "models (FIM library scope); RAS Mapper for everything else"
+            "models (FIM library scope) where the installed engine is qualified; "
+            "RAS Mapper for everything else"
         )
         terrain_resolver = _fast_map.TerrainResolver(
             prj_file,
@@ -319,6 +338,9 @@ def generate_result_maps(
             terrain_name=terrain_name,
             ras_version=ras_version,
             terrain_hdf=fast_map_terrain_hdf,
+            effective=fast_map_effective_terrain,
+            threads=fast_map_threads,
+            max_working_mib=fast_map_memory_mib,
         )
     else:
         console.print("  Engine  : RAS Mapper")
@@ -489,8 +511,32 @@ def generate_result_maps(
                         map_result.fast_map_terrain[map_type] = kind
                     return produced
 
-                wants_velocity = fast_map_velocity and "velocity" in requested_types
-                if wants_velocity or any(
+                def _skip(label, reason, *, strict=False):
+                    """A product group outside fast-map's scope goes to RAS Mapper.
+
+                    ``strict``: also refused under --fast-map-strict (as the
+                    per-profile maps always were); qualification limits such
+                    as slopingPretty velocity are not errors.
+                    """
+                    if strict and not fast_map_fallback:
+                        raise _fast_map.FastMapUnavailable(f"{label}: {reason}")
+                    console.print(
+                        f"    [yellow]fast-map {label} not used[/yellow] ({reason}); "
+                        "using RAS Mapper"
+                    )
+
+                # Per-profile products are Max only through fast-map. Decided
+                # here, before any terrain work: inside with_terrain a refusal
+                # reads as a terrain refusal and would cost an export.
+                max_profile = profile == "Max"
+                profile_reason = f"fast-map maps the Max profile only (got {profile!r})"
+                if not max_profile and any(
+                    t in requested_types
+                    for t in (*_fast_map.FAST_MAP_RASTER_TYPES, "velocity",
+                              *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_BOUNDARY)
+                ):
+                    _skip("per-profile maps", profile_reason, strict=True)
+                if max_profile and any(
                     t in _fast_map.FAST_MAP_RASTER_TYPES for t in requested_types
                 ):
                     fast_results.update(_fast_group("WSE/Depth", lambda: _on_terrain(
@@ -506,22 +552,73 @@ def generate_result_maps(
                             timeout=timeout,
                             max_working_mib=fast_map_memory_mib,
                             terrain_hdf=hdf,
-                            velocity=fast_map_velocity,
                             terrain_kind=kind,
                             invalid_cells=fast_map_invalid_cells,
                             product_writer=fast_map_writer,
                         ),
                     )))
-                if fast_map_whole_simulation and any(
-                    t in _fast_map.FAST_MAP_WHOLE_SIMULATION_TYPES for t in requested_types
-                ):
-                    fast_results.update(_fast_group("arrival/percent", lambda: _on_terrain(
-                        "arrival/percent",
+                if max_profile and "velocity" in requested_types:
+                    velocity_depth, reason = _fast_map.velocity_plan(
+                        fast_render, fast_map_velocity
+                    )
+                    if reason is not None:
+                        _skip("velocity", reason)
+                    else:
+                        fast_results.update(_fast_group("velocity", lambda: _on_terrain(
+                            "velocity",
+                            lambda tif, hdf, kind: _fast_map.map_velocity(
+                                plan_hdf,
+                                tif,
+                                plan_output,
+                                render=fast_render,
+                                velocity_depth=velocity_depth,
+                                profile=profile,
+                                threads=fast_map_threads,
+                                timeout=timeout,
+                                max_working_mib=fast_map_memory_mib,
+                                terrain_hdf=hdf,
+                                terrain_kind=kind,
+                                invalid_cells=fast_map_invalid_cells,
+                            ),
+                        )))
+                derived_types = [
+                    t for t in _fast_map.FAST_MAP_DERIVED_TYPES if t in requested_types
+                ]
+                if max_profile and derived_types:
+                    reason = _fast_map.derived_plan(fast_render, fast_map_derived)
+                    if reason is not None:
+                        _skip("D x V/Froude", reason)
+                    else:
+                        fast_results.update(_fast_group("D x V/Froude", lambda: _on_terrain(
+                            "D x V/Froude",
+                            lambda tif, hdf, kind: _fast_map.map_derived(
+                                plan_hdf,
+                                tif,
+                                plan_output,
+                                map_types=derived_types,
+                                render=fast_render,
+                                profile=profile,
+                                threads=fast_map_threads,
+                                timeout=timeout,
+                                max_working_mib=fast_map_memory_mib,
+                                terrain_hdf=hdf,
+                                terrain_kind=kind,
+                                invalid_cells=fast_map_invalid_cells,
+                            ),
+                        )))
+                whole_types, whole_notes = _fast_map.whole_simulation_types(
+                    requested_types, fast_render
+                )
+                for note in whole_notes if fast_map_whole_simulation else ():
+                    _skip("whole simulation", note)
+                if fast_map_whole_simulation and whole_types:
+                    fast_results.update(_fast_group("whole simulation", lambda: _on_terrain(
+                        "whole simulation",
                         lambda tif, hdf, kind: _fast_map.map_whole_simulation(
                             plan_hdf,
                             tif,
                             plan_output,
-                            map_types=requested_types,
+                            map_types=whole_types,
                             threshold=arrival_depth,
                             render=fast_render,
                             terrain_hdf=hdf,
@@ -532,7 +629,10 @@ def generate_result_maps(
                             invalid_cells=fast_map_invalid_cells,
                         ),
                     )))
-                if fast_map_boundary and _fast_map.FAST_MAP_BOUNDARY in requested_types:
+                if (
+                    max_profile and fast_map_boundary
+                    and _fast_map.FAST_MAP_BOUNDARY in requested_types
+                ):
                     def _boundary():
                         tif, terrain_hdf = terrain_resolver.boundary_terrain(plan_hdf)
                         return _fast_map.map_boundary(
