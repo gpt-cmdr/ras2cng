@@ -381,6 +381,11 @@ def _resolver(tmp_path, monkeypatch, *, effective=True, source=True):
     monkeypatch.setattr(resolver, "_canonical", lambda tif: None)
     monkeypatch.setattr(resolver, "_terrain_hdf_for", lambda plan: tmp_path / "T.hdf")
     monkeypatch.setattr(resolver, "for_plan", lambda plan: tmp_path / "export.tif")
+    # An unmodified terrain HDF: modified (or unreadable) terrains never reach Rust.
+    import h5py
+
+    with h5py.File(tmp_path / "T.hdf", "w") as handle:
+        handle.create_group("Terrain")
     return resolver
 
 

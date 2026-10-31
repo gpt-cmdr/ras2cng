@@ -822,6 +822,64 @@ def _stem_matches_name(stem: str, name: str) -> bool:
     return False
 
 
+def terrain_modifications(
+    terrain_hdf: Path, rasmap_path: Optional[Path] = None
+) -> list[str]:
+    """Names of the terrain modifications a terrain carries, or ``[]``.
+
+    Reads the terrain HDF's ``/Modifications`` group and, when given, the
+    ``ElevationModificationGroup`` layers the ``.rasmap`` registers under
+    this terrain. The HDF is what counts: RAS Mapper's export applies every
+    modification stored there, ticked in the ``.rasmap`` or not (T14). A
+    ``/Modifications`` entry that is not a plain group (a link) or cannot be
+    read is reported as a modification, so an unreadable terrain is never
+    treated as unmodified.
+
+    ras2cng uses Rust terrain operations only when this is empty; any
+    modified terrain goes to RAS Mapper (see ``fast_map.TerrainResolver``).
+    """
+    import xml.etree.ElementTree as ET
+
+    import h5py
+
+    terrain_hdf = Path(terrain_hdf)
+    found: list[str] = []
+    with h5py.File(terrain_hdf, "r") as handle:
+        link = handle.get("Modifications", getlink=True)
+        if link is not None:
+            if not isinstance(link, h5py.HardLink):
+                found.append("hdf:/Modifications (link)")
+            else:
+                try:
+                    group = handle["Modifications"]
+                    if isinstance(group, h5py.Group):
+                        found.extend(f"hdf:{name}" for name in group.keys())
+                    else:
+                        found.append("hdf:/Modifications (not a group)")
+                except (KeyError, OSError, RuntimeError):
+                    found.append("hdf:/Modifications (unreadable)")
+    if rasmap_path is not None and Path(rasmap_path).is_file():
+        rasmap = Path(rasmap_path)
+        try:
+            root = ET.parse(rasmap).getroot()
+        except ET.ParseError:
+            return found
+        target = terrain_hdf.resolve()
+        for layer in root.iter("Layer"):
+            filename = layer.get("Filename")
+            if layer.get("Type") != "TerrainLayer" or not filename:
+                continue
+            path = (rasmap.parent / filename.replace("\\", "/")).resolve()
+            if path != target:
+                continue
+            for group_layer in layer.findall("Layer"):
+                if group_layer.get("Type") == "ElevationModificationGroup":
+                    found.extend(
+                        f"rasmap:{child.get('Name')}" for child in group_layer.findall("Layer")
+                    )
+    return found
+
+
 def _discover_tifs_for_hdf(hdf_path: Optional[Path]) -> list[Path]:
     """Find TIFF files associated with a terrain HDF file.
 

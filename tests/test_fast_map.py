@@ -498,16 +498,94 @@ def test_map_boundary_requires_boundary_api(mock_fim, tmp_path):
         )
 
 
+def _terrain_h5(path, modifications=()):
+    """A minimal terrain HDF; each name becomes a /Modifications member."""
+    import h5py
+
+    with h5py.File(path, "w") as handle:
+        handle.create_group("Terrain")
+        if modifications:
+            group = handle.create_group("Modifications")
+            for name in modifications:
+                group.create_group(name)
+    return path
+
+
 def test_boundary_terrain_requires_single_source(tmp_path):
     terrain = tmp_path / "Terrain"
     terrain.mkdir()
-    hdf = terrain / "Terrain50.hdf"
-    hdf.touch()
+    hdf = _terrain_h5(terrain / "Terrain50.hdf")
     (terrain / "Terrain50.a.tif").touch()
     resolver = fast_map.TerrainResolver(tmp_path / "m.prj", tmp_path / "w", terrain_hdf=hdf)
     assert resolver.boundary_terrain(tmp_path / "m.p01.hdf") == (terrain / "Terrain50.a.tif", hdf)
     (terrain / "Terrain50.b.tif").touch()
     with pytest.raises(fast_map.FastMapUnavailable, match="single-source"):
+        resolver.boundary_terrain(tmp_path / "m.p01.hdf")
+
+
+def test_terrain_modifications_reads_hdf_and_rasmap(tmp_path):
+    from ras2cng.terrain import terrain_modifications
+
+    plain = _terrain_h5(tmp_path / "plain.hdf")
+    assert terrain_modifications(plain) == []
+    empty = tmp_path / "empty.hdf"
+    import h5py
+
+    with h5py.File(empty, "w") as handle:
+        handle.create_group("Modifications")
+    assert terrain_modifications(empty) == []
+    modified = _terrain_h5(tmp_path / "mod.hdf", ["Levee A", "Channel B"])
+    assert sorted(terrain_modifications(modified)) == ["hdf:Channel B", "hdf:Levee A"]
+    # A modification registered only in the .rasmap also counts.
+    rasmap = tmp_path / "m.rasmap"
+    rasmap.write_text(
+        '<RASMapper><Terrains><Layer Name="T" Type="TerrainLayer" Filename=".\plain.hdf">'
+        '<Layer Name="Mods" Type="ElevationModificationGroup">'
+        '<Layer Name="Berm" Type="LeveeLayer" /></Layer></Layer></Terrains></RASMapper>'
+    )
+    assert terrain_modifications(plain, rasmap) == ["rasmap:Berm"]
+    # A /Modifications soft link is never read as "unmodified".
+    linked = _terrain_h5(tmp_path / "link.hdf")
+    with h5py.File(linked, "a") as handle:
+        handle["Modifications"] = h5py.SoftLink("/Terrain")
+    assert terrain_modifications(linked) == ["hdf:/Modifications (link)"]
+
+
+def test_modified_terrain_skips_rust_terrain_and_uses_the_export(tmp_path, monkeypatch):
+    resolver, source, hdf = _resolver_with_source(tmp_path, monkeypatch)
+    _terrain_h5(hdf, ["Levee A"])
+    monkeypatch.setattr(resolver, "_terrain_hdf_for", lambda plan: hdf)
+    monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: True)
+    monkeypatch.setattr(
+        resolver, "_effective",
+        lambda plan: pytest.fail("the effective terrain must not be built for a modified terrain"),
+    )
+    kinds = []
+
+    def run(tif, h, k):
+        kinds.append(k)
+        return "ok"
+
+    assert fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", run)[1] == fast_map.TERRAIN_EXPORT
+    assert kinds == ["export"], "neither the source TIFF nor the effective terrain is tried"
+    assert any("1 modification(s)" in note for note in resolver.notes)
+
+
+def test_unmodified_terrain_still_uses_the_source(tmp_path, monkeypatch):
+    resolver, source, hdf = _resolver_with_source(tmp_path, monkeypatch)
+    _terrain_h5(hdf)
+    monkeypatch.setattr(resolver, "_terrain_hdf_for", lambda plan: hdf)
+    _, kind = fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", lambda tif, h, k: "ok")
+    assert kind == fast_map.TERRAIN_SOURCE
+
+
+def test_boundary_terrain_refuses_a_modified_terrain(tmp_path):
+    terrain = tmp_path / "Terrain"
+    terrain.mkdir()
+    hdf = _terrain_h5(terrain / "Terrain50.hdf", ["HighGround"])
+    (terrain / "Terrain50.a.tif").touch()
+    resolver = fast_map.TerrainResolver(tmp_path / "m.prj", tmp_path / "w", terrain_hdf=hdf)
+    with pytest.raises(fast_map.FastMapUnavailable, match="modification"):
         resolver.boundary_terrain(tmp_path / "m.p01.hdf")
 
 
@@ -523,7 +601,7 @@ def test_fast_map_boundary_routed_separately_from_rasters(
     ras, project_dir = _fake_ras(tmp_path)
     mock_init.return_value = ras
     terrain_hdf = tmp_path / "Terrain50.hdf"
-    terrain_hdf.touch()
+    _terrain_h5(terrain_hdf)
     (tmp_path / "Terrain50.tif").touch()
     mock_map_plan.side_effect = fast_map.FastMapUnavailable("no terrain export")
     boundary = tmp_path / "Inundation Boundary (Max).geojson"

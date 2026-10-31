@@ -193,8 +193,17 @@ it. ras2cng then:
 
 `--fast-map-terrain` supplies a float32 export (with modifications) instead,
 `--no-fast-map-effective-terrain` skips step 2, and
-`--no-fast-map-source-terrain` skips the source TIFF. Modified terrains are
-never mapped from source TIFFs or the effective terrain. `map-hdf` with a
+`--no-fast-map-source-terrain` skips the source TIFF.
+
+**Terrains with modifications always go to RAS Mapper.** Before any of the
+steps above, ras2cng reads the terrain HDF's `/Modifications` group and the
+`.rasmap`'s modification layers (`ras2cng.terrain.terrain_modifications`).
+If it finds any, or cannot read the terrain HDF, steps 1 and 2 are skipped
+and RAS Mapper's export builds the terrain (step 3), and the inundation
+boundary is drawn by RAS Mapper. Rust terrain operations run only on
+unmodified terrains, even with an engine build that accepts modifications:
+that work is parked because it does not yet reproduce RAS Mapper on real
+modified terrains. `map-hdf` with a
 single raw `--terrain` TIFF passes that TIFF directly.
 
 Measured on a shared, loaded host:
@@ -302,7 +311,7 @@ back to RAS Mapper on its own, so the rasters can still use Rust):
 | Condition | Why |
 |---|---|
 | Terrain with more than one source TIFF | The method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them |
-| Terrain modifications | Refused by the engine (it cannot infer modifications from a TIFF/HDF pair) |
+| Terrain modifications | Refused by ras2cng before the engine runs (`terrain_modifications`): modified terrains always go to RAS Mapper |
 | `slopingPretty` render mode | Contours support horizontal and plain sloping only |
 | ras-commander without `RasFim.map_inundation_boundaries` | Needs ras-commander #755 (supersedes #709; ras-commander-fast-map #5 is released) |
 | Storage areas | The contour method draws 2D cells only; the level pool would be missing |
