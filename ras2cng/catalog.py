@@ -166,6 +166,8 @@ class Manifest:
     terrain_sources: list[dict] = field(default_factory=list)
     maps: list[dict] = field(default_factory=list)
     postprocessing: dict = field(default_factory=dict)
+    # Export steps that failed and were skipped (skip_errors): {step, file, error}
+    errors: list[dict] = field(default_factory=list)
     schema_version: str = SCHEMA_VERSION
 
     # -----------------------------------------------------------------------
@@ -217,6 +219,12 @@ class Manifest:
     def add_map_entry(self, entry: ManifestMapEntry) -> None:
         self.maps.append(asdict(entry))
 
+    def add_error(self, step: str, file: str, error: BaseException) -> None:
+        """Record an export step that failed and was skipped."""
+        self.errors.append(
+            {"step": step, "file": file, "error": f"{type(error).__name__}: {error}"}
+        )
+
     # -----------------------------------------------------------------------
     # Serialization
     # -----------------------------------------------------------------------
@@ -236,6 +244,8 @@ class Manifest:
             d["maps"] = self.maps
         if self.postprocessing:
             d["postprocessing"] = self.postprocessing
+        if self.errors:
+            d["errors"] = self.errors
         return d
 
     def to_json(self, indent: int = 2) -> str:
@@ -260,6 +270,7 @@ class Manifest:
             terrain_sources=data.get("terrain_sources", []),
             maps=data.get("maps", []),
             postprocessing=data.get("postprocessing", {}),
+            errors=data.get("errors", []),
             schema_version=data.get("schema_version", PYTHON_PATH_SCHEMA_VERSION),
         )
 

@@ -13,13 +13,11 @@ import numpy as np
 import pandas as pd
 
 from ras_commander.hdf import (
-    HdfBase,
     HdfPump,
     HdfResultsMesh,
     HdfResultsPlan,
     HdfResultsXsec,
     HdfStruc1D,
-    HdfUtils,
 )
 
 
@@ -409,61 +407,28 @@ def extract_results_variable_no_geometry(
 ) -> pd.DataFrame:
     """Extract one mesh summary variable without constructing geometry.
 
-    This avoids the HdfResultsMesh.get_mesh_summary_output() GeoDataFrame path,
-    which builds mesh cell/face geometry internally. It is the preferred path
+    Reads ras-commander's typed value table
+    (``HdfResultsMesh.get_mesh_summary_output(..., include_geometry=False)``),
+    which reads the stored arrays without building cell points or face lines
+    (natively where the HDF engine proves the layout). Every stored row is kept,
+    ghost cells included, with the same columns and values as before:
+    ``mesh_name``, ``cell_id``/``face_id``, the value column and, for
+    ``[value, time]`` summaries, ``<variable>_time``. It is the preferred path
     for large archives that store results as DRY attribute tables.
     """
-    rows: list[pd.DataFrame] = []
-    plan_path = Path(plan_hdf)
-    variable_slug = result_variable_slug(variable)
-
-    with h5py.File(plan_path, "r") as hdf:
-        start_time = HdfBase.get_simulation_start_time(hdf)
-        d2_flow_areas = hdf.get("Geometry/2D Flow Areas/Attributes")
-        if d2_flow_areas is None:
-            return pd.DataFrame()
-
-        for d2_flow_area in d2_flow_areas[:]:
-            mesh_name = HdfUtils.convert_ras_string(d2_flow_area[0])
-            try:
-                group = HdfResultsMesh.get_mesh_summary_output_group(hdf, mesh_name, variable)
-            except ValueError:
-                continue
-
-            data = group[:]
-            id_column = result_variable_index_column(variable)
-
-            if data.ndim == 2 and data.shape[0] == 2:
-                frame = pd.DataFrame(
-                    {
-                        "mesh_name": [mesh_name] * data.shape[1],
-                        id_column: range(data.shape[1]),
-                        variable_slug: data[0, :],
-                        f"{variable_slug}_time": HdfUtils.convert_timesteps_to_datetimes(
-                            data[1, :],
-                            start_time,
-                            time_unit="days",
-                            round_to=round_to,
-                        ),
-                    }
-                )
-            elif data.ndim == 1:
-                frame = pd.DataFrame(
-                    {
-                        "mesh_name": [mesh_name] * len(data),
-                        id_column: range(len(data)),
-                        variable_slug: data,
-                    }
-                )
-            else:
-                raise ValueError(
-                    f"Unexpected data shape for {variable} in {mesh_name}. Got shape {data.shape}"
-                )
-            rows.append(frame)
-
-    if not rows:
+    values = HdfResultsMesh.get_mesh_summary_output(
+        Path(plan_hdf),
+        variable,
+        round_to=round_to,
+        include_ghost_cells=True,
+        include_geometry=False,
+    )
+    if values.empty:
         return pd.DataFrame()
-    return pd.concat(rows, ignore_index=True)
+    values = values.drop(columns=["is_ghost_cell"], errors="ignore").reset_index(drop=True)
+    # Keep archive Parquet metadata unchanged (pandas writes DataFrame.attrs).
+    values.attrs = {}
+    return values
 
 
 def extract_results_variable(
@@ -477,7 +442,18 @@ def extract_results_variable(
     if geometry_mode == "none":
         return extract_results_variable_no_geometry(plan_hdf, variable)
 
-    results_gdf = HdfResultsMesh.get_mesh_summary_output(Path(plan_hdf), variable)
+    if (
+        geometry_mode == "polygon"
+        and mesh_cells_gdf is not None
+        and result_variable_index_column(variable) == "cell_id"
+    ):
+        # The cell polygons are joined below; the cell-center points that the
+        # default GeoDataFrame output builds would only be dropped.
+        results_gdf = HdfResultsMesh.get_mesh_summary_output(
+            Path(plan_hdf), variable, include_geometry=False
+        )
+    else:
+        results_gdf = HdfResultsMesh.get_mesh_summary_output(Path(plan_hdf), variable)
     if len(results_gdf) == 0:
         return results_gdf
     return _apply_results_geometry_mode(

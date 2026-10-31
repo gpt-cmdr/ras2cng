@@ -75,13 +75,18 @@ DATAFRAME_SCHEMAS = {
         "archive_columns": ARCHIVE_GEOPARQUET_COLUMNS,
     },
     "project_metadata": {
-        "description": "Union of ras-commander project DataFrames written to project metadata Parquet. Cells holding dicts, lists or sets are stored as JSON text.",
+        "description": "Union of ras-commander project DataFrames written to project metadata Parquet. Dict cells are Parquet structs, except rasmap_field_errors and all-empty dict columns, which are MAP<string, string>.",
         "accessor": "archive_project(...) output <project>.parquet",
         "source": "ras2cng.project.export_project_metadata",
         "extra_columns": True,
         "dynamic": True,
         "columns": [
             {"name": "_table", "dtype": "str", "description": "Source ras-commander DataFrame name."},
+            {
+                "name": "rasmap_field_errors",
+                "dtype": "map<str,str>",
+                "description": "rasmap_df per-field extraction errors, written as Parquet MAP<string, string> (field -> error).",
+            },
         ],
     },
     "duckdb_query_results": {

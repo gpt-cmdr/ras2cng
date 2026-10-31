@@ -341,6 +341,8 @@ def test_archive_writes_project_metadata_parquet(
     meta_path = archive_out / "FakeModel.parquet"
     assert meta_path.exists()
     assert manifest.project_parquet == "FakeModel.parquet"
+    assert manifest.errors == []
+    assert "errors" not in manifest.to_dict()
 
     # Read and verify _table column
     df = pd.read_parquet(meta_path)
@@ -777,6 +779,147 @@ def test_export_project_metadata(tmp_path):
     assert "boundaries_df" not in tables
 
 
+def _make_struct_metadata_ras():
+    """RasPrj-like object whose rasmap_df mirrors ras-commander's dict columns."""
+    ras = MagicMock()
+    ras.plan_df = pd.DataFrame({"plan_number": ["01", "02"]})
+    ras.geom_df = None
+    ras.flow_df = None
+    ras.unsteady_df = None
+    ras.boundaries_df = None
+    ras.results_df = None
+    # ras-commander >= 0.100 always emits rasmap_field_errors, usually as {}
+    ras.rasmap_df = pd.DataFrame({
+        "projection_path": ["proj.prj"],
+        "current_settings": [{"RiverStationUnits": "Feet", "XSMaxPoints": "450"}],
+        "rasmap_field_errors": [{}],
+    })
+    return ras
+
+
+def test_export_project_metadata_writes_struct_and_empty_mapping(tmp_path):
+    """Dict columns (incl. an all-empty one) must not yield a 0-byte file."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from ras2cng.project import export_project_metadata
+
+    out = tmp_path / "Meta.parquet"
+    assert export_project_metadata(_make_struct_metadata_ras(), out) == out
+    assert out.stat().st_size > 0
+
+    table = pq.read_table(out)
+    settings_type = pa.struct([
+        ("RiverStationUnits", pa.string()), ("XSMaxPoints", pa.string()),
+    ])
+    expected = pa.table({
+        "plan_number": pa.array(["01", "02", None]),
+        "_table": pa.array(["plan_df", "plan_df", "rasmap_df"]),
+        "projection_path": pa.array([None, None, "proj.prj"]),
+        "current_settings": pa.array(
+            [None, None, {"RiverStationUnits": "Feet", "XSMaxPoints": "450"}],
+            type=settings_type,
+        ),
+        "rasmap_field_errors": pa.array(
+            [None, None, []], type=pa.map_(pa.string(), pa.string())
+        ),
+    })
+    assert sorted(table.column_names) == sorted(expected.column_names)
+    assert table.select(expected.column_names).to_pylist() == expected.to_pylist()
+    assert table.schema.field("current_settings").type == settings_type
+    assert table.schema.field("rasmap_field_errors").type == pa.map_(pa.string(), pa.string())
+    restored = table.to_pandas(maps_as_pydicts="strict")
+    assert restored["current_settings"].iloc[2] == {"RiverStationUnits": "Feet", "XSMaxPoints": "450"}
+    assert restored["rasmap_field_errors"].iloc[2] == {}
+    assert list(tmp_path.iterdir()) == [out]
+
+
+def test_export_project_metadata_keeps_field_errors_as_map(tmp_path):
+    """Non-empty field errors stay a MAP so the schema does not vary per archive."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from ras2cng.project import export_project_metadata
+
+    ras = _make_struct_metadata_ras()
+    ras.rasmap_df["rasmap_field_errors"] = [{"terrain_hdf_path": "missing <Terrains>"}]
+    out = tmp_path / "Meta.parquet"
+    export_project_metadata(ras, out)
+
+    column = pq.read_table(out)["rasmap_field_errors"]
+    assert column.type == pa.map_(pa.string(), pa.string())
+    assert column.to_pylist() == [None, None, [("terrain_hdf_path", "missing <Terrains>")]]
+
+
+def test_export_project_metadata_failure_raises_and_leaves_no_file(tmp_path):
+    """An injected write failure raises and leaves neither an empty nor a staged file."""
+    from ras2cng.project import export_project_metadata
+
+    out = tmp_path / "Meta.parquet"
+
+    def failing_write(table, where, **kwargs):
+        where.write(b"PAR1")  # a partial write, then the failure
+        raise OSError("injected write failure")
+
+    with patch("ras2cng.project.pq.write_table", side_effect=failing_write):
+        with pytest.raises(OSError, match="injected write failure"):
+            export_project_metadata(_make_struct_metadata_ras(), out)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_export_project_metadata_unwritable_column_raises_and_leaves_no_file(tmp_path):
+    """A real pyarrow Parquet error (not a mock) also leaves nothing behind."""
+    import pyarrow as pa
+
+    from ras2cng.project import export_project_metadata
+
+    ras = _make_struct_metadata_ras()
+    # A struct nested in a list with no children is still unwritable to Parquet.
+    ras.rasmap_df["nested"] = [[{}]]
+    out = tmp_path / "Meta.parquet"
+
+    with pytest.raises(pa.ArrowNotImplementedError):
+        export_project_metadata(ras, out)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@patch("ras2cng.project.merge_all_layers")
+@patch("ras2cng.project.init_ras_project")
+def test_archive_reports_project_metadata_failure(mock_init, mock_merge, tmp_path):
+    """A skipped metadata failure is recorded in the manifest, with no empty file."""
+    ras, project_dir, _ = _make_fake_ras(tmp_path)
+    mock_init.return_value = ras
+    mock_merge.return_value = _make_fake_merged_gdf()
+    archive_out = tmp_path / "archive"
+
+    from ras2cng.project import archive_project
+
+    with patch("ras2cng.project.pq.write_table", side_effect=OSError("disk full")):
+        manifest = archive_project(project_dir / "FakeModel.prj", archive_out, sort=False)
+
+    assert not (archive_out / "FakeModel.parquet").exists()
+    assert not list(archive_out.glob(".FakeModel.parquet.partial-*"))
+    assert manifest.project_parquet is None
+    assert manifest.errors == [{
+        "step": "project_metadata",
+        "file": "FakeModel.parquet",
+        "error": "OSError: disk full",
+    }]
+    on_disk = json.loads((archive_out / "manifest.json").read_text(encoding="utf-8"))
+    assert on_disk["errors"] == manifest.errors
+    assert Manifest.load(archive_out / "manifest.json").errors == manifest.errors
+
+    with patch("ras2cng.project.pq.write_table", side_effect=OSError("disk full")):
+        with pytest.raises(OSError, match="disk full"):
+            archive_project(
+                project_dir / "FakeModel.prj", tmp_path / "strict", sort=False,
+                skip_errors=False,
+            )
+    assert not (tmp_path / "strict" / "FakeModel.parquet").exists()
+
+
 # ---------------------------------------------------------------------------
 # Manifest v2.3 — maps field
 # ---------------------------------------------------------------------------
@@ -958,25 +1101,3 @@ def test_archive_accepts_new_flags(mock_init, mock_merge, tmp_path):
 
     assert manifest is not None
     assert (tmp_path / "out" / "manifest.json").exists()
-
-
-def test_project_metadata_stores_container_cells_as_json(tmp_path):
-    """An empty-dict column (ras-commander rasmap_df) used to leave a 0-byte file."""
-    import json as _json
-    from types import SimpleNamespace
-
-    import pandas as _pd
-
-    from ras2cng.project import export_project_metadata
-
-    ras = SimpleNamespace(
-        plan_df=_pd.DataFrame({"plan_number": ["01"]}),
-        rasmap_df=_pd.DataFrame({"name": ["x"], "rasmap_field_errors": [{}], "tags": [["a", "b"]]}),
-    )
-    out = tmp_path / "meta.parquet"
-    export_project_metadata(ras, out)
-    frame = _pd.read_parquet(out)
-    row = frame[frame["_table"] == "rasmap_df"].iloc[0]
-    assert _json.loads(row["rasmap_field_errors"]) == {}
-    assert _json.loads(row["tags"]) == ["a", "b"]
-    assert frame[frame["_table"] == "plan_df"]["plan_number"].tolist() == ["01"]

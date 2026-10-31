@@ -447,6 +447,25 @@ Every archive includes a `manifest.json` that catalogs all exported layers for d
 }
 ```
 
+`errors` appears only when an export step failed and was skipped (the default
+`skip_errors=True`). Each entry names the step, the file it would have written,
+and the error, for example
+`{"step": "project_metadata", "file": "BaldEagleDamBrk.parquet", "error": "OSError: ..."}`.
+A failed step leaves no file behind: the project metadata Parquet is staged and
+renamed into place only after a complete write, and `project_parquet` stays
+`null`. The final console line then reads "Archive completed with N error(s)".
+
+### Project metadata Parquet
+
+`{ProjectName}.parquet` is the union of ras-commander's `plan_df`, `geom_df`,
+`flow_df`, `unsteady_df`, `boundaries_df`, `results_df`, and `rasmap_df`, with a
+`_table` column naming the source frame. List columns are Parquet lists and
+dict columns such as `current_settings` are Parquet structs.
+`rasmap_field_errors` (failed RASMapper field -> error message) is a Parquet
+`MAP<string, string>`, because its keys vary by project and are usually empty,
+and a struct with no fields cannot be stored in Parquet. Read it back as Python
+dicts with `pq.read_table(path).to_pandas(maps_as_pydicts="strict")`.
+
 ### Using the manifest with Python
 
 ```python
