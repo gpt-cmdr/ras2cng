@@ -878,3 +878,285 @@ def test_validate_cog_rejects_a_raster_with_no_mask(tmp_path: Path) -> None:
 
     assert not result.valid
     assert any("nodata" in message or "mask" in message for message in result.errors)
+
+
+# ---------------------------------------------------------------------------
+# Optional overview value quantum
+# ---------------------------------------------------------------------------
+
+
+def _levels(path: Path) -> list[np.ndarray]:
+    with rasterio.open(path) as source:
+        count = len(source.overviews(1))
+    arrays = []
+    for index in range(count):
+        with rasterio.open(path, overview_level=index) as level:
+            arrays.append(level.read(1))
+    return arrays
+
+
+def _block_means(base: np.ndarray, factor: int) -> tuple[np.ndarray, np.ndarray]:
+    """Independent unrounded mean and valid count of every factor x factor block."""
+
+    valid = base != np.float32(NODATA)
+    height, width = base.shape
+    ph, pw = -(-height // factor) * factor, -(-width // factor) * factor
+    values = np.zeros((ph, pw))
+    values[:height, :width] = np.where(valid, base, 0.0)
+    counts = np.zeros((ph, pw), dtype=np.int64)
+    counts[:height, :width] = valid
+    shape = (ph // factor, factor, pw // factor, factor)
+    sums = values.reshape(shape).sum(axis=(1, 3))
+    count = counts.reshape(shape).sum(axis=(1, 3))
+    return sums / np.maximum(count, 1), count
+
+
+def test_overview_quantum_none_is_the_existing_behaviour(tmp_path: Path) -> None:
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=900, width=800)
+    omitted, explicit = tmp_path / "omitted.tif", tmp_path / "explicit.tif"
+    first = area_matched_cog(source, omitted, lerc_max_z_error=None)
+    second = area_matched_cog(source, explicit, lerc_max_z_error=None, overview_quantum=None)
+
+    assert first.value_quantum is None and second.value_quantum is None
+    assert first.as_tags() == second.as_tags()
+    assert "overview_value_quantum" not in first.as_tags()
+    with rasterio.open(omitted) as a, rasterio.open(explicit) as b:
+        np.testing.assert_array_equal(a.read(1), b.read(1))
+        assert a.overviews(1) == b.overviews(1) and a.tags() == b.tags()
+    for x, y in zip(_levels(omitted), _levels(explicit)):
+        np.testing.assert_array_equal(x, y)
+
+
+def test_overview_quantum_rounds_each_level_from_unrounded_aggregates(tmp_path: Path) -> None:
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=1301, width=1101)  # odd on both axes, two levels
+    plain, quantized = tmp_path / "plain.tif", tmp_path / "quantized.tif"
+    area_matched_cog(source, plain, lerc_max_z_error=None)
+    report = area_matched_cog(source, quantized, lerc_max_z_error=None, overview_quantum=0.25)
+
+    assert report.value_quantum == 0.25
+    tags = report.as_tags()
+    assert tags["overview_value_quantum"] == "0.25"
+    assert tags["overview_value_rounding"] == "half_even_after_area_matched_mean"
+    assert tags["overview_method"] == "area_matched_mean"
+    with rasterio.open(quantized) as q:
+        assert q.tags()["overview_value_quantum"] == "0.25"
+        factors = list(q.overviews(1))
+        base = q.read(1)
+    with rasterio.open(source) as s:
+        np.testing.assert_array_equal(base, s.read(1))  # the base level is untouched
+        original = s.read(1)
+    assert len(factors) >= 2
+
+    plain_levels, quant_levels = _levels(plain), _levels(quantized)
+    nodata = np.float32(NODATA)
+    previous = None
+    for factor, p_level, q_level in zip(factors, plain_levels, quant_levels):
+        mean, count = _block_means(original, factor)
+        kept = p_level != nodata
+        # Area matching decided the mask; the quantum did not move it.
+        np.testing.assert_array_equal(q_level != nodata, kept)
+        assert kept.any()
+        # The None level is the unrounded aggregate, in float32 ...
+        np.testing.assert_allclose(p_level[kept], mean[kept], rtol=1e-6, atol=0)
+        # ... and the quantized level is that aggregate, rounded once.
+        expected = np.rint(mean[kept] * 4.0) / 4.0
+        np.testing.assert_array_equal(q_level[kept], expected.astype("float32"))
+        if previous is not None:
+            prev_q, prev_count, prev_factor = previous
+            # Re-rounding a rounded child mean (double rounding) is a different
+            # answer somewhere, so the test above cannot be passed by recursion.
+            ratio = factor // prev_factor
+            ph, pw = -(-prev_q.shape[0] // ratio) * ratio, -(-prev_q.shape[1] // ratio) * ratio
+            weights = np.zeros((ph, pw))
+            weights[: prev_count.shape[0], : prev_count.shape[1]] = prev_count
+            child = np.zeros((ph, pw))
+            child[: prev_q.shape[0], : prev_q.shape[1]] = np.where(prev_q != nodata, prev_q, 0.0)
+            shape = (ph // ratio, ratio, pw // ratio, ratio)
+            denominator = (weights * (child != 0)).reshape(shape).sum(axis=(1, 3))
+            recursive = (child * weights).reshape(shape).sum(axis=(1, 3)) / np.maximum(denominator, 1)
+            recursive = np.rint(recursive[kept] * 4.0) / 4.0
+            assert (recursive != expected).any()
+        previous = (q_level, count, factor)
+
+
+def test_overview_quantum_keeps_masks_ratios_and_counts_with_a_boundary_hole(tmp_path: Path) -> None:
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=1301, width=1101)
+    with rasterio.open(source, "r+") as dst:  # an interior hole against the ragged margin
+        data = dst.read(1)
+        data[600:640, 500:560] = NODATA
+        dst.write(data, 1)
+    plain, quantized = tmp_path / "plain.tif", tmp_path / "quantized.tif"
+    a = area_matched_cog(source, plain, lerc_max_z_error=None)
+    b = area_matched_cog(source, quantized, lerc_max_z_error=None, overview_quantum=0.01)
+
+    assert a.area_ratios == b.area_ratios and a.base_valid_pixels == b.base_valid_pixels
+    assert a.factors == b.factors and len(b.factors) >= 2
+    nodata = np.float32(NODATA)
+    for p_level, q_level in zip(_levels(plain), _levels(quantized)):
+        assert int((p_level != nodata).sum()) == int((q_level != nodata).sum())
+        np.testing.assert_array_equal(p_level != nodata, q_level != nodata)
+        valid = q_level[q_level != nodata].astype("float64")
+        again = (np.rint(valid * 100.0) / 100.0).astype("float32")
+        np.testing.assert_array_equal(again, valid.astype("float32"))
+    with rasterio.open(plain) as x, rasterio.open(quantized) as y:
+        np.testing.assert_array_equal(x.read(1), y.read(1))
+
+
+def test_overview_quantum_on_a_single_block_raster_has_no_levels(tmp_path: Path) -> None:
+    source = tmp_path / "small.tif"
+    _flood_raster(source, height=200, width=300)
+    out = tmp_path / "out.tif"
+    report = area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=0.01)
+    assert report.factors == [] and report.method == "none"
+    assert report.value_quantum == 0.01
+    with rasterio.open(out) as dst:
+        assert dst.overviews(1) == []
+    assert _levels(out) == []  # nothing to verify: not evidence of an overview pipeline
+
+
+def test_build_area_matched_overviews_accepts_the_quantum_directly(tmp_path: Path) -> None:
+    from ras2cng.cog import build_area_matched_overviews
+
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=700, width=640)
+    paths, report = build_area_matched_overviews(
+        source, tmp_path / "w", factors=[2], value_quantum=0.5
+    )
+    assert report.value_quantum == 0.5
+    with rasterio.open(paths[0]) as level:
+        data = level.read(1)
+    valid = data[data != np.float32(NODATA)]
+    np.testing.assert_array_equal(valid, np.rint(valid * 2.0) / 2.0)
+    with pytest.raises(ValueError, match="categorical"):
+        build_area_matched_overviews(
+            source, tmp_path / "w2", factors=[2], categorical=True, value_quantum=0.5
+        )
+
+
+@pytest.mark.parametrize("quantum", [0, -0.01, float("nan"), float("inf"), "abc"])
+def test_overview_quantum_must_be_positive_and_finite(tmp_path: Path, quantum) -> None:
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=700, width=640)
+    out = tmp_path / "out.tif"
+    with pytest.raises(ValueError, match="positive finite"):
+        area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=quantum)
+    assert not out.exists()
+
+
+def test_overview_quantum_is_refused_for_categorical_and_integer_rasters(tmp_path: Path) -> None:
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=700, width=640)
+    with pytest.raises(ValueError, match="categorical"):
+        area_matched_cog(
+            source, tmp_path / "a.tif", categorical=True, lerc_max_z_error=None, overview_quantum=0.01
+        )
+
+    counts = tmp_path / "counts.tif"
+    with rasterio.open(
+        counts, "w", driver="GTiff", width=700, height=640, count=1, dtype="int16",
+        nodata=-1, crs="EPSG:3857", transform=from_origin(0.0, 0.0, 3.0, 3.0),
+        tiled=True, blockxsize=128, blockysize=128,
+    ) as dst:
+        dst.write(np.arange(700 * 640, dtype="int16").reshape(640, 700) % 50, 1)
+    with pytest.raises(ValueError, match="floating-point"):
+        area_matched_cog(counts, tmp_path / "b.tif", overview_quantum=0.01)
+    assert not (tmp_path / "a.tif").exists() and not (tmp_path / "b.tif").exists()
+
+
+@pytest.mark.parametrize("key", ["MAX_Z_ERROR", "max_z_error", "MAX_Z_ERROR_OVERVIEW", "max_z_error_overview"])
+@pytest.mark.parametrize("value", [0.01, -1, float("nan"), float("inf"), -float("inf"), "junk", None])
+def test_overview_quantum_rejects_all_invalid_creation_tolerances(tmp_path: Path, key, value) -> None:
+    source, out = tmp_path / "source.tif", tmp_path / "refused.tif"
+    _flood_raster(source, height=32, width=32)
+    with pytest.raises(ValueError, match="creation option"):
+        area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=0.01, creation_options={key: value})
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("key", ["MAX_Z_ERROR", "max_z_error", "MAX_Z_ERROR_OVERVIEW", "max_z_error_overview"])
+def test_overview_quantum_allows_explicit_zero_tolerances(tmp_path: Path, key) -> None:
+    source, out = tmp_path / "source.tif", tmp_path / "zero.tif"
+    _flood_raster(source, height=32, width=32)
+    report = area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=0.01, creation_options={key: "0"})
+    assert out.is_file() and report.value_quantum == 0.01
+
+
+def test_none_quantum_retains_legacy_overview_tolerance_options(tmp_path: Path) -> None:
+    source, out = tmp_path / "source.tif", tmp_path / "legacy.tif"
+    _flood_raster(source, height=32, width=32)
+    report = area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=None, creation_options={"MAX_Z_ERROR_OVERVIEW": 0.01})
+    assert out.is_file() and report.value_quantum is None
+
+
+def test_overview_quantum_refuses_to_stack_a_lossy_tolerance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ras2cng.cog as cog_module
+
+    monkeypatch.setattr(cog_module, "DEFAULT_LERC_MAX_Z_ERROR", 0.01)
+    source = tmp_path / "src.tif"
+    _flood_raster(source, height=700, width=640)
+    out = tmp_path / "out.tif"
+    with pytest.raises(ValueError, match="stack"):  # the implicit default counts
+        area_matched_cog(source, out, overview_quantum=0.01)
+    with pytest.raises(ValueError, match="stack"):
+        area_matched_cog(source, out, lerc_max_z_error=0.02, overview_quantum=0.01)
+    for options in ({"MAX_Z_ERROR": 0.01}, {"max_z_error": "0.5"}, {"MAX_Z_ERROR": "junk"}):
+        with pytest.raises(ValueError, match="stack"):
+            area_matched_cog(
+                source, out, lerc_max_z_error=None, creation_options=options, overview_quantum=0.01
+            )
+    assert not out.exists()
+
+
+def test_overview_quantum_refuses_the_gdal_fallback_but_none_still_falls_back(tmp_path: Path) -> None:
+    source = tmp_path / "nonodata.tif"
+    with rasterio.open(
+        source, "w", driver="GTiff", width=700, height=640, count=1, dtype="float32",
+        crs="EPSG:3857", transform=from_origin(0.0, 0.0, 3.0, 3.0),
+        tiled=True, blockxsize=128, blockysize=128,
+    ) as dst:
+        dst.write(np.linspace(0, 9, 700 * 640, dtype="float32").reshape(640, 700), 1)
+
+    fallback = area_matched_cog(source, tmp_path / "plain.tif", lerc_max_z_error=None)
+    assert fallback.fallback_reason and "nodata" in fallback.fallback_reason  # unchanged
+
+    out = tmp_path / "quantized.tif"
+    with pytest.raises(ValueError, match="nodata"):
+        area_matched_cog(source, out, lerc_max_z_error=None, overview_quantum=0.01)
+    assert not out.exists()
+
+
+def test_overview_quantum_fails_closed_on_nodata_collision_overflow_and_nonfinite(
+    tmp_path: Path,
+) -> None:
+    def raster(name: str, values: np.ndarray, nodata: float) -> Path:
+        path = tmp_path / name
+        with rasterio.open(
+            path, "w", driver="GTiff", width=values.shape[1], height=values.shape[0], count=1,
+            dtype="float32", nodata=nodata, crs="EPSG:3857",
+            transform=from_origin(0.0, 0.0, 3.0, 3.0), tiled=True, blockxsize=128, blockysize=128,
+        ) as dst:
+            dst.write(values.astype("float32"), 1)
+        return path
+
+    # 0.004 is valid, but rounds to 0.00 == the nodata value: a valid cell would
+    # silently become masked.
+    collide = raster("collide.tif", np.full((640, 700), 0.004), nodata=0.0)
+    with pytest.raises(ValueError, match="nodata"):
+        area_matched_cog(collide, tmp_path / "c.tif", lerc_max_z_error=None, overview_quantum=0.01)
+    area_matched_cog(collide, tmp_path / "c_none.tif", lerc_max_z_error=None)  # None is unchanged
+
+    huge = raster("huge.tif", np.full((640, 700), 1.0e7), nodata=-9999.0)
+    with pytest.raises(ValueError, match="cannot represent"):
+        area_matched_cog(huge, tmp_path / "h.tif", lerc_max_z_error=None, overview_quantum=0.01)
+
+    values = np.full((640, 700), 3.0)
+    values[10, 10] = np.inf
+    infinite = raster("inf.tif", values, nodata=-9999.0)
+    with pytest.raises(ValueError, match="not finite"):
+        area_matched_cog(infinite, tmp_path / "i.tif", lerc_max_z_error=None, overview_quantum=0.01)
+    assert not any((tmp_path / n).exists() for n in ("c.tif", "h.tif", "i.tif"))
