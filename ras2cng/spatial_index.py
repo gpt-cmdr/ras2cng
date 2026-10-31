@@ -1,10 +1,17 @@
 """Spatial post-processing for ras2cng archives.
 
 The archive writer extracts data first, then this module adds persisted spatial
-ordering/index columns. Geometry parquet files get a ``hilbert_index`` column
-computed from per-row bbox centers. Geometryless result tables get a
-``join_index`` column and, when possible, inherit ``hilbert_index`` from the
-matching mesh geometry.
+ordering/index columns. Geometry parquet files get a ``hilbert_index`` column:
+DuckDB spatial ``ST_Hilbert`` of each row's bbox centre over its layer's
+extent, the key the archive writer (and terrio's native engine) orders rows
+by, so for a freshly written archive the re-sort is a no-op. Layers keep their
+first-appearance order and a row group ends at every layer boundary.
+Geometryless result tables get a ``join_index`` column and, when possible,
+inherit ``hilbert_index`` from the matching mesh geometry.
+
+Both bbox covering forms are read: the GeoParquet 1.1 ``bbox`` struct (schema
+2.7+) and the flat ``bbox_xmin`` ... columns of older archives. A file is
+re-written in the form it already has; a file with no covering gets the struct.
 """
 
 from __future__ import annotations
@@ -16,13 +23,24 @@ from typing import Any, Mapping
 
 import numpy as np
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from ras2cng.catalog import Manifest
+from ras2cng.geoparquet import (
+    LEGACY_BBOX_COLUMNS,
+    ROW_GROUP_ROWS,
+    _layer_slices,
+    _write_python,
+    bbox_covering,
+    bbox_sql_columns,
+    geo_metadata_with_covering,
+    hilbert_keys,
+    read_bounds,
+)
 
 
-BBOX_COLUMNS = ("bbox_xmin", "bbox_ymin", "bbox_xmax", "bbox_ymax")
+# Flat covering columns of archives written before manifest schema 2.7.
+BBOX_COLUMNS = LEGACY_BBOX_COLUMNS
 HILBERT_COLUMN = "hilbert_index"
 JOIN_INDEX_COLUMN = "join_index"
 INDEX_COLUMNS = {HILBERT_COLUMN, JOIN_INDEX_COLUMN}
@@ -76,114 +94,110 @@ def _duckdb_copy(query: str, output_path: Path) -> Path:
     return tmp_path
 
 
-def _copy_geo_metadata(source_path: Path, target_path: Path) -> None:
-    source_meta = pq.read_schema(source_path).metadata or {}
-    if b"geo" not in source_meta:
-        return
+def _hilbert_index_column(bounds: np.ndarray, slices) -> tuple[pa.Array, str]:
+    """Per-layer ``ST_Hilbert`` keys as uint64; null where there is no bbox."""
 
-    table = pq.read_table(target_path)
-    metadata = dict(table.schema.metadata or {})
-    metadata[b"geo"] = _geo_metadata_with_covering(source_meta[b"geo"])
-    patched_path = target_path.with_name(target_path.name + ".geo")
-    if patched_path.exists():
-        patched_path.unlink()
-    pq.write_table(table.replace_schema_metadata(metadata), patched_path, compression="zstd")
-    patched_path.replace(target_path)
-
-
-def _geo_metadata_with_covering(raw_geo: bytes) -> bytes:
-    geo_meta = json.loads(raw_geo.decode("utf-8"))
-    geom_col = geo_meta.get("primary_column", "geometry")
-    col_meta = geo_meta.get("columns", {}).get(geom_col, {})
-    col_meta["covering"] = {
-        "bbox": {
-            "xmin": ["bbox_xmin"],
-            "ymin": ["bbox_ymin"],
-            "xmax": ["bbox_xmax"],
-            "ymax": ["bbox_ymax"],
-        }
-    }
-    geo_meta.setdefault("columns", {})[geom_col] = col_meta
-    return json.dumps(geo_meta).encode("utf-8")
+    keys = np.zeros(len(bounds), dtype=np.uint64)
+    valid = np.zeros(len(bounds), dtype=bool)
+    method = ""
+    for _, rows in slices:
+        if not len(rows):
+            continue
+        layer_keys, layer_valid, method = hilbert_keys(bounds[rows])
+        keys[rows] = layer_keys
+        valid[rows] = layer_valid
+    return pa.array(keys, type=pa.uint64(), mask=~valid), method
 
 
-def _hilbert_from_bbox_table(table: pa.Table, *, hilbert_level: int) -> pa.Array:
-    from geopandas.tools.hilbert_curve import _continuous_to_discrete_coords, _encode
+def _sorted_by_layer_and_key(table: pa.Table, slices, keys: pa.Array) -> tuple[pa.Table, list]:
+    """Stable order: layer (first appearance), key (nulls last), input row."""
 
-    bbox_arrays = [
-        np.asarray(table[col].combine_chunks().to_numpy(zero_copy_only=False), dtype="float64")
-        for col in BBOX_COLUMNS
-    ]
-    bounds = np.column_stack(bbox_arrays)
-    valid = np.isfinite(bounds).all(axis=1)
-    values = np.full(len(table), np.iinfo("uint32").max, dtype="uint64")
-
-    if valid.any():
-        x, y = _continuous_to_discrete_coords(bounds[valid], hilbert_level, None)
-        values[valid] = _encode(hilbert_level, x, y).astype("uint64")
-
-    return pa.array(values, type=pa.uint64())
+    key_values = keys.to_numpy(zero_copy_only=False)
+    valid = keys.is_valid().to_numpy(zero_copy_only=False)
+    sort_keys = np.where(valid, np.nan_to_num(key_values).astype(np.uint64), np.iinfo(np.uint64).max)
+    parts, out_slices, offset = [], [], 0
+    for name, rows in slices:
+        ordered = rows[np.argsort(sort_keys[rows], kind="stable")]
+        parts.append(ordered)
+        out_slices.append((name, np.arange(offset, offset + len(rows))))
+        offset += len(rows)
+    order = np.concatenate(parts) if parts else np.arange(0)
+    table = table.append_column(HILBERT_COLUMN, keys)
+    if not np.array_equal(order, np.arange(len(order))):
+        table = table.take(pa.array(order))
+    return table, out_slices
 
 
 def _write_geoparquet_fallback(path: Path, *, hilbert_level: int) -> dict[str, Any]:
+    """Index a GeoParquet that has no bbox covering: add the ``bbox`` struct."""
+
+    from ras2cng.geoparquet import write_geoparquet
+
     import geopandas as gpd
 
     gdf = gpd.read_parquet(path)
-    gdf = gdf.copy()
-    bounds = gdf.geometry.bounds
-    gdf["bbox_xmin"] = bounds["minx"].values
-    gdf["bbox_ymin"] = bounds["miny"].values
-    gdf["bbox_xmax"] = bounds["maxx"].values
-    gdf["bbox_ymax"] = bounds["maxy"].values
-
-    gdf[HILBERT_COLUMN] = gdf.geometry.hilbert_distance(level=hilbert_level).astype("uint64")
-    sort_cols = ["layer", HILBERT_COLUMN] if "layer" in gdf.columns else [HILBERT_COLUMN]
-    gdf = gdf.sort_values(sort_cols, na_position="last").reset_index(drop=True)
-    gdf.to_parquet(path, compression="zstd", index=False)
-    _copy_geo_metadata(path, path)
-    return {
-        "path": path.name,
-        "rows": int(len(gdf)),
-        "hilbert_index": HILBERT_COLUMN,
-        "method": "geopandas",
-    }
+    gdf = gdf.drop(columns=[c for c in INDEX_COLUMNS if c in gdf.columns])
+    layer_column = "layer" if "layer" in gdf.columns else None
+    write_geoparquet(gdf, path, layer_column=layer_column, hilbert=True, engine="python")
+    result = postprocess_geoparquet(path, hilbert_level=hilbert_level)
+    result["method"] = "geopandas+" + result.get("method", "")
+    return result
 
 
-def postprocess_geoparquet(path: Path, *, hilbert_level: int = 16) -> dict[str, Any]:
-    """Add ``hilbert_index`` to a GeoParquet and sort rows by it."""
+def postprocess_geoparquet(
+    path: Path, *, hilbert_level: int = 16, written_indexed: bool = False
+) -> dict[str, Any]:
+    """Add ``hilbert_index`` to a GeoParquet and order rows by it within layers.
+
+    ``hilbert_level`` is kept for API compatibility; the key is always
+    ``ST_Hilbert``'s 16 bits per axis. ``written_indexed`` means the archive
+    writer already ordered the rows and stored the key (its manifest record
+    says ``hilbert_column``); the file is then left as written.
+    """
     path = Path(path)
-    columns = _parquet_columns(path)
-    if not set(BBOX_COLUMNS).issubset(columns):
+    schema = pq.read_schema(path)
+    form = bbox_covering(schema)
+    if form is None:
         return _write_geoparquet_fallback(path, hilbert_level=hilbert_level)
+    if written_indexed and HILBERT_COLUMN in schema.names:
+        metadata = pq.ParquetFile(path).metadata
+        return {
+            "path": path.name,
+            "rows": int(metadata.num_rows),
+            "row_groups": int(metadata.num_row_groups),
+            "hilbert_index": HILBERT_COLUMN,
+            "bbox_covering": form,
+            "method": "written_by_archive_writer",
+        }
 
-    source_meta = pq.read_schema(path).metadata or {}
+    source_meta = schema.metadata or {}
     table = pq.read_table(path)
     keep_columns = [col for col in table.column_names if col not in INDEX_COLUMNS]
     table = table.select(keep_columns)
-    table = table.append_column(HILBERT_COLUMN, _hilbert_from_bbox_table(table, hilbert_level=hilbert_level))
 
-    sort_keys = [("layer", "ascending"), (HILBERT_COLUMN, "ascending")] if "layer" in table.column_names else [(HILBERT_COLUMN, "ascending")]
-    order = pc.sort_indices(table, sort_keys=sort_keys)
-    table = pc.take(table, order)
+    if "layer" in table.column_names:
+        import pandas as pd
+
+        slices = _layer_slices(pd.DataFrame({"layer": table["layer"].to_pandas()}), "layer")
+    else:
+        slices = [(None, np.arange(table.num_rows))]
+    bounds = read_bounds(table)
+    keys, method = _hilbert_index_column(bounds, slices)
+    table, slices = _sorted_by_layer_and_key(table, slices, keys)
 
     metadata = dict(table.schema.metadata or {})
     if b"geo" in source_meta:
-        metadata[b"geo"] = _geo_metadata_with_covering(source_meta[b"geo"])
+        metadata[b"geo"] = geo_metadata_with_covering(source_meta[b"geo"], form)
     table = table.replace_schema_metadata(metadata)
+    row_groups = _write_python(table, slices, path, row_group_rows=ROW_GROUP_ROWS, compression_level=None)
 
-    tmp_path = path.with_name(path.name + ".tmp")
-    if tmp_path.exists():
-        tmp_path.unlink()
-    pq.write_table(table, tmp_path, compression="zstd")
-    tmp_path.replace(path)
-
-    metadata = pq.ParquetFile(path).metadata
     return {
         "path": path.name,
-        "rows": int(metadata.num_rows),
-        "row_groups": int(metadata.num_row_groups),
+        "rows": int(table.num_rows),
+        "row_groups": int(row_groups),
         "hilbert_index": HILBERT_COLUMN,
-        "method": "pyarrow_bbox",
+        "bbox_covering": form,
+        "method": f"st_hilbert_{method or 'none'}",
     }
 
 
@@ -354,6 +368,11 @@ def _archive_path(archive_dir: Path, rel_path: str | Path | None) -> Path | None
     return archive_dir / Path(rel_path)
 
 
+def _written_indexed(entry: Mapping[str, Any]) -> bool:
+    record = entry.get("geoparquet") or {}
+    return record.get("hilbert_column") == HILBERT_COLUMN
+
+
 def postprocess_archive(
     archive_dir: Path,
     *,
@@ -385,12 +404,18 @@ def postprocess_archive(
         if parquet_path is None or not parquet_path.exists():
             continue
         try:
-            result = postprocess_geoparquet(parquet_path, hilbert_level=hilbert_level)
+            result = postprocess_geoparquet(
+                parquet_path,
+                hilbert_level=hilbert_level,
+                written_indexed=_written_indexed(entry),
+            )
             entry["size_bytes"] = parquet_path.stat().st_size
             for layer in entry.get("layers", []):
                 layer["hilbert_index"] = HILBERT_COLUMN
                 layer["sort_order"] = "layer,hilbert_index"
-                layer["bbox_columns"] = list(BBOX_COLUMNS)
+                # SQL expressions for xmin, ymin, xmax, ymax in either form.
+                layer["bbox_columns"] = bbox_sql_columns(result.get("bbox_covering"))
+                layer["bbox_covering"] = result.get("bbox_covering", "")
             summary["geometry_files"].append(result)
         except Exception as exc:
             error = {"path": str(parquet_path), "error": str(exc)}
@@ -403,7 +428,11 @@ def postprocess_archive(
         geometry_mode = plan.get("geometry_mode", "polygon")
         if plan_parquet is not None and plan_parquet.exists() and geometry_mode != "none":
             try:
-                result = postprocess_geoparquet(plan_parquet, hilbert_level=hilbert_level)
+                result = postprocess_geoparquet(
+                    plan_parquet,
+                    hilbert_level=hilbert_level,
+                    written_indexed=_written_indexed(plan),
+                )
                 plan["size_bytes"] = plan_parquet.stat().st_size
                 for variable in plan.get("variables", []):
                     variable["hilbert_index"] = HILBERT_COLUMN

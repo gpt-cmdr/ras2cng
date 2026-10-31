@@ -17,7 +17,12 @@ def sync_to_postgres(
 ):
     """Sync a GeoParquet file to a PostGIS table."""
 
-    gdf = gpd.read_parquet(input_file)
+    from ras2cng.geoparquet import flatten_bbox_struct
+
+    # PostGIS has its own GiST index; the GeoParquet ``bbox`` struct of
+    # schema-2.7 archives is stored as the same four float columns that older
+    # archives carry, so the table shape does not depend on the archive version.
+    gdf = flatten_bbox_struct(gpd.read_parquet(input_file))
 
     engine = create_engine(postgres_uri)
 

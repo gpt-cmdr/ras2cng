@@ -114,6 +114,15 @@ def archive_command(
         "--crs",
         help="Validated project CRS override when it is absent from source HDF files",
     ),
+    archive_engine: Optional[str] = typer.Option(
+        None,
+        "--archive-engine",
+        help=(
+            "Archive path: auto (direct terrio path when installed, else Python), "
+            "native (direct, error instead of falling back), or python. "
+            "Default: RAS2CNG_ARCHIVE_ENGINE, else auto"
+        ),
+    ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -144,6 +153,7 @@ def archive_command(
         archive_project(
             project,
             output,
+            archive_engine=archive_engine,
             include_results=results,
             include_terrain=terrain,
             include_plan_geometry=plan_geometry,
@@ -382,25 +392,44 @@ def query_parquet(
 
 @app.command("pmtiles")
 def generate_pmtiles(
-    input_file: Path = typer.Argument(..., help="Input GeoParquet file or GeoTIFF"),
+    input_file: Path = typer.Argument(..., help="Input GeoParquet, GeoTIFF, or HEC-RAS mesh HDF"),
     output: Path = typer.Argument(..., help="Output PMTiles file path"),
     layer_name: str = typer.Option("layer", "--layer", "-l", help="Vector tile layer name"),
     min_zoom: Optional[int] = typer.Option(None, "--min-zoom", help="Minimum zoom"),
     max_zoom: Optional[int] = typer.Option(None, "--max-zoom", help="Maximum zoom"),
+    mesh: Optional[List[str]] = typer.Option(None, "--mesh", help="HDF mesh name; repeat to select multiple meshes"),
+    source_crs: Optional[str] = typer.Option(None, "--source-crs", help="HDF source CRS override"),
+    threads: Optional[int] = typer.Option(None, "--threads", min=1, help="Rust worker threads for HDF export"),
+    feature_ids: Optional[bool] = typer.Option(
+        None,
+        "--feature-ids/--no-feature-ids",
+        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
+    ),
 ):
-    """Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster)."""
+    """Generate PMTiles from GeoParquet, GeoTIFF, or HDF mesh cells."""
 
     from ras2cng.pmtiles import generate_pmtiles_from_input
 
     console.print(f"[bold blue]Generating PMTiles:[/bold blue] {input_file}")
     try:
-        generate_pmtiles_from_input(
-            input_file,
-            output,
-            layer_name=layer_name,
-            min_zoom=min_zoom,
-            max_zoom=max_zoom,
-        )
+        mesh_options = {}
+        if mesh is not None:
+            mesh_options["mesh_names"] = mesh
+        if source_crs is not None:
+            mesh_options["source_crs"] = source_crs
+        if threads is not None:
+            mesh_options["threads"] = threads
+        from ras2cng.vector_tiles import vector_tile_options
+
+        with vector_tile_options(feature_ids=feature_ids):
+            generate_pmtiles_from_input(
+                input_file,
+                output,
+                layer_name=layer_name,
+                min_zoom=min_zoom,
+                max_zoom=max_zoom,
+                **mesh_options,
+            )
         console.print(f"[green]OK[/green] PMTiles created: {output}")
     except Exception as e:
         console.print(f"[red]ERROR:[/red] {e}")
@@ -449,6 +478,11 @@ def maplibre_command(
     ),
     min_zoom: int = typer.Option(0, "--min-zoom", help="Tippecanoe minimum zoom"),
     max_zoom: int = typer.Option(17, "--max-zoom", help="Tippecanoe maximum zoom"),
+    feature_ids: Optional[bool] = typer.Option(
+        None,
+        "--feature-ids/--no-feature-ids",
+        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
+    ),
 ):
     """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
 
@@ -459,6 +493,7 @@ def maplibre_command(
     """
 
     from ras2cng.maplibre import package_maplibre_viewer
+    from ras2cng.vector_tiles import vector_tile_options
 
     mappings: dict[str, Path] = {}
     for item in geometry_hdf:
@@ -473,20 +508,21 @@ def maplibre_command(
         mappings[geom_id] = Path(raw_path.strip())
 
     try:
-        summary = package_maplibre_viewer(
-            archive_dir,
-            output,
-            geometry_hdfs=mappings,
-            title=title,
-            source_project=source_project,
-            crs=crs,
-            include_vector_results=vector_results,
-            primary_geometry=primary_geometry,
-            show_all_primary_geometry=all_primary_geometry,
-            scratch_dir=scratch_dir,
-            min_zoom=min_zoom,
-            max_zoom=max_zoom,
-        )
+        with vector_tile_options(feature_ids=feature_ids):
+            summary = package_maplibre_viewer(
+                archive_dir,
+                output,
+                geometry_hdfs=mappings,
+                title=title,
+                source_project=source_project,
+                crs=crs,
+                include_vector_results=vector_results,
+                primary_geometry=primary_geometry,
+                show_all_primary_geometry=all_primary_geometry,
+                scratch_dir=scratch_dir,
+                min_zoom=min_zoom,
+                max_zoom=max_zoom,
+            )
         console.print(
             "[green]OK[/green] MapLibre bundle created: "
             f"{summary.geometry_layer_count} geometry layer(s), "
@@ -529,8 +565,18 @@ def maplibre_terrain_command(
         help="Large local scratch directory for colorization and raster tile generation",
     ),
     overwrite: bool = typer.Option(False, "--overwrite", help="Replace an existing terrain layer"),
+    hillshade: bool = typer.Option(
+        True,
+        "--hillshade/--no-hillshade",
+        help="Shade the terrain display tiles with a terrio hillshade (needs terrio)",
+    ),
 ):
-    """Publish a RAS-styled, queryable terrain layer into an existing viewer."""
+    """Publish a RAS-styled, queryable terrain layer into an existing viewer.
+
+    Raster tiles are built in-process by terrio when it is installed (faster,
+    no GDAL/pmtiles CLIs), else by the GDAL CLI chain; RAS2CNG_RASTER_TILER
+    selects terrio, gdal or auto.
+    """
 
     from ras2cng.maplibre import package_maplibre_terrain
 
@@ -546,6 +592,7 @@ def maplibre_terrain_command(
             max_zoom=max_zoom,
             scratch_dir=scratch_dir,
             overwrite=overwrite,
+            hillshade=hillshade,
         )
         console.print(
             "[green]OK[/green] Terrain PMTiles created: "
@@ -637,28 +684,35 @@ def maplibre_stored_vector_command(
     max_zoom: int = typer.Option(17, "--max-zoom", help="Tippecanoe maximum zoom"),
     scratch_dir: Optional[Path] = typer.Option(None, "--scratch-dir", help="Large local scratch directory"),
     overwrite: bool = typer.Option(False, "--overwrite", help="Replace the layer and PMTiles derivative"),
+    feature_ids: Optional[bool] = typer.Option(
+        None,
+        "--feature-ids/--no-feature-ids",
+        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
+    ),
 ):
     """Publish a queryable RASMapper vector Stored Map under its source plan."""
 
     from ras2cng.maplibre import package_maplibre_stored_vector
+    from ras2cng.vector_tiles import vector_tile_options
 
     try:
-        summary = package_maplibre_stored_vector(
-            vector_path,
-            viewer_dir,
-            plan=plan,
-            map_type=map_type,
-            name=name,
-            profile=profile,
-            geometry=geometry,
-            layer_id=layer_id,
-            crs=crs,
-            visible=visible,
-            min_zoom=min_zoom,
-            max_zoom=max_zoom,
-            scratch_dir=scratch_dir,
-            overwrite=overwrite,
-        )
+        with vector_tile_options(feature_ids=feature_ids):
+            summary = package_maplibre_stored_vector(
+                vector_path,
+                viewer_dir,
+                plan=plan,
+                map_type=map_type,
+                name=name,
+                profile=profile,
+                geometry=geometry,
+                layer_id=layer_id,
+                crs=crs,
+                visible=visible,
+                min_zoom=min_zoom,
+                max_zoom=max_zoom,
+                scratch_dir=scratch_dir,
+                overwrite=overwrite,
+            )
         Console().print(
             f"[green]OK[/green] Stored Map vector PMTiles created: "
             f"{summary.pmtiles_path} ({summary.layer_id})"
@@ -1228,11 +1282,135 @@ def map_command(
         None, "--map-gdal-cache-mb", min=1,
         help="GDAL cache cap per map helper in MiB (default: 64)",
     ),
+    map_engine: Optional[str] = typer.Option(
+        None, "--engine",
+        help=(
+            "fast-map (default): Rust mapping for pure 2D models, qualified "
+            "against RAS Mapper stored maps; other products and out-of-scope "
+            "plans use RAS Mapper. rasmapper forces RAS Mapper for everything "
+            "(env: RAS2CNG_MAP_ENGINE)"
+        ),
+    ),
+    fast_map_terrain: Optional[Path] = typer.Option(
+        None, "--fast-map-terrain",
+        help="Float32 GeoTIFF of the registered terrain for fast-map (default: export once per run)",
+    ),
+    fast_map_threads: Optional[int] = typer.Option(
+        None, "--fast-map-threads", min=1, max=64,
+        help="fast-map Rust worker count (default: CPUs - 1)",
+    ),
+    fast_map_memory_mib: Optional[int] = typer.Option(
+        None, "--fast-map-memory-mib", min=64,
+        help="fast-map planned memory budget in MiB (default: 1/4 of RAM, 1-16 GiB)",
+    ),
+    fast_map_boundary: bool = typer.Option(
+        True, "--fast-map-boundary/--no-fast-map-boundary",
+        help=(
+            "With --engine fast-map, map --inundation-boundary in Rust "
+            "(much faster than RAS Mapper; GeoJSON, deterministic contours)"
+        ),
+    ),
+    fast_map_terrain_hdf: Optional[Path] = typer.Option(
+        None, "--fast-map-terrain-hdf",
+        help="Original terrain HDF for Rust boundaries and source-terrain mapping (default: the plan's terrain)",
+    ),
+    fast_map_source_terrain: bool = typer.Option(
+        True, "--fast-map-source-terrain/--no-fast-map-source-terrain",
+        help=(
+            "With --engine fast-map, map on the terrain's priority-1 source TIFF "
+            "and skip the RAS Mapper terrain export when the engine accepts it"
+        ),
+    ),
+    fast_map_whole_simulation: bool = typer.Option(
+        True, "--fast-map-whole-simulation/--no-fast-map-whole-simulation",
+        help=(
+            "With --engine fast-map, map --arrival-time and --percent-inundated in Rust "
+            "(threshold --arrival-depth), and --duration when the engine has RAS Mapper's "
+            "recession rule and the plan has no storage areas"
+        ),
+    ),
+    fast_map_velocity: Optional[bool] = typer.Option(
+        None, "--fast-map-velocity/--no-fast-map-velocity",
+        help=(
+            "With --engine fast-map, Max velocity in Rust. Default: on in plain sloping and "
+            "horizontal mode when the engine has the qualified velocity rules. "
+            "--fast-map-velocity also maps slopingPretty (mask follows the slopingPretty "
+            "depth) and plain sloping on older engines; --no-fast-map-velocity leaves it "
+            "to RAS Mapper"
+        ),
+    ),
+    fast_map_derived: bool = typer.Option(
+        True, "--fast-map-derived/--no-fast-map-derived",
+        help=(
+            "With --engine fast-map, map Max --froude, --dv and --dv-sq in Rust (one "
+            "time-series pass; plain sloping and horizontal)"
+        ),
+    ),
+    fast_map_effective_terrain: bool = typer.Option(
+        True, "--fast-map-effective-terrain/--no-fast-map-effective-terrain",
+        help=(
+            "With --engine fast-map, try RAS Mapper's effective terrain rebuilt in Rust "
+            "before exporting the terrain through HEC-RAS (unmodified terrains only)"
+        ),
+    ),
+    fast_map_storage_areas: Optional[bool] = typer.Option(
+        None, "--fast-map-storage-areas/--no-fast-map-storage-areas",
+        help=(
+            "With --engine fast-map, map plans with storage areas in Rust (level pools; "
+            "WSE/Depth, arrival time, percent inundated). Opt-in: slower than RAS Mapper "
+            "today, so by default such plans go to RAS Mapper. Default: "
+            "RAS2CNG_FAST_MAP_STORAGE_AREAS, else off"
+        ),
+    ),
+    fast_map_terrain_crs_hash: Optional[str] = typer.Option(
+        None, "--fast-map-terrain-crs-hash",
+        help=(
+            "For Rust inundation boundaries: the engine's crs_wkt_fnv1a64 for the boundary "
+            "terrain TIFF, when the engine cannot name its EPSG code (e.g. Davis). Get it "
+            "with `ras2fim-batch terrain-info <terrain.tif>` (the refusal message prints "
+            "it), check the CRS, then pass it. Never guessed"
+        ),
+    ),
+    fast_map_invalid_cells: Optional[str] = typer.Option(
+        None, "--fast-map-invalid-cells",
+        help=(
+            "With --engine fast-map, pixel ownership for 2D cells whose faces do not form "
+            "a valid polygon: repair (engine default), hull, omit, or raise (refuse, so "
+            "RAS Mapper maps the plan). Recorded in the fast-map manifests"
+        ),
+    ),
+    fast_map_writer: Optional[str] = typer.Option(
+        None, "--fast-map-writer",
+        help=(
+            "With --engine fast-map, sloping GeoTIFF delivery: auto (default; native terrio "
+            "LZW when supported and no velocity), native, or rasterio. Identical pixels "
+            "(env RAS2CNG_FAST_MAP_WRITER)"
+        ),
+    ),
+    fast_map_fallback: bool = typer.Option(
+        True, "--fast-map-fallback/--fast-map-strict",
+        help="Fall back to RAS Mapper when fast-map cannot map a plan, or fail",
+    ),
 ):
     """Generate result rasters (WSE, Depth, Velocity, etc.) via RasStoreMapHelper.
 
     Renders completed plan results to GeoTIFF rasters using the HEC-RAS
     mapping engine via RasStoreMapHelper.exe (bundled with ras-commander).
+
+    By default (--engine fast-map), pure 2D models (the FIM library scope, not every
+    model type) are mapped by the Rust ras-commander-fast-map engine: Max WSE
+    and Depth, plus arrival time and percent inundated, qualified against
+    RAS Mapper 7.0.1 stored maps (identical pixels on the named models). It
+    maps on the terrain's priority-1 source TIFF when it can, skipping the
+    terrain export. Models with 1D reaches, cross sections or storage areas,
+    non-Max profiles and the other map types still go through RAS Mapper.
+    The render mode comes from the project's .rasmap (or --render-mode).
+    --engine rasmapper renders everything through RAS Mapper.
+
+    With --engine fast-map and --inundation-boundary, the boundary is also
+    mapped in Rust (recommended: RAS Mapper's boundary export is very slow).
+    It is a deterministic contour method whose polygons are close to, not
+    identical with, RAS Mapper's. Needs a single-source, unmodified terrain.
     """
 
     from ras2cng.mapping import generate_result_maps
@@ -1274,6 +1452,22 @@ def map_command(
             skip_errors=skip_errors,
             keep_postprocessing=keep_postprocessing,
             performance=performance,
+            map_engine=map_engine,
+            fast_map_terrain=fast_map_terrain,
+            fast_map_threads=fast_map_threads,
+            fast_map_memory_mib=fast_map_memory_mib,
+            fast_map_boundary=fast_map_boundary,
+            fast_map_terrain_hdf=fast_map_terrain_hdf,
+            fast_map_source_terrain=fast_map_source_terrain,
+            fast_map_whole_simulation=fast_map_whole_simulation,
+            fast_map_velocity=fast_map_velocity,
+            fast_map_derived=fast_map_derived,
+            fast_map_effective_terrain=fast_map_effective_terrain,
+            fast_map_storage_areas=fast_map_storage_areas,
+            fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
+            fast_map_invalid_cells=fast_map_invalid_cells,
+            fast_map_writer=fast_map_writer,
+            fast_map_fallback=fast_map_fallback,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -1360,6 +1554,115 @@ def map_hdf_command(
         None, "--map-gdal-cache-mb", min=1,
         help="GDAL cache cap per map helper in MiB (default: 64)",
     ),
+    map_engine: Optional[str] = typer.Option(
+        None, "--engine",
+        help=(
+            "fast-map (default): Rust mapping for pure 2D models, qualified "
+            "against RAS Mapper stored maps; other products and out-of-scope "
+            "plans use RAS Mapper. rasmapper forces RAS Mapper for everything "
+            "(env: RAS2CNG_MAP_ENGINE)"
+        ),
+    ),
+    fast_map_terrain: Optional[Path] = typer.Option(
+        None, "--fast-map-terrain",
+        help="Float32 terrain GeoTIFF for fast-map (default: a single --terrain TIFF, else exported)",
+    ),
+    fast_map_threads: Optional[int] = typer.Option(
+        None, "--fast-map-threads", min=1, max=64,
+        help="fast-map Rust worker count (default: CPUs - 1)",
+    ),
+    fast_map_memory_mib: Optional[int] = typer.Option(
+        None, "--fast-map-memory-mib", min=64,
+        help="fast-map planned memory budget in MiB (default: 1/4 of RAM, 1-16 GiB)",
+    ),
+    fast_map_boundary: bool = typer.Option(
+        True, "--fast-map-boundary/--no-fast-map-boundary",
+        help=(
+            "With --engine fast-map, map --inundation-boundary in Rust "
+            "(much faster than RAS Mapper; GeoJSON, deterministic contours)"
+        ),
+    ),
+    fast_map_terrain_hdf: Optional[Path] = typer.Option(
+        None, "--fast-map-terrain-hdf",
+        help="Original terrain HDF for Rust boundaries and source-terrain mapping (default: the plan's terrain)",
+    ),
+    fast_map_source_terrain: bool = typer.Option(
+        True, "--fast-map-source-terrain/--no-fast-map-source-terrain",
+        help=(
+            "With --engine fast-map, map on the terrain's priority-1 source TIFF "
+            "and skip the RAS Mapper terrain export when the engine accepts it"
+        ),
+    ),
+    fast_map_whole_simulation: bool = typer.Option(
+        True, "--fast-map-whole-simulation/--no-fast-map-whole-simulation",
+        help=(
+            "With --engine fast-map, map --arrival-time and --percent-inundated in Rust "
+            "(threshold --arrival-depth), and --duration when the engine has RAS Mapper's "
+            "recession rule and the plan has no storage areas"
+        ),
+    ),
+    fast_map_velocity: Optional[bool] = typer.Option(
+        None, "--fast-map-velocity/--no-fast-map-velocity",
+        help=(
+            "With --engine fast-map, Max velocity in Rust. Default: on in plain sloping and "
+            "horizontal mode when the engine has the qualified velocity rules. "
+            "--fast-map-velocity also maps slopingPretty (mask follows the slopingPretty "
+            "depth) and plain sloping on older engines; --no-fast-map-velocity leaves it "
+            "to RAS Mapper"
+        ),
+    ),
+    fast_map_derived: bool = typer.Option(
+        True, "--fast-map-derived/--no-fast-map-derived",
+        help=(
+            "With --engine fast-map, map Max --froude, --dv and --dv-sq in Rust (one "
+            "time-series pass; plain sloping and horizontal)"
+        ),
+    ),
+    fast_map_effective_terrain: bool = typer.Option(
+        True, "--fast-map-effective-terrain/--no-fast-map-effective-terrain",
+        help=(
+            "With --engine fast-map, try RAS Mapper's effective terrain rebuilt in Rust "
+            "before exporting the terrain through HEC-RAS (unmodified terrains only)"
+        ),
+    ),
+    fast_map_storage_areas: Optional[bool] = typer.Option(
+        None, "--fast-map-storage-areas/--no-fast-map-storage-areas",
+        help=(
+            "With --engine fast-map, map plans with storage areas in Rust (level pools; "
+            "WSE/Depth, arrival time, percent inundated). Opt-in: slower than RAS Mapper "
+            "today, so by default such plans go to RAS Mapper. Default: "
+            "RAS2CNG_FAST_MAP_STORAGE_AREAS, else off"
+        ),
+    ),
+    fast_map_terrain_crs_hash: Optional[str] = typer.Option(
+        None, "--fast-map-terrain-crs-hash",
+        help=(
+            "For Rust inundation boundaries: the engine's crs_wkt_fnv1a64 for the boundary "
+            "terrain TIFF, when the engine cannot name its EPSG code (e.g. Davis). Get it "
+            "with `ras2fim-batch terrain-info <terrain.tif>` (the refusal message prints "
+            "it), check the CRS, then pass it. Never guessed"
+        ),
+    ),
+    fast_map_invalid_cells: Optional[str] = typer.Option(
+        None, "--fast-map-invalid-cells",
+        help=(
+            "With --engine fast-map, pixel ownership for 2D cells whose faces do not form "
+            "a valid polygon: repair (engine default), hull, omit, or raise (refuse, so "
+            "RAS Mapper maps the plan). Recorded in the fast-map manifests"
+        ),
+    ),
+    fast_map_writer: Optional[str] = typer.Option(
+        None, "--fast-map-writer",
+        help=(
+            "With --engine fast-map, sloping GeoTIFF delivery: auto (default; native terrio "
+            "LZW when supported and no velocity), native, or rasterio. Identical pixels "
+            "(env RAS2CNG_FAST_MAP_WRITER)"
+        ),
+    ),
+    fast_map_fallback: bool = typer.Option(
+        True, "--fast-map-fallback/--fast-map-strict",
+        help="Fall back to RAS Mapper when fast-map cannot map the plan, or fail",
+    ),
 ):
     """Generate result rasters from just a plan HDF + terrain (no project needed).
 
@@ -1442,6 +1745,25 @@ def map_hdf_command(
             skip_errors=False,
             keep_postprocessing=keep_postprocessing,
             performance=performance,
+            map_engine=map_engine,
+            # One raw TIFF with no modifications is the registered terrain.
+            fast_map_terrain=fast_map_terrain or (
+                terrain[0] if terrain and len(terrain) == 1 else None
+            ),
+            fast_map_threads=fast_map_threads,
+            fast_map_memory_mib=fast_map_memory_mib,
+            fast_map_boundary=fast_map_boundary,
+            fast_map_terrain_hdf=fast_map_terrain_hdf or terrain_hdf,
+            fast_map_source_terrain=fast_map_source_terrain,
+            fast_map_whole_simulation=fast_map_whole_simulation,
+            fast_map_velocity=fast_map_velocity,
+            fast_map_derived=fast_map_derived,
+            fast_map_effective_terrain=fast_map_effective_terrain,
+            fast_map_storage_areas=fast_map_storage_areas,
+            fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
+            fast_map_invalid_cells=fast_map_invalid_cells,
+            fast_map_writer=fast_map_writer,
+            fast_map_fallback=fast_map_fallback,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -1520,13 +1842,25 @@ def mannings_command(
         ..., help="Output GeoTIFF path"
     ),
     geometry: Optional[str] = typer.Option(
-        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: first"
+        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: g01"
+    ),
+    method: str = typer.Option(
+        "auto", "--method",
+        help=(
+            "auto: RAS Mapper's Final n Values in Rust (pixel-identical to RAS Mapper "
+            "7.0.1, no HEC-RAS), falling back with a warning to the Python estimate for "
+            "geometries the engine refuses (e.g. 1D); rasmapper: no fallback; estimate: "
+            "the pre-0.13 Python estimate"
+        ),
     ),
 ):
-    """Export final Manning's n raster (base landcover + calibration overrides).
+    """Export the final Manning's n raster (RAS Mapper's "Final n Values").
 
-    Produces a full-resolution GeoTIFF of Manning's n values matching the
-    land cover raster grid, with all calibration region overrides applied.
+    By default written in Rust and pixel-identical to RAS Mapper 7.0.1's
+    Export Raster of the geometry's Final n Values layer (RAS Mapper's grid:
+    geometry extent, land-cover cell size). Geometries the engine refuses fall
+    back to the older Python estimate with a warning. The method used is
+    recorded in the GeoTIFF tag ``ras2cng_mannings_method``.
     """
 
     from ras2cng.terrain import export_mannings_raster
@@ -1536,6 +1870,7 @@ def mannings_command(
             project,
             output,
             geometry=geometry,
+            method=method,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")

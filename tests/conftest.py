@@ -338,3 +338,57 @@ def _file_id(p: Path) -> str:
     label = _source_label(p)
     subdir = _output_subdir(p).split("/", 1)[-1] if "/" in _output_subdir(p) else p.parent.name
     return f"{label}/{subdir}/{p.name}"
+
+
+# ---------------------------------------------------------------------------
+# Raster tiler backend
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _gdal_raster_tiler_by_default(monkeypatch):
+    """Existing raster tests mock the GDAL CLI chain, so pin that backend.
+
+    With terrio installed, ``RAS2CNG_RASTER_TILER=auto`` would choose terrio.
+    Tests that exercise terrio set the variable themselves.
+    """
+    monkeypatch.setenv("RAS2CNG_RASTER_TILER", "gdal")
+
+
+@pytest.fixture(autouse=True)
+def _python_archive_path_by_default(monkeypatch):
+    """The archive tests mock ras-commander, so pin the Python path.
+
+    With a terrio that has the direct path, ``auto`` would hand the engine the
+    mocks' empty HDF files. Tests of the direct path pass ``archive_engine``.
+    """
+    monkeypatch.setenv("RAS2CNG_ARCHIVE_ENGINE", "python")
+
+
+@pytest.fixture(autouse=True)
+def _rasmapper_map_engine_by_default(monkeypatch):
+    """The older mapping tests mock RAS Mapper only, so pin that engine.
+
+    fast-map is the default ``ras2cng map`` engine; without this pin those
+    tests would run the fast-map preflight against mocked projects. Tests that
+    exercise the default set or delete ``RAS2CNG_MAP_ENGINE`` themselves.
+    """
+    monkeypatch.setenv("RAS2CNG_MAP_ENGINE", "rasmapper")
+
+
+@pytest.fixture(autouse=True)
+def _no_installed_fast_map_engine_capabilities(monkeypatch):
+    """Keep the mapping tests independent of the installed fast-map engine.
+
+    Velocity, derived products, duration, storage areas and the effective
+    terrain are routed from the engine's method record (and RasFim
+    capability calls). The routing tests mock RasFim, so read an engine that
+    advertises none of them; tests of those paths patch the capability
+    functions themselves.
+    """
+    from ras2cng import fast_map
+
+    # Storage-area mapping is opt-in; the host's env var must not leak in.
+    monkeypatch.delenv(fast_map.STORAGE_AREAS_ENV, raising=False)
+    monkeypatch.setattr(fast_map, "engine_method", lambda kind: {})
+    monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: False)
+    monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: False)

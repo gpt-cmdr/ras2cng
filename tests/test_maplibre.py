@@ -1051,6 +1051,9 @@ def test_auto_backend_prefers_tippecanoe_then_freestiler(monkeypatch) -> None:
     from ras2cng import vector_tiles
 
     monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "auto")
+    # An older freestiler build (no Arrow input): test_vector_tiles_arrow.py
+    # covers the build that auto prefers over tippecanoe.
+    monkeypatch.setattr(vector_tiles, "freestiler_preferred", lambda: False)
     monkeypatch.setattr(vector_tiles.shutil, "which", lambda command: f"/usr/bin/{command}")
     assert vector_tiles.vector_tiler_backend() == "tippecanoe"
 
@@ -1091,7 +1094,10 @@ def test_freestiler_backend_tiles_every_source_layer(monkeypatch, tmp_path: Path
 
     assert received["zooms"] == (13, 17)
     assert list(received["layers"]) == ["cells", "bc"]
-    cells = received["layers"]["cells"]
+    # Layers are handed over as loaders so a multi-layer tileset holds one
+    # layer in memory at a time.
+    assert all(callable(source) for source in received["layers"].values())
+    cells = received["layers"]["cells"]()
     assert cells.crs.to_epsg() == 4326 and int(cells["cell_id"].iloc[0]) == 7
 
 

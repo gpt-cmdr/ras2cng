@@ -14,8 +14,19 @@ from pathlib import Path
 from typing import Optional
 
 
-# Schema version — increment when manifest structure changes
-SCHEMA_VERSION = "2.6"
+# Schema version — increment when manifest structure changes.
+# 2.7: archive GeoParquet uses the GeoParquet 1.1 ``bbox`` struct covering
+#      (``bbox.xmin`` ...) instead of flat ``bbox_xmin`` ... columns, row groups
+#      end at layer boundaries, and geometry/plan entries carry a ``geoparquet``
+#      writer record (engine, fallback reason, Hilbert method, covering form).
+# 3.0: geometry and plan files may be written by the direct path
+#      (``ras2cng.archive_direct``). Entries carry an ``archive`` record saying
+#      which path wrote the file and why, and direct files have no all-null union
+#      columns from other layers. Every 2.7 reader keeps working: the layers,
+#      their columns and the ``bbox``/``hilbert_index`` layout are the same.
+SCHEMA_VERSION = "3.0"
+# What an archive written only by the Python path still says (no ``archive`` records).
+PYTHON_PATH_SCHEMA_VERSION = "2.7"
 
 
 @dataclass
@@ -41,6 +52,8 @@ class ManifestGeomEntry:
     plans_using: list[str] = field(default_factory=list)
     layers: list[dict] = field(default_factory=list)
     size_bytes: int = 0
+    geoparquet: dict = field(default_factory=dict)  # writer record (schema 2.7+)
+    archive: dict = field(default_factory=dict)  # direct-path record (schema 3.0+)
 
     def add_layer(self, layer: ManifestLayer) -> None:
         self.layers.append(asdict(layer))
@@ -80,6 +93,8 @@ class ManifestPlanEntry:
     size_bytes: int = 0
     layout: str = "plan"                    # plan or variable
     geometry_mode: str = "polygon"          # polygon, point, or none
+    geoparquet: dict = field(default_factory=dict)  # writer record (schema 2.7+)
+    archive: dict = field(default_factory=dict)  # direct-path record (schema 3.0+)
 
     def add_variable(self, var: ManifestResultVariable) -> None:
         self.variables.append(asdict(var))
@@ -128,6 +143,14 @@ class ManifestMapEntry:
     vectors: list[dict] = field(default_factory=list)
     min_depth: float = 0.0
     reprojected_wgs84: bool = False
+
+
+def _entry_dict(entry) -> dict:
+    """An entry as stored; a schema 2.7 archive has no ``archive`` key at all."""
+    record = asdict(entry)
+    if not record.get("archive"):
+        record.pop("archive", None)
+    return record
 
 
 @dataclass
@@ -179,10 +202,10 @@ class Manifest:
         )
 
     def add_geom_entry(self, entry: ManifestGeomEntry) -> None:
-        self.geometry.append(asdict(entry))
+        self.geometry.append(_entry_dict(entry))
 
     def add_plan_entry(self, entry: ManifestPlanEntry) -> None:
-        self.results.append(asdict(entry))
+        self.results.append(_entry_dict(entry))
 
     def add_terrain_entry(self, entry: ManifestTerrainEntry) -> None:
         self.terrain.append(asdict(entry))
@@ -248,7 +271,7 @@ class Manifest:
             maps=data.get("maps", []),
             postprocessing=data.get("postprocessing", {}),
             errors=data.get("errors", []),
-            schema_version=data.get("schema_version", SCHEMA_VERSION),
+            schema_version=data.get("schema_version", PYTHON_PATH_SCHEMA_VERSION),
         )
 
     # -----------------------------------------------------------------------

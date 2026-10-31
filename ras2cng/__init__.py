@@ -139,7 +139,7 @@ from ras2cng.terrain import (
     TerrainResolutionDecision,
 )
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 _OPTIONAL_EXPORTS = {
     "DuckSession": ("ras2cng.duckdb_session", "DuckSession", "duckdb"),

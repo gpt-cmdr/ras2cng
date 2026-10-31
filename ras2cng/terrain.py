@@ -822,6 +822,64 @@ def _stem_matches_name(stem: str, name: str) -> bool:
     return False
 
 
+def terrain_modifications(
+    terrain_hdf: Path, rasmap_path: Optional[Path] = None
+) -> list[str]:
+    """Names of the terrain modifications a terrain carries, or ``[]``.
+
+    Reads the terrain HDF's ``/Modifications`` group and, when given, the
+    ``ElevationModificationGroup`` layers the ``.rasmap`` registers under
+    this terrain. The HDF is what counts: RAS Mapper's export applies every
+    modification stored there, ticked in the ``.rasmap`` or not (T14). A
+    ``/Modifications`` entry that is not a plain group (a link) or cannot be
+    read is reported as a modification, so an unreadable terrain is never
+    treated as unmodified.
+
+    ras2cng uses Rust terrain operations only when this is empty; any
+    modified terrain goes to RAS Mapper (see ``fast_map.TerrainResolver``).
+    """
+    import xml.etree.ElementTree as ET
+
+    import h5py
+
+    terrain_hdf = Path(terrain_hdf)
+    found: list[str] = []
+    with h5py.File(terrain_hdf, "r") as handle:
+        link = handle.get("Modifications", getlink=True)
+        if link is not None:
+            if not isinstance(link, h5py.HardLink):
+                found.append("hdf:/Modifications (link)")
+            else:
+                try:
+                    group = handle["Modifications"]
+                    if isinstance(group, h5py.Group):
+                        found.extend(f"hdf:{name}" for name in group.keys())
+                    else:
+                        found.append("hdf:/Modifications (not a group)")
+                except (KeyError, OSError, RuntimeError):
+                    found.append("hdf:/Modifications (unreadable)")
+    if rasmap_path is not None and Path(rasmap_path).is_file():
+        rasmap = Path(rasmap_path)
+        try:
+            root = ET.parse(rasmap).getroot()
+        except ET.ParseError:
+            return found
+        target = terrain_hdf.resolve()
+        for layer in root.iter("Layer"):
+            filename = layer.get("Filename")
+            if layer.get("Type") != "TerrainLayer" or not filename:
+                continue
+            path = (rasmap.parent / filename.replace("\\", "/")).resolve()
+            if path != target:
+                continue
+            for group_layer in layer.findall("Layer"):
+                if group_layer.get("Type") == "ElevationModificationGroup":
+                    found.extend(
+                        f"rasmap:{child.get('Name')}" for child in group_layer.findall("Layer")
+                    )
+    return found
+
+
 def _discover_tifs_for_hdf(hdf_path: Optional[Path]) -> list[Path]:
     """Find TIFF files associated with a terrain HDF file.
 
@@ -1121,6 +1179,7 @@ def export_modified_terrain(
     terrain_name: Optional[str] = None,
     downsample_factor: int = 1,
     overwrite: bool = False,
+    hecras_version: Optional[str] = None,
 ) -> Path:
     """Export a registered terrain with modifications applied as one GeoTIFF.
 
@@ -1141,6 +1200,8 @@ def export_modified_terrain(
             the project registers exactly one terrain.
         downsample_factor: Exact source-derived factor: 1, 2, 4, or 8.
         overwrite: Replace an existing output and receipt when true.
+        hecras_version: Installed HEC-RAS version to export with (e.g.
+            "7.0.1"). None lets ras-commander choose from the project.
 
     Returns:
         Path to the output GeoTIFF
@@ -1170,10 +1231,13 @@ def export_modified_terrain(
             "RasTerrain.export_rasmapper_terrain()."
         )
 
+    # The project object's version must agree with the export runtime, or
+    # ras-commander uses (and rejects) the version stored in the project.
     ras = init_ras_project(
         prj_file,
         ras_object="new",
         load_results_summary=False,
+        **({"ras_version": hecras_version} if hecras_version else {}),
     )
 
     console.print(f"\n[bold cyan]ras2cng terrain-mod[/bold cyan] -> {output_tif}")
@@ -1183,6 +1247,7 @@ def export_modified_terrain(
     console.print("  Exporting through native RAS Mapper...")
 
     result = export_native(
+        **({"hecras_version": hecras_version} if hecras_version else {}),
         ras_project_path=prj_file,
         output_tif=Path(output_tif),
         terrain_name=terrain_name,
@@ -1205,22 +1270,43 @@ def export_modified_terrain(
     return committed_output
 
 
+MANNINGS_METHODS = ("auto", "rasmapper", "estimate")
+#: Method names recorded in the GeoTIFF tag ``ras2cng_mannings_method``.
+MANNINGS_RASMAPPER = "rasmapper-final-n"
+MANNINGS_ESTIMATE = "estimate"
+
+
 def export_mannings_raster(
     project_path: Path,
     output_tif: Path,
     *,
     geometry: Optional[str] = None,
+    method: str = "auto",
 ) -> Path:
-    """Export final Manning's n raster (base + calibration overrides) as GeoTIFF.
+    """Export the final Manning's n raster of a geometry as GeoTIFF.
 
-    Combines base land cover raster with calibration table and region polygon
-    overrides to produce the full-resolution Final Manning's N raster. Replicates
-    what RASMapper's FinalNValueLayer computes internally.
+    ``method="auto"`` (default) writes RAS Mapper's "Final n Values" raster in
+    Rust (``HdfLandCover.export_final_mannings_raster``: ras-commander 0.113,
+    fast-hdf 0.3), with no HEC-RAS: 0 differing pixels against RAS Mapper
+    7.0.1's *Export Raster* on Bald Eagle g01/g09/g11/g13 and Weise_2D, about
+    2 s against 45-49 s. Its grid is RAS Mapper's (geometry extent, land-cover
+    cell size). Geometries the engine refuses (1D elements, pipe networks,
+    virtual land-cover layers, multi-part polygons) fall back with a warning to
+    the older Python estimate (``HdfLandCover.estimate_final_mannings_raster``),
+    which differs from RAS Mapper on 44-51% of common pixels and uses another
+    grid. ``"rasmapper"`` raises instead of falling back; ``"estimate"`` always
+    uses the estimate (the pre-0.13 behaviour).
+
+    The method that produced the file is printed and written to the GeoTIFF
+    tags ``ras2cng_mannings_method`` (:data:`MANNINGS_RASMAPPER` or
+    :data:`MANNINGS_ESTIMATE`) and, after a fallback,
+    ``ras2cng_mannings_fallback_reason``.
 
     Args:
         project_path: Path to .prj file or project directory
         output_tif: Output GeoTIFF path
-        geometry: Geometry number (e.g. "g01"). None = first geometry
+        geometry: Geometry number (e.g. "g01"). None = g01
+        method: ``"auto"``, ``"rasmapper"`` or ``"estimate"``
 
     Returns:
         Path to the output GeoTIFF
@@ -1228,6 +1314,12 @@ def export_mannings_raster(
     from ras_commander import init_ras_project
     from ras_commander.hdf import HdfLandCover
     from ras2cng.project import resolve_project_path
+
+    method = str(method).strip().lower()
+    if method not in MANNINGS_METHODS:
+        raise ValueError(
+            f"Manning's n method must be one of {', '.join(MANNINGS_METHODS)}; got {method!r}"
+        )
 
     project_dir, prj_file = resolve_project_path(Path(project_path))
     ras = init_ras_project(project_dir, ras_object="new", load_results_summary=False)
@@ -1248,23 +1340,111 @@ def export_mannings_raster(
     output_tif = Path(output_tif)
     output_tif.parent.mkdir(parents=True, exist_ok=True)
 
-    console.print("  Computing final Manning's n raster...")
-    result = HdfLandCover.compute_final_mannings_raster(
-        hdf_path=geom_hdf,
-        output_tif_path=str(output_tif),
-        ras_object=ras,
-    )
+    fallback_reason: Optional[str] = None
+    used = MANNINGS_ESTIMATE
+    if method in ("auto", "rasmapper"):
+        try:
+            _export_rasmapper_mannings(HdfLandCover, geom_hdf, output_tif, ras)
+            used = MANNINGS_RASMAPPER
+        except _ManningsUnavailable as exc:
+            if method == "rasmapper":
+                raise RuntimeError(f"RAS Mapper Final n Values raster refused: {exc}") from exc
+            fallback_reason = str(exc)
+            console.print(
+                f"  [yellow]WARNING:[/yellow] the Rust Final n Values raster is unavailable "
+                f"({exc}); falling back to the Python estimate, which differs from RAS "
+                "Mapper's Final n Values (different grid and values)"
+            )
 
-    if result is None:
-        raise RuntimeError(
-            "Manning's n raster computation failed. "
-            "Check that the geometry HDF has land cover associations configured."
+    if used == MANNINGS_ESTIMATE:
+        console.print("  Computing Manning's n estimate (not RAS Mapper's Final n Values)...")
+        estimate = getattr(HdfLandCover, "estimate_final_mannings_raster", None)
+        if estimate is None:  # ras-commander before the rename
+            estimate = HdfLandCover.compute_final_mannings_raster
+        result = estimate(
+            hdf_path=geom_hdf,
+            output_tif_path=str(output_tif),
+            ras_object=ras,
         )
+        if result is None:
+            raise RuntimeError(
+                "Manning's n raster computation failed. "
+                "Check that the geometry HDF has land cover associations configured."
+            )
 
-    console.print(f"  Shape: {result.shape[1]}x{result.shape[0]}")
-    console.print(f"  Range: {result[result > 0].min():.4f} to {result.max():.4f}")
+    tags = {"ras2cng_mannings_method": used}
+    if fallback_reason:
+        tags["ras2cng_mannings_fallback_reason"] = fallback_reason[:1000]
+    _tag_geotiff(output_tif, tags)
+    _print_mannings_summary(output_tif)
+    label = (
+        "RAS Mapper Final n Values (Rust)" if used == MANNINGS_RASMAPPER
+        else "Python estimate"
+    )
+    console.print(f"  Method   : {label}")
     console.print(f"[green]OK[/green] Manning's n raster: {output_tif}")
     return output_tif
+
+
+class _ManningsUnavailable(Exception):
+    """The Rust Final n Values raster cannot be produced for this geometry."""
+
+
+def _export_rasmapper_mannings(HdfLandCover, geom_hdf: Path, output_tif: Path, ras) -> None:
+    """Write RAS Mapper's Final n Values raster; raise _ManningsUnavailable on refusal."""
+    available = getattr(HdfLandCover, "rasmapper_final_mannings_available", None)
+    export = getattr(HdfLandCover, "export_final_mannings_raster", None)
+    if export is None or available is None:
+        raise _ManningsUnavailable(
+            "ras-commander has no HdfLandCover.export_final_mannings_raster (needs 0.113.0+)"
+        )
+    if not available():
+        raise _ManningsUnavailable(
+            "ras-commander-fast-hdf with FinalManningsModel is not installed (needs 0.3.0+)"
+        )
+    refusals: tuple[type[BaseException], ...] = ()
+    try:
+        import ras_commander_fast_hdf as fh
+
+        refusals = tuple(
+            getattr(fh, name) for name in ("UnsupportedError", "TopologyError")
+            if isinstance(getattr(fh, name, None), type)
+        )
+    except ImportError:
+        pass
+    console.print("  Computing RAS Mapper Final n Values raster (Rust)...")
+    try:
+        export(geom_hdf, output_tif, ras_object=ras)
+    except refusals as exc:
+        raise _ManningsUnavailable(f"{type(exc).__name__}: {exc}") from exc
+
+
+def _tag_geotiff(path: Path, tags: dict[str, str]) -> None:
+    """Add default-domain tags to an existing GeoTIFF (method provenance)."""
+    import rasterio
+
+    with rasterio.open(path, "r+") as dst:
+        dst.update_tags(**tags)
+
+
+def _print_mannings_summary(path: Path) -> None:
+    import numpy as np
+    import rasterio
+
+    low, high = math.inf, -math.inf
+    with rasterio.open(path) as src:
+        console.print(f"  Shape    : {src.width}x{src.height}")
+        nodata = src.nodata
+        for _, window in src.block_windows(1):  # block-wise: rasters reach ~100 M px
+            block = src.read(1, window=window)
+            keep = np.isfinite(block) & (block > 0)
+            if nodata is not None:
+                keep &= block != nodata
+            if keep.any():
+                values = block[keep]
+                low, high = min(low, float(values.min())), max(high, float(values.max()))
+    if low <= high:
+        console.print(f"  Range    : {low:.4f} to {high:.4f}")
 
 
 def _downsample_tif(

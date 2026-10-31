@@ -92,8 +92,10 @@ def test_postprocess_archive_indexes_geometryless_result_tables(tmp_path: Path):
     assert summary["error_count"] == 0
     indexed_geom = gpd.read_parquet(geom_path)
     assert HILBERT_COLUMN in indexed_geom.columns
-    geom_columns = set(pq.read_schema(geom_path).names)
-    assert {"bbox_xmin", "bbox_ymin", "bbox_xmax", "bbox_ymax"}.issubset(geom_columns)
+    # A file without a covering gets the GeoParquet 1.1 bbox struct.
+    geom_schema = pq.read_schema(geom_path)
+    assert geom_schema.field("bbox").type.names == ["xmin", "ymin", "xmax", "ymax"]
+    assert not {"bbox_xmin", "bbox_ymin", "bbox_xmax", "bbox_ymax"} & set(geom_schema.names)
 
     indexed_result = pd.read_parquet(result_path)
     assert HILBERT_COLUMN in indexed_result.columns

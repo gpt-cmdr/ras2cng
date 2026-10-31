@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, Union
 
 import geopandas as gpd
 import numpy as np
@@ -34,7 +34,7 @@ from ras2cng.cog import (
     describe_crs,
     overview_factors,
 )
-from ras2cng import vector_tiles
+from ras2cng import raster_tiles, vector_tiles
 from ras2cng.pmtiles import _require_cli
 from ras2cng.viewer_manifest import apply_manifest_v2
 
@@ -43,6 +43,9 @@ LOGGER = logging.getLogger(__name__)
 
 _INTERNAL_COLUMNS = {
     "layer",
+    # GeoParquet bbox covering: the 1.1 struct (manifest schema 2.7+) and the
+    # flat columns of older archives.
+    "bbox",
     "bbox_xmin",
     "bbox_ymin",
     "bbox_xmax",
@@ -503,6 +506,102 @@ def _stream_dense_layer_ndgeojson(
     return count, sorted(geometry_types), _merge_bounds(bounds)
 
 
+DeliverySource = Union[Path, vector_tiles.ArrowLayer]
+
+
+def _write_delivery_source(
+    gdf: gpd.GeoDataFrame, path: Path, arrow: bool
+) -> tuple[DeliverySource, int, list[str], list[float]]:
+    """Write one WGS84 delivery layer for the vector tiler.
+
+    NDGeoJSON for tippecanoe and older freestiler builds; with freestiler Arrow
+    input, an Arrow IPC spill file beside it (``.arrow``) that is read back
+    only when the tiler reaches the layer.
+    """
+
+    if not arrow:
+        count, geometry_types, bounds = _write_ndgeojson(gdf, path)
+        return path, count, geometry_types, bounds
+    cleaned = _drop_internal_columns(gdf)
+    layer = vector_tiles.write_arrow_spill(
+        vector_tiles.frame_table(cleaned), path.with_suffix(".arrow")
+    )
+    return layer, len(cleaned), sorted(set(cleaned.geom_type.dropna())), _bounds(cleaned)
+
+
+def _dense_layer_arrow(
+    source: Path,
+    filter_value: str,
+    kind: str,
+    fallback_crs: str | None,
+    batch_size: int = 20_000,
+    pixel_sizes: list[np.ndarray] | None = None,
+) -> tuple[vector_tiles.ArrowLayer, int, list[str], list[float]]:
+    """A dense archive layer for freestiler's Arrow input, in the model CRS.
+
+    The layer is read from the archive GeoParquet with column projection and a
+    ``layer`` filter only when the tiler reaches it, and freestiler reprojects
+    it in Rust. This pass computes the viewer metadata the NDGeoJSON writer
+    produced (count, geometry types, WGS84 bounds, the feature-size sample)
+    from the geometry alone, with the same batches, null/empty filter and
+    pyproj transformation as :func:`_stream_dense_layer_ndgeojson`, so the
+    manifest and the detail floor are unchanged.
+    """
+
+    from pyproj import CRS, Transformer
+
+    parquet = pq.ParquetFile(source)
+    schema = parquet.schema_arrow
+    try:
+        geometry_column, crs = vector_tiles.geoparquet_crs(schema, fallback_crs)
+    except ValueError:
+        raise ValueError(f"GeoParquet layer has no CRS and cannot be published: {source}") from None
+    available_columns = set(schema.names)
+    attributes = [
+        column
+        for column in _DELIVERY_ATTRIBUTE_COLUMNS.get(kind, ())
+        if column in available_columns
+    ]
+    transformer = Transformer.from_crs(CRS.from_user_input(crs), "EPSG:4326", always_xy=True)
+
+    def to_lonlat(coords: np.ndarray) -> np.ndarray:
+        x, y = transformer.transform(coords[:, 0], coords[:, 1])
+        return np.column_stack([x, y])
+
+    count = 0
+    geometry_types: set[str] = set()
+    bounds: list[Sequence[float]] = []
+    for batch in parquet.iter_batches(batch_size=batch_size, columns=[geometry_column, "layer"]):
+        mask = pc.equal(batch.column(batch.schema.get_field_index("layer")), filter_value)
+        wkb = pc.filter(batch.column(batch.schema.get_field_index(geometry_column)), mask)
+        if not len(wkb):
+            continue
+        geometries = shapely.from_wkb(wkb.to_numpy(zero_copy_only=False))
+        geometries = geometries[~shapely.is_missing(geometries) & ~shapely.is_empty(geometries)]
+        if not len(geometries):
+            continue
+        geometries = shapely.force_2d(geometries)
+        count += len(geometries)
+        geometry_types.update(vector_tiles.geometry_type_names(geometries))
+        xy = shapely.get_coordinates(geometries)
+        x, y = transformer.transform(xy[:, 0], xy[:, 1])
+        bounds.append([float(np.min(x)), float(np.min(y)), float(np.max(x)), float(np.max(y))])
+        if pixel_sizes is not None:
+            pixel_sizes.append(_feature_pixel_sizes(shapely.transform(geometries[::10], to_lonlat)))
+
+    if not count:
+        raise ValueError(f"No {kind} features were written from {source}")
+
+    columns = [geometry_column, *attributes]
+
+    def load() -> pa.Table:
+        table = pq.read_table(source, columns=columns, filters=[("layer", "==", filter_value)])
+        return vector_tiles.delivery_table(table, geometry_column)
+
+    layer = vector_tiles.ArrowLayer(load=load, crs=crs, geometry_column=geometry_column)
+    return layer, count, sorted(geometry_types), _merge_bounds(bounds)
+
+
 # Lowest zoom of a dense (mesh cell / face) tileset.  Below it, complete mesh
 # tiles are multi-megabyte (measured 1.2-1.6 MB at z12 and 4-9 MB at z10 for
 # 87k- and 1M-cell meshes, versus 0.6-0.8 MB at z13), and thinning them to fit
@@ -550,6 +649,12 @@ def _detail_min_zoom(
     return min(floor, int(max_zoom))
 
 
+def _arrow_delivery(backend: str) -> bool:
+    """Whether delivery layers go to freestiler as Arrow (no NDGeoJSON)."""
+
+    return backend == vector_tiles.FREESTILER and vector_tiles.arrow_input_enabled()
+
+
 def _require_vector_tiler() -> str:
     """Resolve the vector tiler and fail before any expensive work if absent."""
 
@@ -564,23 +669,33 @@ def _require_vector_tiler() -> str:
 
 def _run_vector_tiler(
     output: Path,
-    layers: Sequence[tuple[str, Path]],
+    layers: Sequence[tuple[str, DeliverySource]],
     min_zoom: int,
     max_zoom: int,
     temporary_directory: Path | None = None,
 ) -> None:
-    """Tile newline-delimited GeoJSON sources into one PMTiles archive.
+    """Tile delivery sources into one PMTiles archive.
 
-    Dispatches on ``RAS2CNG_VECTOR_TILER`` (see :mod:`ras2cng.vector_tiles`).
-    Every backend keeps every feature at every zoom of the tileset.
+    Sources are newline-delimited GeoJSON paths, which dispatch on
+    ``RAS2CNG_VECTOR_TILER`` (see :mod:`ras2cng.vector_tiles`), or Arrow layers
+    from :func:`_write_delivery_source` / :func:`_dense_layer_arrow`, which go
+    to freestiler directly. Every backend keeps every feature at every zoom of
+    the tileset.
     """
 
     if not layers:
         raise ValueError("A vector tileset needs at least one non-empty source layer.")
+    if any(isinstance(source, vector_tiles.ArrowLayer) for _, source in layers):
+        vector_tiles.run_freestiler(output, dict(layers), min_zoom, max_zoom)
+        return
     if vector_tiles.vector_tiler_backend() == vector_tiles.FREESTILER:
-        # freestiler tiles every layer of the archive in one in-memory pass.
-        frames = {name: vector_tiles.read_ndgeojson(path) for name, path in layers}
-        vector_tiles.run_freestiler(output, frames, min_zoom, max_zoom)
+        # Each layer is read from its GeoJSON source only when freestiler
+        # reaches it, so a multi-layer tileset holds one layer at a time.
+        sources = {
+            name: (lambda source=path: vector_tiles.read_ndgeojson(source))
+            for name, path in layers
+        }
+        vector_tiles.run_freestiler(output, sources, min_zoom, max_zoom)
         return
     _run_tippecanoe(output, layers, min_zoom, max_zoom, temporary_directory)
 
@@ -661,8 +776,15 @@ def _run_tippecanoe(
 
 
 def _gdalinfo(path: Path) -> dict[str, Any]:
-    """Read GDAL JSON metadata, calculating band statistics when needed."""
+    """Read GDAL JSON metadata, calculating band statistics when needed.
 
+    With the terrio raster backend the same statistics come from
+    ``terrio.info(stats=True)`` (identical min/max/mean/stddev to gdalinfo on
+    HEC-RAS terrain), so no GDAL CLI is needed.
+    """
+
+    if raster_tiles.resolve_backend() == raster_tiles.TERRIO:
+        return raster_tiles.raster_info(Path(path))
     completed = subprocess.run(
         [_gdalinfo_command(), "-json", "-stats", str(path)],
         check=True,
@@ -902,6 +1024,41 @@ def _raster_source_metadata(path: Path) -> dict[str, Any]:
         }
 
 
+def _require_gdal_raster_tools() -> None:
+    for executable in (
+        _gdalinfo_command(),
+        _gdaldem_command(),
+        _gdalwarp_command(),
+        _gdal_translate_command(),
+        _gdaladdo_command(),
+        _pmtiles_command(),
+    ):
+        _require_cli(executable)
+
+
+def _raster_backend_for(cog_path: Path) -> str:
+    """Pick the raster tiler for one raster; see :mod:`ras2cng.raster_tiles`.
+
+    ``auto`` uses terrio when installed and the raster fits its in-memory
+    budget, otherwise the GDAL CLI chain (whose executables must then exist).
+    A terrio that streams the relief, warp and pyramid has no budget, so it
+    takes every raster.
+    """
+
+    backend = raster_tiles.resolve_backend()
+    if backend == raster_tiles.TERRIO:
+        try:
+            raster_tiles.check_fits(cog_path)
+        except raster_tiles.TerrioTooLarge as exc:
+            if raster_tiles.requested_backend() == raster_tiles.TERRIO:
+                raise
+            LOGGER.warning("%s; using the GDAL raster tiler", exc)
+            backend = raster_tiles.GDAL
+    if backend == raster_tiles.GDAL:
+        _require_gdal_raster_tools()
+    return backend
+
+
 def _render_raster_pmtiles(
     cog_path: Path,
     output: Path,
@@ -910,8 +1067,17 @@ def _render_raster_pmtiles(
     max_zoom: int | None,
     scratch_dir: Path | None,
     prefix: str,
+    kind: str = "result",
+    hillshade: bool = False,
+    backend: str | None = None,
 ) -> int:
-    """Render a numeric COG to transparent PNG PMTiles with bounded GDAL work."""
+    """Render a numeric COG to transparent PNG PMTiles.
+
+    terrio (default when installed) or the GDAL CLI chain; see
+    :mod:`ras2cng.raster_tiles`. ``kind`` is ``"terrain"`` or ``"result"``
+    and selects the overview resampling. ``hillshade`` bakes a terrio
+    hillshade into the colours and is ignored, with a warning, by GDAL.
+    """
 
     native_resolution = _web_mercator_raster_resolution(cog_path)
     native_max_zoom = _native_raster_zoom_from_resolution(native_resolution)
@@ -923,6 +1089,31 @@ def _render_raster_pmtiles(
     if selected_max_zoom < 0:
         raise ValueError("max_zoom must be zero or greater")
     display_resolution = _WEB_MERCATOR_INITIAL_RESOLUTION / (2**selected_max_zoom)
+    backend = backend or _raster_backend_for(cog_path)
+
+    if backend == raster_tiles.TERRIO:
+        with tempfile.TemporaryDirectory(
+            prefix=f"ras2cng-{prefix}-",
+            dir=str(scratch_dir) if scratch_dir is not None else None,
+        ) as temporary:
+            ramp = Path(temporary) / "ramp.txt"
+            ramp_writer(ramp)
+            raster_tiles.render_pmtiles(
+                cog_path,
+                output,
+                ramp_path=ramp,
+                max_zoom=selected_max_zoom,
+                kind=kind,
+                hillshade=hillshade,
+                name=prefix,
+                scratch_dir=Path(temporary),
+            )
+        return selected_max_zoom
+
+    if hillshade:
+        LOGGER.warning(
+            "Hillshade needs the terrio raster tiler; %s is rendered without it", cog_path
+        )
 
     with tempfile.TemporaryDirectory(
         prefix=f"ras2cng-{prefix}-",
@@ -1026,6 +1217,7 @@ def package_maplibre_terrain(
     max_zoom: int | None = None,
     scratch_dir: Path | None = None,
     overwrite: bool = False,
+    hillshade: bool = True,
 ) -> TerrainPackageSummary:
     """Add a RAS-styled, queryable terrain PMTiles layer to a viewer bundle.
 
@@ -1033,6 +1225,11 @@ def package_maplibre_terrain(
     PMTiles overlay is a colorized Web Mercator representation used only for
     display. Its highest zoom is capped at source cell resolution so no
     terrain detail is invented in the browser.
+
+    ``hillshade`` (default on) multiplies a terrio multidirectional
+    hillshade into the display colours, as RAS Mapper shades terrain. It
+    needs the terrio raster tiler; with GDAL the terrain is drawn unshaded.
+    Identify values still come from the unshaded source COG.
     """
 
     cog_path = Path(cog_path)
@@ -1055,15 +1252,7 @@ def package_maplibre_terrain(
             "pass overwrite=True to replace it."
         )
 
-    for executable in (
-        _gdalinfo_command(),
-        _gdaldem_command(),
-        _gdalwarp_command(),
-        _gdal_translate_command(),
-        _gdaladdo_command(),
-        _pmtiles_command(),
-    ):
-        _require_cli(executable)
+    backend = _raster_backend_for(cog_path)
 
     if scratch_dir is not None:
         scratch_dir = Path(scratch_dir).resolve()
@@ -1087,6 +1276,9 @@ def package_maplibre_terrain(
         max_zoom=max_zoom,
         scratch_dir=scratch_dir,
         prefix=terrain_id,
+        kind="terrain",
+        hillshade=hillshade,
+        backend=backend,
     )
 
     terrain_tileset = {
@@ -1103,6 +1295,8 @@ def package_maplibre_terrain(
         "maxzoom": selected_max_zoom,
         "rasterStats": stats,
         "ramp": "stretched",
+        "hillshade": bool(hillshade and backend == raster_tiles.TERRIO),
+        "rasterTiler": backend,
         "domainPolicy": "fixed",
         "sourceKind": "terrain",
         "legend": {
@@ -1247,7 +1441,7 @@ def package_maplibre_stored_vector(
             f"Viewer already has vector layer {layer_id}; pass overwrite=True to replace it."
         )
 
-    _require_vector_tiler()
+    arrow = _arrow_delivery(_require_vector_tiler())
     if vector_path.suffix.lower() in {".parquet", ".geoparquet"}:
         frame = gpd.read_parquet(vector_path)
     else:
@@ -1267,11 +1461,12 @@ def package_maplibre_stored_vector(
         dir=str(scratch_parent) if scratch_parent else None,
     ) as temporary:
         work_dir = Path(temporary)
-        ndgeojson = work_dir / f"{layer_id}.ndgeojson"
-        feature_count, geometry_types, bounds = _write_ndgeojson(frame, ndgeojson)
+        delivery, feature_count, geometry_types, bounds = _write_delivery_source(
+            frame, work_dir / f"{layer_id}.ndgeojson", arrow
+        )
         _run_vector_tiler(
             output,
-            [(layer_id, ndgeojson)],
+            [(layer_id, delivery)],
             min_zoom,
             max_zoom,
             work_dir / "tippecanoe",
@@ -1477,15 +1672,7 @@ def _package_maplibre_numeric_raster(
             f"Viewer already has raster layer {layer_id}; pass overwrite=True to replace it."
         )
 
-    for executable in (
-        _gdalinfo_command(),
-        _gdaldem_command(),
-        _gdalwarp_command(),
-        _gdal_translate_command(),
-        _gdaladdo_command(),
-        _pmtiles_command(),
-    ):
-        _require_cli(executable)
+    backend = _raster_backend_for(cog_path)
 
     if scratch_dir is not None:
         scratch_dir = Path(scratch_dir).resolve()
@@ -1516,6 +1703,8 @@ def _package_maplibre_numeric_raster(
         max_zoom=max_zoom,
         scratch_dir=scratch_dir,
         prefix=layer_id,
+        kind="result",
+        backend=backend,
     )
 
     stored_map: dict[str, Any] = {
@@ -1796,7 +1985,7 @@ def package_maplibre_viewer(
 
     metadata = _project_metadata(archive_dir)
     project_crs = crs or metadata.get("crs") or archive.get("project", {}).get("crs")
-    _require_vector_tiler()
+    arrow = _arrow_delivery(_require_vector_tiler())
     output_dir.mkdir(parents=True, exist_ok=True)
     tiles_dir = output_dir / "tiles"
     viewer_title = title or metadata.get("title") or archive.get("project", {}).get("name") or archive_dir.name
@@ -1814,8 +2003,8 @@ def package_maplibre_viewer(
         for variable in plan.get("variables", [])
         if include_vector_results and variable.get("geometry_filter")
     }
-    geometry_overview_sources: list[tuple[str, Path]] = []
-    geometry_detail_sources: list[tuple[str, Path]] = []
+    geometry_overview_sources: list[tuple[str, DeliverySource]] = []
+    geometry_detail_sources: list[tuple[str, DeliverySource]] = []
     geometry_overview_layers: list[dict[str, Any]] = []
     geometry_detail_layers: list[dict[str, Any]] = []
     geometry_layers: list[dict[str, Any]] = []
@@ -1847,9 +2036,10 @@ def package_maplibre_viewer(
             extent = _extent_from_hdf(Path(geometry_hdfs[entry["geom_id"]]), project_crs)
             extent["geometry_id"] = geom_id
             extent_source = f"{group_id}-model-extents"
-            extent_path = work_dir / "geometry" / f"{extent_source}.ndgeojson"
-            count, geometry_types, bounds = _write_ndgeojson(extent, extent_path)
-            geometry_overview_sources.append((extent_source, extent_path))
+            extent_delivery, count, geometry_types, bounds = _write_delivery_source(
+                extent, work_dir / "geometry" / f"{extent_source}.ndgeojson", arrow
+            )
+            geometry_overview_sources.append((extent_source, extent_delivery))
             all_bounds.append(bounds)
             group_layers.append(
                 {
@@ -1880,7 +2070,16 @@ def package_maplibre_viewer(
                 source_path = work_dir / "geometry" / f"{source_layer}.ndgeojson"
                 cache_geometry = (geom_id, kind) in result_geometry_keys
                 gdf: gpd.GeoDataFrame | None = None
-                if _is_detail_geometry(kind) and not cache_geometry:
+                delivery: DeliverySource = source_path
+                if _is_detail_geometry(kind) and not cache_geometry and arrow:
+                    delivery, count, geometry_types, bounds = _dense_layer_arrow(
+                        archive_geometry_path,
+                        filter_value,
+                        kind,
+                        project_crs,
+                        pixel_sizes=detail_pixel_sizes,
+                    )
+                elif _is_detail_geometry(kind) and not cache_geometry:
                     count, geometry_types, bounds = _stream_dense_layer_ndgeojson(
                         archive_geometry_path,
                         filter_value,
@@ -1901,11 +2100,13 @@ def package_maplibre_viewer(
                         geometry_cache[(geom_id, kind)] = gdf
                     if _is_detail_geometry(kind):
                         detail_pixel_sizes.append(_feature_pixel_sizes(gdf.geometry.values[::10]))
-                    count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
+                    delivery, count, geometry_types, bounds = _write_delivery_source(
+                        gdf, source_path, arrow
+                    )
                 source_layers = (
                     geometry_detail_sources if _is_detail_geometry(kind) else geometry_overview_sources
                 )
-                source_layers.append((source_layer, source_path))
+                source_layers.append((source_layer, delivery))
                 all_bounds.append(bounds)
                 group_layers.append(
                     {
@@ -1963,9 +2164,10 @@ def package_maplibre_viewer(
                 if gdf.empty:
                     continue
                 source_layer = f"{group_id}-{_slug(kind)}"
-                source_path = work_dir / "terrain-sources" / f"{source_layer}.ndgeojson"
-                count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
-                geometry_overview_sources.append((source_layer, source_path))
+                delivery, count, geometry_types, bounds = _write_delivery_source(
+                    gdf, work_dir / "terrain-sources" / f"{source_layer}.ndgeojson", arrow
+                )
+                geometry_overview_sources.append((source_layer, delivery))
                 all_bounds.append(bounds)
                 viewer_layer = {
                     "id": source_layer,
@@ -2014,9 +2216,10 @@ def package_maplibre_viewer(
                 if gdf.empty:
                     continue
                 source_layer = f"{group_id}-{_slug(kind)}"
-                source_path = work_dir / "terrain-modifications" / f"{source_layer}.ndgeojson"
-                count, geometry_types, bounds = _write_ndgeojson(gdf, source_path)
-                geometry_overview_sources.append((source_layer, source_path))
+                delivery, count, geometry_types, bounds = _write_delivery_source(
+                    gdf, work_dir / "terrain-modifications" / f"{source_layer}.ndgeojson", arrow
+                )
+                geometry_overview_sources.append((source_layer, delivery))
                 all_bounds.append(bounds)
                 viewer_layer = {
                     "id": source_layer,
@@ -2066,8 +2269,8 @@ def package_maplibre_viewer(
                 work_dir / "tiles-detail",
             )
 
-        result_sources: list[tuple[str, Path]] = []
-        result_detail_sources: list[tuple[str, Path]] = []
+        result_sources: list[tuple[str, DeliverySource]] = []
+        result_detail_sources: list[tuple[str, DeliverySource]] = []
         result_layers: list[dict[str, Any]] = []
         result_detail_layers: list[dict[str, Any]] = []
         if include_vector_results:
@@ -2123,11 +2326,12 @@ def package_maplibre_viewer(
                             continue
                         profile_suffix = f"-{_slug(str(profile))}" if profile is not None else ""
                         source_layer = f"{result_group_id}-{_slug(variable_name)}{profile_suffix}"
-                        source_path = work_dir / "results" / f"{source_layer}.ndgeojson"
-                        count, geometry_types, bounds = _write_ndgeojson(joined, source_path)
+                        delivery, count, geometry_types, bounds = _write_delivery_source(
+                            joined, work_dir / "results" / f"{source_layer}.ndgeojson", arrow
+                        )
                         dense_result = _is_detail_geometry(geometry_kind)
                         (result_detail_sources if dense_result else result_sources).append(
-                            (source_layer, source_path)
+                            (source_layer, delivery)
                         )
                         all_bounds.append(bounds)
                         style = _result_style(variable_name)

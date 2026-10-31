@@ -83,7 +83,7 @@ def test_manifest_create(tmp_path):
     assert m.project["name"] == "TestProject"
     assert m.project["crs"] == "EPSG:4326"
     assert m.project["plan_count"] == 3
-    assert m.schema_version == "2.6"
+    assert m.schema_version == SCHEMA_VERSION
     assert m.geometry == []
     assert m.results == []
     assert m.terrain == []
@@ -204,7 +204,7 @@ def test_manifest_to_json_is_valid(tmp_path):
     m = Manifest.create("M", prj, tmp_path, tmp_path / "out")
     json_str = m.to_json()
     parsed = json.loads(json_str)
-    assert parsed["schema_version"] == "2.6"
+    assert parsed["schema_version"] == SCHEMA_VERSION
     assert "project" in parsed
     assert "project_parquet" in parsed
 
@@ -318,7 +318,7 @@ def test_archive_geometry_only_creates_flat_parquet(
     assert manifest.geometry[0]["geom_id"] == "g01"
     assert manifest.geometry[0]["geom_title"] == "Test Geometry"
     assert manifest.geometry[0]["parquet"] == "FakeModel.g01.parquet"
-    assert manifest.schema_version == "2.6"
+    assert manifest.schema_version == "2.7"
 
 
 @patch("ras2cng.project.merge_all_layers")

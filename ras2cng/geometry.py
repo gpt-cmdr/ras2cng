@@ -9,8 +9,9 @@ Supports:
 from __future__ import annotations
 
 import tempfile
+import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import geopandas as gpd
 import numpy as np
@@ -385,34 +386,36 @@ def export_all_text_layers(
 # ---------------------------------------------------------------------------
 
 def _hilbert_sort(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Sort GeoDataFrame rows by Hilbert curve index of geometry bounds center.
+    """Sort rows by the Hilbert index of each geometry's bbox centre.
 
-    Uses DuckDB's hilbert_encode(). Falls back to original order if DuckDB
-    is not installed or sorting fails.
+    The key is DuckDB spatial ``ST_Hilbert(x, y, extent)`` of the bbox centre
+    over the extent of all the rows' bboxes (16 bits per axis), the same
+    order terrio's archive writer produces. Ties keep input order; rows
+    with null or empty geometry go last. If the DuckDB spatial extension
+    cannot be loaded, a warning is issued and ras2cng's bit-identical NumPy
+    port is used, so the order never silently degrades.
+
+    The method used is recorded in ``result.attrs["hilbert_sort"]``
+    (``duckdb``, ``numpy`` or ``skipped: <reason>``).
     """
     if len(gdf) <= 1:
         return gdf
 
-    try:
-        import duckdb
-    except ImportError:
-        return gdf
+    from ras2cng.geoparquet import geometry_bounds, hilbert_keys, hilbert_permutation
 
     try:
-        bounds = gdf.geometry.bounds
-        pts = pd.DataFrame({
-            "_row_idx": range(len(gdf)),
-            "_x": ((bounds.minx + bounds.maxx) / 2).values,
-            "_y": ((bounds.miny + bounds.maxy) / 2).values,
-        })
-        con = duckdb.connect()
-        order = con.execute(
-            "SELECT _row_idx FROM pts ORDER BY hilbert_encode([_x, _y]::DOUBLE[2])"
-        ).fetchdf()["_row_idx"].values
-        con.close()
-        return gdf.iloc[order].reset_index(drop=True)
-    except Exception:
+        keys, valid, method = hilbert_keys(geometry_bounds(gdf.geometry))
+    except Exception as exc:  # pragma: no cover - NumPy port does not fail on finite input
+        warnings.warn(
+            f"Hilbert sort skipped; rows keep their input order: {type(exc).__name__}: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        gdf.attrs["hilbert_sort"] = f"skipped: {type(exc).__name__}: {exc}"
         return gdf
+    result = gdf.iloc[hilbert_permutation(keys, valid)].reset_index(drop=True)
+    result.attrs["hilbert_sort"] = method
+    return result
 
 
 def merge_all_layers(
@@ -420,6 +423,7 @@ def merge_all_layers(
     text_path: Optional[Path] = None,
     *,
     sort: bool = True,
+    hdf_layers: Optional[Sequence[str]] = None,
 ) -> Optional[gpd.GeoDataFrame]:
     """Extract and merge all geometry layers into a single GeoDataFrame.
 
@@ -431,6 +435,8 @@ def merge_all_layers(
         hdf_path: Path to ``*.g??.hdf`` geometry file (or None)
         text_path: Path to ``*.g??`` text geometry file (or None)
         sort: If True, apply Hilbert spatial sort within each layer
+        hdf_layers: Only these HDF layers (default: every one). The direct
+            archive path uses this to read what the engine does not write.
 
     Returns:
         A merged GeoDataFrame with ``layer`` column, or None if nothing extracted
@@ -439,7 +445,7 @@ def merge_all_layers(
 
     # --- HDF layers ---
     if hdf_path is not None:
-        for layer_name in ALL_HDF_LAYERS:
+        for layer_name in ALL_HDF_LAYERS if hdf_layers is None else hdf_layers:
             try:
                 gdf = _extract_hdf_layer(hdf_path, layer_name)
             except Exception as e:
@@ -478,5 +484,14 @@ def merge_all_layers(
     if not all_gdfs:
         return None
 
-    merged = pd.concat(all_gdfs, ignore_index=True)
-    return gpd.GeoDataFrame(merged, geometry="geometry")
+    from ras2cng.geoparquet import concat_layers
+
+    methods = {
+        str(frame["layer"].iloc[0]): frame.attrs.get("hilbert_sort", "")
+        for frame in all_gdfs
+        if len(frame)
+    }
+    merged = concat_layers(all_gdfs)
+    if sort:
+        merged.attrs["hilbert_sort"] = methods
+    return merged
