@@ -5,9 +5,9 @@ Rust engines release. Every engine feature is capability-detected: with older en
 ## Requirements
 
 - Requires ras-commander 0.113.0 (`ras-commander[full]>=0.113.0`; was 0.100.0), which brings ras-commander-fast-hdf 0.3.0 and, through `full`, ras-commander-fast-map 0.12.0. ras-commander reads HEC-RAS HDF results through the Rust engine where it proves the layout.
-- Optional fork builds, published only as GitHub Release assets on the gpt-cmdr forks (not on PyPI; the `terrio` and `freestiler` extras keep the PyPI floors):
+- Optional fork builds, published only as GitHub Release assets (freestiler on the gpt-cmdr fork, terrio on CLB-Engineering-Corporation/terrio-clb; not on PyPI; the `terrio` and `freestiler` extras keep the PyPI floors):
   - freestiler 0.3.0.1: `pip install freestiler==0.3.0.1 --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.1-gpt-cmdr`
-  - terrio 0.5.0.1: `pip install terrio==0.5.0.1 --find-links https://github.com/gpt-cmdr/terrio/releases/expanded_assets/gpt-cmdr-v0.5.0.1`
+  - terrio 0.5.0.1: `pip install terrio==0.5.0.1 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.1`
 
 ## Behaviour changes
 
@@ -28,10 +28,10 @@ Every product below was compared with native HEC-RAS 7.0.1 stored maps: 0 mask a
 
 ## Archive, GeoParquet, tiles, COG
 
-- `ras2cng archive` writes geometry and `--results` through terrio's direct HEC-RAS path with the terrio fork build, as manifest 3.0, with the Python path as per-file fallback (`RAS2CNG_ARCHIVE_ENGINE`, `--archive-engine`). Bald Eagle p07 with results: 29.1 s to 12.5 s, peak 4.0 GB to 0.76 GB. Each file's `archive` record says what was native, what came from Python and what was refused.
+- `ras2cng archive` writes geometry and `--results` through terrio's direct HEC-RAS path with the CLB terrio build 0.5.0.1, as manifest 3.0, with the Python path as per-file fallback (`RAS2CNG_ARCHIVE_ENGINE`, `--archive-engine`). Bald Eagle p07 with results: 29.1 s to 12.5 s, peak 4.0 GB to 0.76 GB. Each file's `archive` record says what was native, what came from Python and what was refused.
 - terrio's `write_geoparquet_layers` is the default archive GeoParquet writer when installed (`RAS2CNG_GEOPARQUET_WRITER`), with identical rows, order, schema and row groups to the pyarrow writer, which stays the fallback.
 - Vector tiles: a freestiler build with Arrow input (the fork build) skips the NDGeoJSON step: Bald Eagle p07 viewer with vector results 36 s against 1,745 s for tippecanoe, with identical decoded tiles to the GeoJSON route. `auto` prefers it.
-- COGs: with the terrio fork build the area-ratio report is written in the same pass as the overviews, so the pre-scan is gone (Terrain50 13-14 s to 6-7 s, byte-identical output).
+- COGs: with the CLB terrio build 0.5.0.1 the area-ratio report is written in the same pass as the overviews, so the pre-scan is gone (Terrain50 13-14 s to 6-7 s, byte-identical output).
 - Results without geometry come from ras-commander's value table (`include_geometry=False`) instead of a separate h5py reader; identical on all 202 readable summary variables of the 28 public 2D plans in the HEC-RAS test corpus.
 - New `ras2cng.rate_stack.write_rate_stack`: precipitation-indexed NetCDF raster stacks with exact compressed-chunk byte ranges (`docs/rate-stack.md`).
 
