@@ -331,7 +331,9 @@ def generate_result_maps(
     )
 
     project_path = Path(project_path)
-    output_dir = Path(output_dir)
+    # Absolute: RAS Mapper resolves a relative folder against the project, so
+    # its rasters would land under the project instead of here.
+    output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     project_dir, prj_file = resolve_project_path(project_path)

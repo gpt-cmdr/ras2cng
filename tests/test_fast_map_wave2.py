@@ -541,6 +541,17 @@ def _route(tmp_path, monkeypatch, render, real_preflight=False, **kwargs):
     return results[0], calls, {k for k, v in flags.items() if v is True and k in fast_map_types()}
 
 
+def test_relative_output_dir_is_resolved_before_rasmapper(tmp_path, monkeypatch):
+    """RAS Mapper resolves a relative folder against the project directory."""
+    ras, project_dir = _fake_ras(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with patch("ras2cng.mapping.init_ras_project", return_value=ras),             patch("ras2cng.mapping._configure_rasprocess"),             patch("ras2cng.mapping._generate_plan_maps", return_value={}) as gen:
+        results = generate_result_maps(project_dir, "maps", map_engine="rasmapper")
+    output_dir = gen.call_args.kwargs["output_dir"]
+    assert output_dir.is_absolute() and output_dir == (tmp_path / "maps" / "p01").resolve()
+    assert results[0].output_dir.is_absolute()
+
+
 def fast_map_types():
     from ras2cng.mapping import MAP_TYPE_VARIABLES
 
