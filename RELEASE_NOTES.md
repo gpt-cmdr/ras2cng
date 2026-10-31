@@ -35,6 +35,10 @@ Every product below was compared with native HEC-RAS 7.0.1 stored maps: 0 mask a
 - Results without geometry come from ras-commander's value table (`include_geometry=False`) instead of a separate h5py reader; identical on all 202 readable summary variables of the 28 public 2D plans in the HEC-RAS test corpus.
 - New `ras2cng.rate_stack.write_rate_stack`: precipitation-indexed NetCDF raster stacks with exact compressed-chunk byte ranges (`docs/rate-stack.md`).
 
+## Fixes
+
+- `ras2cng map` with a relative output directory wrote RAS Mapper's rasters under the project folder and left the requested folder empty; the directory is now resolved first.
+
 ## Upgrade notes
 
 - `ras2cng mannings` output differs from 0.12 (see above). Pass `--method estimate` to reproduce an older raster.
