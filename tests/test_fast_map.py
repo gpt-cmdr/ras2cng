@@ -25,7 +25,7 @@ def _preflight_uses_patched_render(monkeypatch):
     The real preflight is covered by the tests that undo this.
     """
     monkeypatch.setattr(
-        fast_map, "preflight", lambda plan, ras, mode: fast_map.render_settings(ras, mode)
+        fast_map, "preflight", lambda plan, ras, mode, **kw: fast_map.render_settings(ras, mode)
     )
 
 
@@ -393,7 +393,7 @@ def test_out_of_scope_plan_goes_to_rasmapper_before_any_terrain_work(
     """A storage-area (or 1D, or no-render-mode) plan never exports terrain."""
     monkeypatch.delenv(fast_map.MAP_ENGINE_ENV, raising=False)
 
-    def refuse(plan, ras, mode):
+    def refuse(plan, ras, mode, **kw):
         raise fast_map.FastMapUnavailable("model has 1 storage area(s)")
 
     monkeypatch.setattr(fast_map, "preflight", refuse)
@@ -468,6 +468,129 @@ def test_map_boundary_writes_named_geojson_and_manifest(mock_fim, tmp_path):
     assert kwargs["terrain_hdf"] == tmp_path / "t.hdf"
     assert kwargs["profiles"] == {"Max": "Max"}
     assert not list(out.glob(".fast-map-boundary-*"))
+
+
+# ---------------------------------------------------------------------------
+# User-supplied terrain CRS hash for Rust boundaries (user decision 2026-10-31)
+# ---------------------------------------------------------------------------
+
+_DAVIS_HASH = "e446f7bd6bdb4d7f"  # Davis terrain, as ras2fim-batch terrain-info reports it
+
+
+def test_normalize_crs_fnv1a64():
+    assert fast_map.normalize_crs_fnv1a64(None) is None
+    assert fast_map.normalize_crs_fnv1a64(" E446F7BD6BDB4D7F ") == _DAVIS_HASH
+    assert fast_map.normalize_crs_fnv1a64("0x" + _DAVIS_HASH) == _DAVIS_HASH
+    for bad in ("", "e446f7bd", "e446f7bd6bdb4d7g", "EPSG:2871", _DAVIS_HASH + "0"):
+        with pytest.raises(ValueError, match="crs_wkt_fnv1a64"):
+            fast_map.normalize_crs_fnv1a64(bad)
+
+
+@patch("ras_commander.RasFim")
+def test_map_boundary_passes_the_supplied_crs_hash(mock_fim, tmp_path, monkeypatch):
+    _boundary_fim(mock_fim)
+    monkeypatch.setattr(fast_map, "_has_kwargs", lambda function, *names: True)
+    out = tmp_path / "p02"
+    fast_map.map_boundary(
+        tmp_path / "x.p02.hdf", tmp_path / "t.tif", tmp_path / "t.hdf", out,
+        render={"mode": "sloping"}, terrain_crs_fnv1a64=_DAVIS_HASH.upper(),
+    )
+    assert mock_fim.map_inundation_boundaries.call_args.kwargs["terrain_crs_fnv1a64"] == _DAVIS_HASH
+    manifest = json.loads((out / fast_map.FAST_MAP_BOUNDARY_MANIFEST).read_text())
+    assert manifest["ras2cng"]["terrain_crs_fnv1a64"] == _DAVIS_HASH
+
+
+@patch("ras_commander.RasFim")
+def test_map_boundary_without_a_hash_passes_none(mock_fim, tmp_path, monkeypatch):
+    _boundary_fim(mock_fim)
+    monkeypatch.setattr(fast_map, "_has_kwargs", lambda function, *names: True)
+    out = tmp_path / "p01"
+    fast_map.map_boundary(
+        tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "t.hdf", out,
+        render={"mode": "sloping"},
+    )
+    assert "terrain_crs_fnv1a64" not in mock_fim.map_inundation_boundaries.call_args.kwargs
+    manifest = json.loads((out / fast_map.FAST_MAP_BOUNDARY_MANIFEST).read_text())
+    assert manifest["ras2cng"]["terrain_crs_fnv1a64"] is None
+
+
+@patch("ras_commander.RasFim")
+def test_map_boundary_hash_needs_an_api_that_takes_it(mock_fim, tmp_path, monkeypatch):
+    _boundary_fim(mock_fim)
+    monkeypatch.setattr(fast_map, "_has_kwargs", lambda function, *names: False)
+    with pytest.raises(fast_map.FastMapUnavailable, match="terrain_crs_fnv1a64"):
+        fast_map.map_boundary(
+            tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "t.hdf", tmp_path / "out",
+            render={"mode": "sloping"}, terrain_crs_fnv1a64=_DAVIS_HASH,
+        )
+    mock_fim.map_inundation_boundaries.assert_not_called()
+
+
+@patch("ras_commander.RasFim")
+def test_crs_refusal_tells_the_user_the_engine_hash(mock_fim, tmp_path, monkeypatch):
+    """Never guessed: the refusal shows the engine's hash and how to pass it."""
+    from ras_commander.fim.errors import FimUnsupportedError
+
+    _boundary_fim(mock_fim)
+    mock_fim.map_inundation_boundaries.side_effect = FimUnsupportedError(
+        "engine terrain CRS differs from rasterio CRS EPSG:2871"
+    )
+    seen = []
+    monkeypatch.setattr(
+        fast_map, "terrain_crs_hint",
+        lambda tif: seen.append(tif) or f"the engine reports crs_wkt_fnv1a64={_DAVIS_HASH}; "
+        f"rerun with --fast-map-terrain-crs-hash {_DAVIS_HASH}",
+    )
+    with pytest.raises(fast_map.FastMapUnavailable) as info:
+        fast_map.map_boundary(
+            tmp_path / "x.p02.hdf", tmp_path / "t.tif", tmp_path / "t.hdf", tmp_path / "out",
+            render={"mode": "sloping"},
+        )
+    message = str(info.value)
+    assert "EPSG:2871" in message and f"--fast-map-terrain-crs-hash {_DAVIS_HASH}" in message
+    assert seen == [tmp_path / "t.tif"]
+    assert "terrain_crs_fnv1a64" not in mock_fim.map_inundation_boundaries.call_args.kwargs
+
+
+@patch("ras_commander.RasFim")
+def test_other_refusals_get_no_crs_hint(mock_fim, tmp_path, monkeypatch):
+    from ras_commander.fim.errors import FimUnsupportedError
+
+    _boundary_fim(mock_fim)
+    mock_fim.map_inundation_boundaries.side_effect = FimUnsupportedError("terrain has 2 sources")
+    monkeypatch.setattr(fast_map, "terrain_crs_hint", lambda tif: pytest.fail("not a CRS refusal"))
+    with pytest.raises(fast_map.FastMapUnavailable, match="^terrain has 2 sources$"):
+        fast_map.map_boundary(
+            tmp_path / "x.p01.hdf", tmp_path / "t.tif", tmp_path / "t.hdf", tmp_path / "out",
+            render={"mode": "sloping"},
+        )
+
+
+def test_terrain_crs_hint_reads_the_engine_terrain_info(tmp_path, monkeypatch):
+    import subprocess
+
+    from ras_commander import RasFim
+    from ras_commander.fim import _engine
+
+    info = {"epsg": None, "crs": {"epsg": None, "wkt": 'PROJCS["unknown",GEOGCS["NAD83"]]'},
+            "crs_wkt_fnv1a64": _DAVIS_HASH}
+    monkeypatch.setattr(RasFim, "find_engine", staticmethod(lambda *a, **k: tmp_path / "engine"))
+    monkeypatch.setattr(
+        _engine, "run_engine",
+        lambda args, what, timeout=None: subprocess.CompletedProcess(
+            args, 0, stdout=json.dumps(info), stderr=""),
+    )
+    hint = fast_map.terrain_crs_hint(tmp_path / "Davis.tif")
+    assert f"crs_wkt_fnv1a64={_DAVIS_HASH}" in hint
+    assert f"--fast-map-terrain-crs-hash {_DAVIS_HASH}" in hint
+    assert "ras2fim-batch terrain-info" in hint and 'PROJCS["unknown"' in hint
+    monkeypatch.setattr(_engine, "run_engine", lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
+    assert fast_map.terrain_crs_hint(tmp_path / "Davis.tif") is None
+
+
+def test_generate_result_maps_validates_and_passes_the_hash(tmp_path):
+    with pytest.raises(ValueError, match="crs_wkt_fnv1a64"):
+        generate_result_maps(tmp_path, tmp_path / "out", fast_map_terrain_crs_fnv1a64="EPSG:2871")
 
 
 @patch("ras_commander.RasFim")

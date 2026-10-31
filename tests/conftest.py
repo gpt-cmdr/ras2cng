@@ -387,6 +387,8 @@ def _no_installed_fast_map_engine_capabilities(monkeypatch):
     """
     from ras2cng import fast_map
 
+    # Storage-area mapping is opt-in; the host's env var must not leak in.
+    monkeypatch.delenv(fast_map.STORAGE_AREAS_ENV, raising=False)
     monkeypatch.setattr(fast_map, "engine_method", lambda kind: {})
     monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: False)
     monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: False)

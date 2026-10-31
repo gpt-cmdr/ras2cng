@@ -38,7 +38,7 @@ RECORD = {
 def _clean_env(monkeypatch):
     monkeypatch.delenv(fast_map.PRODUCT_WRITER_ENV, raising=False)
     monkeypatch.setattr(
-        fast_map, "preflight", lambda plan, ras, mode: fast_map.render_settings(ras, mode)
+        fast_map, "preflight", lambda plan, ras, mode, **kw: fast_map.render_settings(ras, mode)
     )
 
 

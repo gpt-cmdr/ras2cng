@@ -21,14 +21,20 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
 
 * **Pure 2D models.** ``RasFim.validate_2d_model`` rejects any model with 1D
   river reaches or cross sections. Pipe networks are permitted.
-* **Storage areas** (fast-map #18, ras-commander #757; engine capability
-  ``storage-area-level-pool/1``, :func:`storage_areas_supported`). Standalone
-  storage areas are drawn as RAS Mapper level pools in WSE/Depth (every render
-  mode) and arrival time / percent inundated: 0 mask and 0 float32 bit
-  differences against native HEC-RAS 7.0.1 on Bald Eagle p07 and p04. Velocity,
-  the derived products, duration and the boundary are not qualified with
-  storage areas, so on such plans they stay on RAS Mapper. Without the
-  capability the whole plan goes to RAS Mapper, as before.
+* **Storage areas: opt-in** (fast-map 0.12 #18, ras-commander 0.113 #757;
+  engine capability ``storage-area-level-pool/1``,
+  :func:`storage_areas_supported`). Standalone storage areas are drawn as RAS
+  Mapper level pools in WSE/Depth (every render mode) and arrival time /
+  percent inundated: 0 mask and 0 float32 bit differences against native
+  HEC-RAS 7.0.1 on Bald Eagle p07 and p04. **Not a default** (user decision
+  2026-10-31) until it is faster than RAS Mapper: on p07, WSE + Depth took
+  18.7 s against RAS Mapper's 12.2 s. By default a plan with storage areas
+  goes wholly to RAS Mapper; ``fast_map_storage_areas=True``
+  (``--fast-map-storage-areas``, ``RAS2CNG_FAST_MAP_STORAGE_AREAS=1``) maps
+  it in Rust, which is how to map such plans without HEC-RAS (Linux, FIM
+  batches). Velocity, the derived products, duration and the boundary are
+  not qualified with storage areas, so even then they stay on RAS Mapper.
+  Without the capability the whole plan goes to RAS Mapper.
 * **WSE and Depth, Max profile.** ras-commander's comparison found identical
   float32 values and masks on five eBFE / example models, 1.2-7.3x faster.
   Render modes ``horizontal``, ``sloping`` and ``slopingPretty`` (with the
@@ -69,7 +75,12 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   differ slightly from RAS Mapper's, whose own polygons vary between
   identical exports. Horizontal and plain sloping only, and it needs the
   original **single-source, unmodified** terrain TIFF plus its terrain HDF.
-  ``fast_map_boundary=False`` keeps boundaries on RAS Mapper.
+  ``fast_map_boundary=False`` keeps boundaries on RAS Mapper. When the engine
+  cannot name the terrain's EPSG code and reads its WKT differently from
+  rasterio (Davis), it refuses unless the caller pins the engine's WKT hash:
+  ``fast_map_terrain_crs_fnv1a64`` (``--fast-map-terrain-crs-hash``). ras2cng
+  never guesses it; the refusal message prints the hash the engine reports
+  (``ras2fim-batch terrain-info``) so the user can check and supply it.
 * **Terrain** (:class:`TerrainResolver`, :func:`with_terrain`). A supplied
   ``fast_map_terrain`` (a float32 export of the registered terrain, with
   modifications) is used as is. Otherwise, when ras-commander has
@@ -158,6 +169,11 @@ DERIVED_MAX_METHOD = "reduce_max/1"
 # admits each in-flight time against max_working_mib.
 DERIVED_MAX_INFLIGHT = 3
 STORAGE_AREA_METHOD = "storage-area-level-pool/1"
+# Storage-area level pools are opt-in (user decision 2026-10-31): p07 WSE +
+# Depth took 18.7 s in Rust against 12.2 s in RAS Mapper. See
+# resolve_storage_areas().
+STORAGE_AREAS_ENV = "RAS2CNG_FAST_MAP_STORAGE_AREAS"
+STORAGE_AREAS_DEFAULT = False
 FAST_MAP_WHOLE_SIMULATION_MANIFEST = "fast_map_whole_simulation_manifest.json"
 # How fast-map got its terrain, recorded per product in MapResult.fast_map_terrain.
 TERRAIN_SUPPLIED = "supplied"
@@ -344,6 +360,63 @@ def boundary_supported() -> bool:
     return callable(getattr(RasFim, "map_inundation_boundaries", None))
 
 
+_CRS_FNV1A64 = re.compile(r"^[0-9a-f]{16}$")
+
+
+def normalize_crs_fnv1a64(value: Optional[str]) -> Optional[str]:
+    """Validate a user-supplied engine WKT hash (16 hex digits, as reported
+    by ``ras2fim-batch terrain-info`` in ``crs_wkt_fnv1a64``)."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text.startswith("0x"):
+        text = text[2:]
+    if not _CRS_FNV1A64.match(text):
+        raise ValueError(
+            "terrain CRS hash must be the 16 hex digits the engine reports as "
+            f"crs_wkt_fnv1a64 (ras2fim-batch terrain-info <terrain.tif>); got {value!r}"
+        )
+    return text
+
+
+def terrain_crs_hint(terrain_tif: Path) -> Optional[str]:
+    """How to pin a terrain CRS the engine refused, with its reported hash.
+
+    Runs ``ras2fim-batch terrain-info`` and returns a message naming the
+    engine's ``crs_wkt_fnv1a64`` and the start of its WKT, so the user can
+    verify the CRS and pass ``--fast-map-terrain-crs-hash``. The value is only
+    shown, never used. ``None`` when the engine cannot be asked.
+    """
+    try:
+        from ras_commander import RasFim
+        from ras_commander.fim import _engine
+
+        engine = RasFim.find_engine()
+        info = _engine._json_stdout(
+            _engine.run_engine([str(engine), "terrain-info", str(terrain_tif)], "terrain-info"),
+            "ras2fim-batch terrain-info",
+        )
+    except Exception:
+        return None
+    fnv = info.get("crs_wkt_fnv1a64") if isinstance(info, dict) else None
+    if not fnv:
+        return None
+    crs = info.get("crs")
+    wkt = crs.get("wkt") if isinstance(crs, dict) else None
+    shown = f" (engine WKT: {wkt[:160]}...)" if isinstance(wkt, str) and wkt else ""
+    return (
+        f"the engine reports crs_wkt_fnv1a64={fnv} for {Path(terrain_tif).name}{shown}. "
+        "If that WKT is the terrain's CRS, rerun with "
+        f"--fast-map-terrain-crs-hash {fnv} (Python: fast_map_terrain_crs_fnv1a64); "
+        f'check with: ras2fim-batch terrain-info "{terrain_tif}"'
+    )
+
+
+def _crs_refusal(message: str) -> bool:
+    """True for the engine/rasterio terrain CRS identity refusals."""
+    return "terrain_crs_fnv1a64" in message or "engine terrain CRS differs" in message
+
+
 def _has_kwargs(function: Any, *names: str) -> bool:
     import inspect
 
@@ -449,6 +522,34 @@ def derived_max_supported() -> bool:
 def duration_supported() -> bool:
     """True when the engine's duration follows RAS Mapper's recession rule."""
     return engine_method("whole_simulation").get("duration_rule") == DURATION_RULE
+
+
+def resolve_storage_areas(value: Optional[bool] = None) -> bool:
+    """Whether fast-map may draw storage areas; ``None`` reads the env var.
+
+    ``RAS2CNG_FAST_MAP_STORAGE_AREAS`` accepts 1/true/yes/on and
+    0/false/no/off. Unset means :data:`STORAGE_AREAS_DEFAULT` (off).
+    """
+    if value is not None:
+        return bool(value)
+    raw = os.environ.get(STORAGE_AREAS_ENV)
+    if raw is None or not raw.strip():
+        return STORAGE_AREAS_DEFAULT
+    text = raw.strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(
+        f"{STORAGE_AREAS_ENV} must be 1/true/yes/on or 0/false/no/off; got {raw!r}"
+    )
+
+
+def _render_storage_areas(render: Optional[dict[str, Any]]) -> bool:
+    """The storage-area opt-in recorded by :func:`preflight`, else the env var."""
+    if isinstance(render, dict) and "storage_areas_enabled" in render:
+        return bool(render["storage_areas_enabled"])
+    return resolve_storage_areas(None)
 
 
 def storage_areas_supported() -> bool:
@@ -626,12 +727,13 @@ def plan_terrain_hdf(plan_hdf: Path, project_dir: Path) -> Optional[Path]:
     return path if path.is_absolute() else (Path(project_dir) / path).resolve()
 
 
-def _check_scope(RasFim: Any, plan_hdf: Path) -> int:
+def _check_scope(RasFim: Any, plan_hdf: Path, storage_areas_enabled: bool = False) -> int:
     """Return the plan's storage-area count; raise when out of fast-map scope.
 
-    Raises :class:`FastMapUnavailable` for 1D elements, a missing engine, or
-    storage areas on an installation without level-pool surfaces
-    (:func:`storage_areas_supported`).
+    Raises :class:`FastMapUnavailable` for 1D elements, a missing engine,
+    storage areas without the opt-in (``storage_areas_enabled``, see
+    :func:`resolve_storage_areas`), or storage areas on an installation
+    without level-pool surfaces (:func:`storage_areas_supported`).
     """
     from ras_commander.fim.errors import FimEngineNotFoundError, FimUnsupportedError
 
@@ -641,6 +743,12 @@ def _check_scope(RasFim: Any, plan_hdf: Path) -> int:
     except (FimUnsupportedError, FimEngineNotFoundError) as exc:
         raise FastMapUnavailable(str(exc)) from exc
     storage_areas = int(scope.get("storage_areas") or 0) if isinstance(scope, dict) else 0
+    if storage_areas and not storage_areas_enabled:
+        raise FastMapUnavailable(
+            f"model has {storage_areas} storage area(s); fast-map storage-area mapping is "
+            "opt-in until it is faster than RAS Mapper (--fast-map-storage-areas or "
+            f"{STORAGE_AREAS_ENV}=1 maps them in Rust as level pools)"
+        )
     if storage_areas and not storage_areas_supported():
         raise FastMapUnavailable(
             f"model has {storage_areas} storage area(s); the installed fast-map does not "
@@ -650,12 +758,18 @@ def _check_scope(RasFim: Any, plan_hdf: Path) -> int:
     return storage_areas
 
 
-def preflight(plan_hdf: Path, ras: Any, render_mode: Optional[str]) -> dict[str, Any]:
+def preflight(
+    plan_hdf: Path,
+    ras: Any,
+    render_mode: Optional[str],
+    storage_areas: Optional[bool] = None,
+) -> dict[str, Any]:
     """Check a plan is fast-map's before any terrain work; return its render.
 
     Raises :class:`FastMapUnavailable` when RasFim or the engine is missing,
-    the model has 1D elements, storage areas the engine cannot draw, or no
-    render mode is set.
+    the model has 1D elements, storage areas without the opt-in
+    (``storage_areas``; ``None`` reads ``RAS2CNG_FAST_MAP_STORAGE_AREAS``,
+    default off) or that the engine cannot draw, or no render mode is set.
     These are cheap HDF/XML reads, so an out-of-scope plan never triggers a
     terrain export before it goes to RAS Mapper. The returned render also
     carries ``storage_areas`` (the count the engine will draw as level pools),
@@ -666,10 +780,12 @@ def preflight(plan_hdf: Path, ras: Any, render_mode: Optional[str]) -> dict[str,
         from ras_commander import RasFim
     except ImportError as exc:
         raise FastMapUnavailable(f"ras-commander has no RasFim: {exc}") from exc
-    storage_areas = _check_scope(RasFim, Path(plan_hdf))
+    enabled = resolve_storage_areas(storage_areas)
+    count = _check_scope(RasFim, Path(plan_hdf), enabled)
     render = render_settings(ras, render_mode)
-    if storage_areas:
-        render["storage_areas"] = storage_areas
+    render["storage_areas_enabled"] = enabled
+    if count:
+        render["storage_areas"] = count
     return render
 
 
@@ -1040,7 +1156,7 @@ def map_plan(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     threads = default_threads() if threads is None else int(threads)
-    storage_areas = _check_scope(RasFim, plan_hdf)
+    storage_areas = _check_scope(RasFim, plan_hdf, _render_storage_areas(render))
     if storage_areas and want_velocity:
         # Velocity is refused with storage-area surfaces; leave it to RAS Mapper.
         requested.remove(FAST_MAP_VELOCITY)
@@ -1131,6 +1247,7 @@ def map_plan(
                 "terrain_kind": terrain_kind,
                 "render": render,
                 "storage_areas": storage_areas,
+                "storage_areas_opt_in": _render_storage_areas(render),
                 "storage_area_method": STORAGE_AREA_METHOD if storage_areas else None,
                 "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
                 "invalid_cells_count": (record or {}).get("count"),
@@ -1217,7 +1334,7 @@ def map_velocity(
     plan_hdf = Path(plan_hdf)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    if _check_scope(RasFim, plan_hdf):
+    if _check_scope(RasFim, plan_hdf, _render_storage_areas(render)):
         raise FastMapUnavailable("velocity is not qualified with storage-area surfaces")
     horizontal = velocity_depth == "horizontal"
     mode = "sloping" if horizontal else render["mode"]
@@ -1345,7 +1462,7 @@ def map_derived(
     plan_hdf = Path(plan_hdf)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    if _check_scope(RasFim, plan_hdf):
+    if _check_scope(RasFim, plan_hdf, _render_storage_areas(render)):
         raise FastMapUnavailable("D x V / Froude are not qualified with storage-area surfaces")
     velocity_depth = "horizontal" if render["mode"] == "horizontal" else "rendered"
     budget = default_working_mib() if max_working_mib is None else int(max_working_mib)
@@ -1504,7 +1621,7 @@ def map_whole_simulation(
     plan_hdf = Path(plan_hdf)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    storage_areas = _check_scope(RasFim, plan_hdf)
+    storage_areas = _check_scope(RasFim, plan_hdf, _render_storage_areas(render))
     if storage_areas and want_duration:
         # The engine refuses duration with level pools; RAS Mapper maps it.
         requested.remove(FAST_MAP_DURATION)
@@ -1566,6 +1683,7 @@ def map_whole_simulation(
             "threshold": float(threshold),
             "threshold_units": unit,
             "storage_areas": storage_areas,
+            "storage_areas_opt_in": _render_storage_areas(render),
             "duration_rule": DURATION_RULE if FAST_MAP_DURATION in requested else None,
             "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
             "invalid_cells": record,
@@ -1600,6 +1718,7 @@ def map_boundary(
     timeout: Optional[float] = None,
     max_working_mib: Optional[int] = None,
     invalid_cells: Optional[str] = None,
+    terrain_crs_fnv1a64: Optional[str] = None,
 ) -> FastMapProducts:
     """Map one plan's Max inundation boundary with the Rust engine.
 
@@ -1608,7 +1727,15 @@ def map_boundary(
     flooded area returns an empty list. Raises :class:`FastMapUnavailable`
     for anything outside the boundary method's scope. ``invalid_cells`` is
     passed and recorded when the installed boundary API takes it.
+
+    ``terrain_crs_fnv1a64`` is the engine's WKT hash of ``terrain_tif``,
+    supplied and verified by the user (see :func:`terrain_crs_hint`). The
+    engine accepts it only when it cannot name an EPSG code itself and the
+    hash matches exactly; it is ignored when the engine reports an EPSG code.
+    Without it, a CRS identity refusal raises :class:`FastMapUnavailable`
+    whose message gives the hash the engine reports.
     """
+    terrain_crs_fnv1a64 = normalize_crs_fnv1a64(terrain_crs_fnv1a64)
     if profile != "Max":
         raise FastMapUnavailable(
             f"fast-map maps the Max profile only through ras2cng (got {profile!r})"
@@ -1632,12 +1759,20 @@ def map_boundary(
     plan_hdf = Path(plan_hdf)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    if _check_scope(RasFim, plan_hdf):
+    if _check_scope(RasFim, plan_hdf, _render_storage_areas(render)):
         # The contour method draws 2D cells only; a level pool would be missing.
         raise FastMapUnavailable(
             "Rust inundation boundaries do not include storage-area surfaces"
         )
     budget = default_working_mib() if max_working_mib is None else int(max_working_mib)
+    crs_kwargs: dict[str, Any] = {}
+    if terrain_crs_fnv1a64 is not None:
+        if not _has_kwargs(RasFim.map_inundation_boundaries, "terrain_crs_fnv1a64"):
+            raise FastMapUnavailable(
+                "the installed RasFim.map_inundation_boundaries does not take "
+                "terrain_crs_fnv1a64; upgrade ras-commander"
+            )
+        crs_kwargs["terrain_crs_fnv1a64"] = terrain_crs_fnv1a64
 
     work = Path(tempfile.mkdtemp(prefix=".fast-map-boundary-", dir=output_dir))
     try:
@@ -1652,9 +1787,15 @@ def map_boundary(
                 max_prepared_mib=budget,
                 timeout=timeout,
                 **_invalid_cells_kwargs(RasFim.map_inundation_boundaries, invalid_cells),
+                **crs_kwargs,
             )
         except FimUnsupportedError as exc:
-            raise FastMapUnavailable(str(exc)) from exc
+            message = str(exc)
+            if terrain_crs_fnv1a64 is None and _crs_refusal(message):
+                hint = terrain_crs_hint(Path(terrain_tif))
+                if hint:
+                    message = f"{message}; {hint}"
+            raise FastMapUnavailable(message) from exc
         record = _invalid_cells_record(manifest)
 
         row = manifest.iloc[0]
@@ -1691,6 +1832,8 @@ def map_boundary(
             },
             "products": [str(path) for path in products],
             "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
+            # User-supplied engine WKT hash (None: not supplied).
+            "terrain_crs_fnv1a64": terrain_crs_fnv1a64,
         }
         if record is not None:
             details.setdefault("invalid_cells", record)

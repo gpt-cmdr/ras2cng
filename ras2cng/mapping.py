@@ -73,6 +73,10 @@ class MapResult:
     # For fast-map sloping WSE/Depth/velocity, how the GeoTIFFs were written:
     # "native" (terrio LZW, in the engine) or "rasterio".
     fast_map_writer: dict[str, str] = field(default_factory=dict)
+    # With the fast-map engine, why a map type went to RAS Mapper instead
+    # (e.g. storage areas without --fast-map-storage-areas, 1D elements, a
+    # non-Max profile). Empty under --engine rasmapper.
+    fast_map_skipped: dict[str, str] = field(default_factory=dict)
 
 
 # Map type names to RasProcess store_maps variable names
@@ -178,6 +182,8 @@ def generate_result_maps(
     fast_map_writer: Optional[str] = None,
     fast_map_derived: bool = True,
     fast_map_effective_terrain: bool = True,
+    fast_map_storage_areas: Optional[bool] = None,
+    fast_map_terrain_crs_fnv1a64: Optional[str] = None,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -278,6 +284,22 @@ def generate_result_maps(
         fast_map_effective_terrain: Before exporting the terrain through RAS
             Mapper, try RAS Mapper's effective terrain rebuilt in Rust
             (fast-map #19; unmodified terrains only). False skips it.
+        fast_map_storage_areas: Map plans with storage areas in Rust, drawing
+            them as RAS Mapper level pools (WSE/Depth, arrival time, percent
+            inundated; qualified 0/0 on Bald Eagle p07/p04). **Opt-in**: it
+            is slower than RAS Mapper today (p07 WSE + Depth 18.7 s vs
+            12.2 s), so by default (``None`` reads
+            ``RAS2CNG_FAST_MAP_STORAGE_AREAS``, else off) such plans go wholly
+            to RAS Mapper, and ``MapResult.fast_map_skipped`` says why. Use it
+            to map storage-area plans without HEC-RAS (Linux, FIM batches).
+        fast_map_terrain_crs_fnv1a64: For Rust inundation boundaries only:
+            the engine's WKT hash (``crs_wkt_fnv1a64``) of the boundary
+            terrain TIFF, accepted when the engine cannot identify the
+            terrain's EPSG code and its CRS reads differently from rasterio's
+            (e.g. Davis). ras2cng never guesses it: obtain it with
+            ``ras2fim-batch terrain-info <terrain.tif>`` (or from the refusal
+            message, which prints it), check the CRS is right, and pass it.
+            A mismatch with the engine's hash is refused.
         fast_map_invalid_cells: Pixel ownership for 2D cells whose face
             polylines do not form a valid polygon: ``"repair"`` (the engine
             default), ``"hull"``, ``"omit"`` or ``"raise"`` (refuse, so the
@@ -303,6 +325,10 @@ def generate_result_maps(
     # Validate fast-map options before any project or engine work.
     fast_map_invalid_cells = _fast_map.normalize_invalid_cells(fast_map_invalid_cells)
     fast_map_writer = _fast_map.resolve_product_writer(fast_map_writer)
+    fast_map_storage_areas = _fast_map.resolve_storage_areas(fast_map_storage_areas)
+    fast_map_terrain_crs_fnv1a64 = _fast_map.normalize_crs_fnv1a64(
+        fast_map_terrain_crs_fnv1a64
+    )
 
     project_path = Path(project_path)
     output_dir = Path(output_dir)
@@ -326,6 +352,8 @@ def generate_result_maps(
             rust_products.append("arrival time/percent inundated/duration")
         if fast_map_boundary:
             rust_products.append("inundation boundary")
+        if fast_map_storage_areas:
+            rust_products.append("storage areas (opt-in)")
         console.print(
             f"  Engine  : fast-map (Rust) for {', '.join(rust_products)} on pure 2D "
             "models (FIM library scope) where the installed engine is qualified; "
@@ -460,17 +488,21 @@ def generate_result_maps(
                 # (1D, storage areas, no stored render mode) must not pay for
                 # a terrain export before going to RAS Mapper.
                 try:
-                    fast_render = _fast_map.preflight(plan_hdf, ras, render_mode)
+                    fast_render = _fast_map.preflight(
+                        plan_hdf, ras, render_mode, storage_areas=fast_map_storage_areas,
+                    )
                 except _fast_map.FastMapUnavailable as exc:
                     if not fast_map_fallback:
                         raise
                     console.print(
                         f"    [yellow]fast-map not used[/yellow] ({exc}); using RAS Mapper"
                     )
+                    for map_type in requested_types:
+                        map_result.fast_map_skipped[map_type] = str(exc)
             if fast_render is not None:
                 # WSE/Depth and the boundary use different terrain inputs, so
                 # each falls back to RAS Mapper on its own.
-                def _fast_group(label, run):
+                def _fast_group(label, run, types=()):
                     try:
                         produced = run()
                     except Exception as exc:
@@ -480,6 +512,9 @@ def generate_result_maps(
                             f"    [yellow]fast-map {label} unavailable[/yellow] "
                             f"({exc}); using RAS Mapper"
                         )
+                        for map_type in types:
+                            if map_type in requested_types:
+                                map_result.fast_map_skipped[map_type] = str(exc)
                         return {}
                     console.print(
                         f"    fast-map: {', '.join(produced)} mapped in Rust"
@@ -511,15 +546,19 @@ def generate_result_maps(
                         map_result.fast_map_terrain[map_type] = kind
                     return produced
 
-                def _skip(label, reason, *, strict=False):
+                def _skip(label, reason, *, strict=False, types=()):
                     """A product group outside fast-map's scope goes to RAS Mapper.
 
                     ``strict``: also refused under --fast-map-strict (as the
                     per-profile maps always were); qualification limits such
-                    as slopingPretty velocity are not errors.
+                    as slopingPretty velocity are not errors. ``types`` are
+                    recorded in ``MapResult.fast_map_skipped``.
                     """
                     if strict and not fast_map_fallback:
                         raise _fast_map.FastMapUnavailable(f"{label}: {reason}")
+                    for map_type in types:
+                        if map_type in requested_types:
+                            map_result.fast_map_skipped[map_type] = reason
                     console.print(
                         f"    [yellow]fast-map {label} not used[/yellow] ({reason}); "
                         "using RAS Mapper"
@@ -535,7 +574,10 @@ def generate_result_maps(
                     for t in (*_fast_map.FAST_MAP_RASTER_TYPES, "velocity",
                               *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_BOUNDARY)
                 ):
-                    _skip("per-profile maps", profile_reason, strict=True)
+                    _skip("per-profile maps", profile_reason, strict=True, types=(
+                        *_fast_map.FAST_MAP_RASTER_TYPES, "velocity",
+                        *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_BOUNDARY,
+                    ))
                 if max_profile and any(
                     t in _fast_map.FAST_MAP_RASTER_TYPES for t in requested_types
                 ):
@@ -556,13 +598,13 @@ def generate_result_maps(
                             invalid_cells=fast_map_invalid_cells,
                             product_writer=fast_map_writer,
                         ),
-                    )))
+                    ), types=_fast_map.FAST_MAP_RASTER_TYPES))
                 if max_profile and "velocity" in requested_types:
                     velocity_depth, reason = _fast_map.velocity_plan(
                         fast_render, fast_map_velocity
                     )
                     if reason is not None:
-                        _skip("velocity", reason)
+                        _skip("velocity", reason, types=("velocity",))
                     else:
                         fast_results.update(_fast_group("velocity", lambda: _on_terrain(
                             "velocity",
@@ -580,14 +622,14 @@ def generate_result_maps(
                                 terrain_kind=kind,
                                 invalid_cells=fast_map_invalid_cells,
                             ),
-                        )))
+                        ), types=("velocity",)))
                 derived_types = [
                     t for t in _fast_map.FAST_MAP_DERIVED_TYPES if t in requested_types
                 ]
                 if max_profile and derived_types:
                     reason = _fast_map.derived_plan(fast_render, fast_map_derived)
                     if reason is not None:
-                        _skip("D x V/Froude", reason)
+                        _skip("D x V/Froude", reason, types=derived_types)
                     else:
                         fast_results.update(_fast_group("D x V/Froude", lambda: _on_terrain(
                             "D x V/Froude",
@@ -605,7 +647,7 @@ def generate_result_maps(
                                 terrain_kind=kind,
                                 invalid_cells=fast_map_invalid_cells,
                             ),
-                        )))
+                        ), types=derived_types))
                 whole_types, whole_notes = _fast_map.whole_simulation_types(
                     requested_types, fast_render
                 )
@@ -628,7 +670,7 @@ def generate_result_maps(
                             terrain_kind=kind,
                             invalid_cells=fast_map_invalid_cells,
                         ),
-                    )))
+                    ), types=whole_types))
                 if (
                     max_profile and fast_map_boundary
                     and _fast_map.FAST_MAP_BOUNDARY in requested_types
@@ -639,12 +681,15 @@ def generate_result_maps(
                             plan_hdf, tif, terrain_hdf, plan_output,
                             profile=profile,
                             render=fast_render,
+                            terrain_crs_fnv1a64=fast_map_terrain_crs_fnv1a64,
                             threads=fast_map_threads,
                             timeout=timeout,
                             max_working_mib=fast_map_memory_mib,
                             invalid_cells=fast_map_invalid_cells,
                         )
-                    fast_results.update(_fast_group("inundation boundary", _boundary))
+                    fast_results.update(_fast_group(
+                        "inundation boundary", _boundary, types=(_fast_map.FAST_MAP_BOUNDARY,)
+                    ))
 
             rasmapper_types = [t for t in requested_types if t not in fast_results]
 

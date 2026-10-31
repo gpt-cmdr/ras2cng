@@ -403,7 +403,7 @@ def generate_pmtiles(
     feature_ids: Optional[bool] = typer.Option(
         None,
         "--feature-ids/--no-feature-ids",
-        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else on)",
+        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
     ),
 ):
     """Generate PMTiles from GeoParquet, GeoTIFF, or HDF mesh cells."""
@@ -481,7 +481,7 @@ def maplibre_command(
     feature_ids: Optional[bool] = typer.Option(
         None,
         "--feature-ids/--no-feature-ids",
-        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else on)",
+        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
     ),
 ):
     """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
@@ -687,7 +687,7 @@ def maplibre_stored_vector_command(
     feature_ids: Optional[bool] = typer.Option(
         None,
         "--feature-ids/--no-feature-ids",
-        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else on)",
+        help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
     ),
 ):
     """Publish a queryable RASMapper vector Stored Map under its source plan."""
@@ -1353,6 +1353,24 @@ def map_command(
             "before exporting the terrain through HEC-RAS (unmodified terrains only)"
         ),
     ),
+    fast_map_storage_areas: Optional[bool] = typer.Option(
+        None, "--fast-map-storage-areas/--no-fast-map-storage-areas",
+        help=(
+            "With --engine fast-map, map plans with storage areas in Rust (level pools; "
+            "WSE/Depth, arrival time, percent inundated). Opt-in: slower than RAS Mapper "
+            "today, so by default such plans go to RAS Mapper. Default: "
+            "RAS2CNG_FAST_MAP_STORAGE_AREAS, else off"
+        ),
+    ),
+    fast_map_terrain_crs_hash: Optional[str] = typer.Option(
+        None, "--fast-map-terrain-crs-hash",
+        help=(
+            "For Rust inundation boundaries: the engine's crs_wkt_fnv1a64 for the boundary "
+            "terrain TIFF, when the engine cannot name its EPSG code (e.g. Davis). Get it "
+            "with `ras2fim-batch terrain-info <terrain.tif>` (the refusal message prints "
+            "it), check the CRS, then pass it. Never guessed"
+        ),
+    ),
     fast_map_invalid_cells: Optional[str] = typer.Option(
         None, "--fast-map-invalid-cells",
         help=(
@@ -1445,6 +1463,8 @@ def map_command(
             fast_map_velocity=fast_map_velocity,
             fast_map_derived=fast_map_derived,
             fast_map_effective_terrain=fast_map_effective_terrain,
+            fast_map_storage_areas=fast_map_storage_areas,
+            fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
             fast_map_invalid_cells=fast_map_invalid_cells,
             fast_map_writer=fast_map_writer,
             fast_map_fallback=fast_map_fallback,
@@ -1605,6 +1625,24 @@ def map_hdf_command(
             "before exporting the terrain through HEC-RAS (unmodified terrains only)"
         ),
     ),
+    fast_map_storage_areas: Optional[bool] = typer.Option(
+        None, "--fast-map-storage-areas/--no-fast-map-storage-areas",
+        help=(
+            "With --engine fast-map, map plans with storage areas in Rust (level pools; "
+            "WSE/Depth, arrival time, percent inundated). Opt-in: slower than RAS Mapper "
+            "today, so by default such plans go to RAS Mapper. Default: "
+            "RAS2CNG_FAST_MAP_STORAGE_AREAS, else off"
+        ),
+    ),
+    fast_map_terrain_crs_hash: Optional[str] = typer.Option(
+        None, "--fast-map-terrain-crs-hash",
+        help=(
+            "For Rust inundation boundaries: the engine's crs_wkt_fnv1a64 for the boundary "
+            "terrain TIFF, when the engine cannot name its EPSG code (e.g. Davis). Get it "
+            "with `ras2fim-batch terrain-info <terrain.tif>` (the refusal message prints "
+            "it), check the CRS, then pass it. Never guessed"
+        ),
+    ),
     fast_map_invalid_cells: Optional[str] = typer.Option(
         None, "--fast-map-invalid-cells",
         help=(
@@ -1721,6 +1759,8 @@ def map_hdf_command(
             fast_map_velocity=fast_map_velocity,
             fast_map_derived=fast_map_derived,
             fast_map_effective_terrain=fast_map_effective_terrain,
+            fast_map_storage_areas=fast_map_storage_areas,
+            fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
             fast_map_invalid_cells=fast_map_invalid_cells,
             fast_map_writer=fast_map_writer,
             fast_map_fallback=fast_map_fallback,
@@ -1802,13 +1842,25 @@ def mannings_command(
         ..., help="Output GeoTIFF path"
     ),
     geometry: Optional[str] = typer.Option(
-        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: first"
+        None, "--geometry", "-g", help="Geometry number (e.g. g01). Default: g01"
+    ),
+    method: str = typer.Option(
+        "auto", "--method",
+        help=(
+            "auto: RAS Mapper's Final n Values in Rust (pixel-identical to RAS Mapper "
+            "7.0.1, no HEC-RAS), falling back with a warning to the Python estimate for "
+            "geometries the engine refuses (e.g. 1D); rasmapper: no fallback; estimate: "
+            "the pre-0.13 Python estimate"
+        ),
     ),
 ):
-    """Export final Manning's n raster (base landcover + calibration overrides).
+    """Export the final Manning's n raster (RAS Mapper's "Final n Values").
 
-    Produces a full-resolution GeoTIFF of Manning's n values matching the
-    land cover raster grid, with all calibration region overrides applied.
+    By default written in Rust and pixel-identical to RAS Mapper 7.0.1's
+    Export Raster of the geometry's Final n Values layer (RAS Mapper's grid:
+    geometry extent, land-cover cell size). Geometries the engine refuses fall
+    back to the older Python estimate with a warning. The method used is
+    recorded in the GeoTIFF tag ``ras2cng_mannings_method``.
     """
 
     from ras2cng.terrain import export_mannings_raster
@@ -1818,6 +1870,7 @@ def mannings_command(
             project,
             output,
             geometry=geometry,
+            method=method,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")

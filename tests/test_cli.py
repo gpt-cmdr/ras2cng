@@ -637,6 +637,8 @@ def test_map_defaults(monkeypatch, tmp_path: Path):
                 "fast_map_writer": None,
                 "fast_map_derived": True,
                 "fast_map_effective_terrain": True,
+                "fast_map_storage_areas": None,
+                "fast_map_terrain_crs_fnv1a64": None,
             },
         }
     ]
@@ -698,6 +700,9 @@ def test_map_options_and_flag_pairs(monkeypatch, tmp_path: Path):
             "omit",
             "--fast-map-writer",
             "rasterio",
+            "--fast-map-storage-areas",
+            "--fast-map-terrain-crs-hash",
+            "e446f7bd6bdb4d7f",
         ],
     )
 
@@ -747,6 +752,8 @@ def test_map_options_and_flag_pairs(monkeypatch, tmp_path: Path):
                 "fast_map_writer": "rasterio",
                 "fast_map_derived": False,
                 "fast_map_effective_terrain": False,
+                "fast_map_storage_areas": True,
+                "fast_map_terrain_crs_fnv1a64": "e446f7bd6bdb4d7f",
             },
         }
     ]
@@ -814,7 +821,7 @@ def test_mannings_passes_geometry(monkeypatch, tmp_path: Path):
         {
             "name": "export_mannings_raster",
             "args": (Path("model.prj"), output),
-            "kwargs": {"geometry": "g02"},
+            "kwargs": {"geometry": "g02", "method": "auto"},
         }
     ]
 

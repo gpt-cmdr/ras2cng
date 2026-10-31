@@ -36,7 +36,12 @@ _ENGINE_WHOLE_T08 = {"duration_rule": fast_map.DURATION_RULE}
 
 @pytest.fixture
 def new_engine(monkeypatch):
-    """An engine with every fast-map #18-#20 capability."""
+    """An engine with every fast-map #18-#20 capability, storage areas opted in.
+
+    The product functions read the opt-in from ``render`` (set by preflight)
+    or, as here, from ``RAS2CNG_FAST_MAP_STORAGE_AREAS``.
+    """
+    monkeypatch.setenv(fast_map.STORAGE_AREAS_ENV, "1")
     records = {"sloping": _ENGINE_SLOPING_T08, "whole_simulation": _ENGINE_WHOLE_T08}
     monkeypatch.setattr(fast_map, "engine_method", lambda kind: records.get(kind, {}))
     monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: True)
@@ -124,9 +129,36 @@ def test_effective_terrain_capability(fim, monkeypatch):
 def test_scope_accepts_storage_areas_only_with_the_capability(fim, tmp_path, monkeypatch):
     fim.validate_2d_model.return_value = {"storage_areas": 2}
     with pytest.raises(fast_map.FastMapUnavailable, match="storage-area-level-pool/1"):
-        fast_map._check_scope(fim, tmp_path / "x.p01.hdf")
+        fast_map._check_scope(fim, tmp_path / "x.p01.hdf", True)
     monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: True)
-    assert fast_map._check_scope(fim, tmp_path / "x.p01.hdf") == 2
+    assert fast_map._check_scope(fim, tmp_path / "x.p01.hdf", True) == 2
+
+
+@patch("ras_commander.RasFim")
+def test_storage_areas_are_opt_in_even_with_the_capability(fim, tmp_path, monkeypatch):
+    """User decision 2026-10-31: not a default until faster than RAS Mapper."""
+    monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: True)
+    fim.validate_2d_model.return_value = {"storage_areas": 1}
+    with pytest.raises(fast_map.FastMapUnavailable, match="opt-in.*--fast-map-storage-areas"):
+        fast_map._check_scope(fim, tmp_path / "x.p01.hdf")
+    fim.validate_2d_model.return_value = {"storage_areas": 0}
+    assert fast_map._check_scope(fim, tmp_path / "x.p01.hdf") == 0
+
+
+def test_resolve_storage_areas_reads_the_env(monkeypatch):
+    monkeypatch.delenv(fast_map.STORAGE_AREAS_ENV, raising=False)
+    assert fast_map.STORAGE_AREAS_DEFAULT is False
+    assert fast_map.resolve_storage_areas(None) is False
+    assert fast_map.resolve_storage_areas(True) is True
+    for value in ("1", "true", "YES", "on"):
+        monkeypatch.setenv(fast_map.STORAGE_AREAS_ENV, value)
+        assert fast_map.resolve_storage_areas(None) is True
+        assert fast_map.resolve_storage_areas(False) is False
+    monkeypatch.setenv(fast_map.STORAGE_AREAS_ENV, "0")
+    assert fast_map.resolve_storage_areas(None) is False
+    monkeypatch.setenv(fast_map.STORAGE_AREAS_ENV, "maybe")
+    with pytest.raises(ValueError, match=fast_map.STORAGE_AREAS_ENV):
+        fast_map.resolve_storage_areas(None)
 
 
 @patch("ras_commander.RasFim")
@@ -134,9 +166,37 @@ def test_preflight_carries_the_storage_area_count(fim, tmp_path, monkeypatch):
     monkeypatch.setattr(fast_map, "storage_areas_supported", lambda: True)
     monkeypatch.setattr(fast_map, "render_settings", lambda ras, mode: dict(_SLOPING))
     fim.validate_2d_model.return_value = {"storage_areas": 1}
+    render = fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None, storage_areas=True)
+    assert render["storage_areas"] == 1 and render["storage_areas_enabled"] is True
+    with pytest.raises(fast_map.FastMapUnavailable, match="opt-in"):
+        fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None)
+    monkeypatch.setenv(fast_map.STORAGE_AREAS_ENV, "1")
     assert fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None)["storage_areas"] == 1
     fim.validate_2d_model.return_value = {"storage_areas": 0}
-    assert "storage_areas" not in fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None)
+    render = fast_map.preflight(tmp_path / "x.p01.hdf", MagicMock(), None, storage_areas=False)
+    assert "storage_areas" not in render and render["storage_areas_enabled"] is False
+
+
+@patch("ras_commander.RasFim")
+def test_product_functions_follow_the_preflight_opt_in(fim, tmp_path, new_engine, monkeypatch):
+    """A render from preflight carries the opt-in; it wins over the env var."""
+    monkeypatch.delenv(fast_map.STORAGE_AREAS_ENV, raising=False)
+    fim.validate_2d_model.return_value = {"storage_areas": 1}
+    fim.map_sloping_profiles.side_effect = lambda hdf, t, folder, **kw: _manifest(Path(folder))
+    with pytest.raises(fast_map.FastMapUnavailable, match="opt-in"):
+        fast_map.map_plan(
+            tmp_path / "x.p07.hdf", tmp_path / "t.tif", tmp_path / "a",
+            map_types=["depth"], render={**_SLOPING, "storage_areas_enabled": False},
+            product_writer="rasterio",
+        )
+    out = tmp_path / "b"
+    fast_map.map_plan(
+        tmp_path / "x.p07.hdf", tmp_path / "t.tif", out,
+        map_types=["depth"], render={**_SLOPING, "storage_areas_enabled": True},
+        product_writer="rasterio",
+    )
+    details = json.loads((out / fast_map.FAST_MAP_MANIFEST).read_text())["ras2cng"]
+    assert details["storage_areas"] == 1 and details["storage_areas_opt_in"] is True
 
 
 @patch("ras_commander.RasFim")
@@ -443,8 +503,12 @@ def _fake_ras(tmp_path):
     return ras, project_dir
 
 
-def _route(tmp_path, monkeypatch, render, **kwargs):
-    """Run generate_result_maps with every fast-map group mocked; return calls."""
+def _route(tmp_path, monkeypatch, render, real_preflight=False, **kwargs):
+    """Run generate_result_maps with every fast-map group mocked; return calls.
+
+    ``real_preflight`` keeps :func:`fast_map.preflight` (scope from the
+    patched RasFim, render from ``render``) instead of returning ``render``.
+    """
     ras, project_dir = _fake_ras(tmp_path)
     terrain = tmp_path / "dem.tif"
     terrain.write_bytes(b"x")
@@ -457,7 +521,10 @@ def _route(tmp_path, monkeypatch, render, **kwargs):
             return fast_map.FastMapProducts({p: [out / f"{p}.tif"] for p in products(kw)})
         return fake
 
-    monkeypatch.setattr(fast_map, "preflight", lambda plan, r, mode: dict(render))
+    if real_preflight:
+        monkeypatch.setattr(fast_map, "render_settings", lambda ras, mode: dict(render))
+    else:
+        monkeypatch.setattr(fast_map, "preflight", lambda plan, r, mode, **kw: dict(render))
     monkeypatch.setattr(fast_map, "map_plan", group(
         "plan", lambda kw: [t for t in kw["map_types"] if t in ("wse", "depth")]))
     monkeypatch.setattr(fast_map, "map_velocity", group("velocity", lambda kw: ["velocity"]))
@@ -509,6 +576,36 @@ def test_storage_area_plan_keeps_unqualified_products_on_rasmapper(tmp_path, mon
     assert result.engines["wse"] == result.engines["arrival_time"] == "fast-map"
     assert "velocity" not in calls and "derived" not in calls
     assert calls["whole"]["map_types"] == ["arrival_time"]
+
+
+def test_storage_area_plan_goes_to_rasmapper_by_default(tmp_path, monkeypatch, new_engine):
+    """User decision 2026-10-31: storage areas are opt-in; the reason is recorded."""
+    monkeypatch.delenv(fast_map.STORAGE_AREAS_ENV, raising=False)
+    with patch("ras_commander.RasFim") as fim:
+        fim.validate_2d_model.return_value = {"storage_areas": 1}
+        result, calls, rasmapper = _route(
+            tmp_path, monkeypatch, _SLOPING, real_preflight=True, arrival_time=True,
+        )
+    assert calls == {}, "no fast-map product group runs"
+    assert rasmapper == {"wse", "depth", "velocity", "arrival_time"}
+    assert set(result.engines.values()) == {"rasmapper"}
+    assert set(result.fast_map_skipped) == {"wse", "depth", "velocity", "arrival_time"}
+    assert "opt-in" in result.fast_map_skipped["wse"]
+
+
+def test_storage_area_opt_in_maps_level_pools(tmp_path, monkeypatch, new_engine):
+    monkeypatch.delenv(fast_map.STORAGE_AREAS_ENV, raising=False)
+    with patch("ras_commander.RasFim") as fim:
+        fim.validate_2d_model.return_value = {"storage_areas": 1}
+        result, calls, rasmapper = _route(
+            tmp_path, monkeypatch, _SLOPING, real_preflight=True, arrival_time=True,
+            fast_map_storage_areas=True,
+        )
+    assert calls["plan"]["render"]["storage_areas"] == 1
+    assert calls["plan"]["render"]["storage_areas_enabled"] is True
+    assert result.engines["wse"] == result.engines["arrival_time"] == "fast-map"
+    assert rasmapper == {"velocity"}, "velocity is not qualified with storage areas"
+    assert "velocity" in result.fast_map_skipped and "wse" not in result.fast_map_skipped
 
 
 def test_sloping_pretty_velocity_is_opt_in(tmp_path, monkeypatch, new_engine):

@@ -8,13 +8,13 @@ layer per input:
     In-process Rust tiler from the optional ``freestiler`` extra
     (``pip install ras2cng[freestiler]``). It snaps vertices to the tile pixel
     grid, so shared mesh vertices stay shared, and keeps every feature. A build
-    with Arrow input and the ``buffer`` option (gpt-cmdr/freestiler #5) is the
-    preferred backend: it needs no GeoJSON, mbtiles or ``pmtiles convert`` step.
-    Viewer on Bald Eagle p07 with vector results: 36 s against 1,745 s for
-    tippecanoe. Archives with the default feature IDs are 5% larger than
-    tippecanoe's and without them 10% smaller; sparse low-zoom layers stay
-    larger (``feature_dev_notes/rust_engines/T12.md``). Older builds are 9-12%
-    larger on mesh layers.
+    with Arrow input and the ``buffer`` option (the gpt-cmdr fork build 0.3.0.1,
+    GitHub Release assets only) is the preferred backend: it needs no GeoJSON,
+    mbtiles or ``pmtiles convert`` step. Viewer on Bald Eagle p07 with vector
+    results: 36 s against 1,745 s for tippecanoe. Archives with the default (no
+    feature IDs) are 10% smaller than tippecanoe's, and 5% larger with IDs;
+    sparse low-zoom layers stay larger. Older builds are 9-12% larger on mesh
+    layers.
 
 ``tippecanoe``
     External ``tippecanoe`` + ``pmtiles`` CLIs. Not available natively on
@@ -44,11 +44,13 @@ freestiler input (``RAS2CNG_FREESTILER_INPUT``):
 freestiler options (ignored by tippecanoe, whose tiles never carry IDs):
 
 ``RAS2CNG_VECTOR_TILE_IDS``
-    ``1`` (default) keeps an MVT feature ID on every feature; ``0`` omits them
-    (``generate_ids=False``). On the 87k-cell Bald Eagle mesh, z10-15, omitting
-    IDs saves 1.7 MB (-14%). Nothing in the ras2cng viewer reads feature IDs
-    (tippecanoe output never had them), but a consumer using MapLibre
-    ``feature-state`` without ``promoteId`` needs them. The CLI flag
+    ``0`` (default since 0.13) omits MVT feature IDs (``generate_ids=False``);
+    ``1`` keeps one on every feature. On the 87k-cell Bald Eagle mesh, z10-15,
+    omitting IDs saves 1.7 MB (-14%); on the Bald Eagle p07 viewer with results
+    it takes freestiler from +5.4% to -10.0% against tippecanoe (Davis +12.3%
+    to +2.8%). Nothing in the ras2cng viewer reads feature IDs (tippecanoe
+    output never had them); a consumer using MapLibre ``feature-state`` without
+    ``promoteId`` needs them, so opt in. The CLI flag
     ``--feature-ids/--no-feature-ids`` and :func:`vector_tile_options` override it.
 
 ``RAS2CNG_VECTOR_TILE_GZIP_LEVEL``
@@ -101,6 +103,9 @@ FREESTILER = "freestiler"
 _CHOICES = (TIPPECANOE, FREESTILER)
 
 FEATURE_IDS_ENV = "RAS2CNG_VECTOR_TILE_IDS"
+# Off by default (user decision 2026-10-31): -10.0% vs tippecanoe on Bald
+# Eagle p07 results instead of +5.4%; the ras2cng viewer never reads IDs.
+FEATURE_IDS_DEFAULT = False
 GZIP_LEVEL_ENV = "RAS2CNG_VECTOR_TILE_GZIP_LEVEL"
 DEFAULT_GZIP_LEVEL = 6
 TILE_BUFFER = 5
@@ -138,13 +143,15 @@ def vector_tile_options(
 
 
 def feature_ids_enabled() -> bool:
-    """Whether vector tiles carry MVT feature IDs (default True)."""
+    """Whether vector tiles carry MVT feature IDs (default False)."""
 
     override = _OPTIONS.get().get("feature_ids")
     if override is not None:
         return override
     raw = os.environ.get(FEATURE_IDS_ENV, "").strip().lower()
-    if not raw or raw in _TRUE:
+    if not raw:
+        return FEATURE_IDS_DEFAULT
+    if raw in _TRUE:
         return True
     if raw in _FALSE:
         return False

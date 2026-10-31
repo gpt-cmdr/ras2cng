@@ -71,14 +71,18 @@ def _loader(calls, name, frame):
     return load
 
 
-def test_feature_ids_default_on_env_and_context(monkeypatch):
+def test_feature_ids_default_off_env_and_context(monkeypatch):
     monkeypatch.delenv(vector_tiles.FEATURE_IDS_ENV, raising=False)
+    assert vector_tiles.feature_ids_enabled() is False
+    monkeypatch.setenv(vector_tiles.FEATURE_IDS_ENV, "1")
+    assert vector_tiles.feature_ids_enabled() is True
+    with vector_tiles.vector_tile_options(feature_ids=False):
+        assert vector_tiles.feature_ids_enabled() is False
     assert vector_tiles.feature_ids_enabled() is True
     monkeypatch.setenv(vector_tiles.FEATURE_IDS_ENV, "0")
     assert vector_tiles.feature_ids_enabled() is False
     with vector_tiles.vector_tile_options(feature_ids=True):
         assert vector_tiles.feature_ids_enabled() is True
-    assert vector_tiles.feature_ids_enabled() is False
     monkeypatch.setenv(vector_tiles.FEATURE_IDS_ENV, "maybe")
     with pytest.raises(ValueError, match=vector_tiles.FEATURE_IDS_ENV):
         vector_tiles.feature_ids_enabled()
@@ -109,10 +113,10 @@ def test_multi_layer_uses_freestile_layers_one_layer_at_a_time(monkeypatch, tmp_
 
     applied = vector_tiles.run_freestiler(tmp_path / "out.pmtiles", layers, 10, 14)
 
-    assert applied == {"generate_ids": True, "gzip_level": 6, "layered": True}
+    assert applied == {"generate_ids": False, "gzip_level": 6, "layered": True}
     assert calls["freestile"] == []
     assert calls["freestile_layers"] == [
-        {"layers": ["cells", "faces"], "generate_ids": True, "gzip_level": 6}
+        {"layers": ["cells", "faces"], "generate_ids": False, "gzip_level": 6}
     ]
     # Each layer is loaded only when the tiler asks for it.
     assert calls["loaded"] == [
@@ -123,13 +127,18 @@ def test_multi_layer_uses_freestile_layers_one_layer_at_a_time(monkeypatch, tmp_
     assert (tmp_path / "out.pmtiles").read_bytes() == b"pmtiles"
 
 
-def test_feature_ids_can_be_dropped(monkeypatch, tmp_path):
+def test_feature_ids_are_off_by_default_and_can_be_kept(monkeypatch, tmp_path):
     calls = _fake_freestiler(monkeypatch)
-    monkeypatch.setenv(vector_tiles.FEATURE_IDS_ENV, "false")
+    monkeypatch.delenv(vector_tiles.FEATURE_IDS_ENV, raising=False)
     vector_tiles.run_freestiler(tmp_path / "a.pmtiles", {"cells": _frame(), "faces": _frame()}, 10, 14)
     vector_tiles.run_freestiler(tmp_path / "b.pmtiles", {"cells": _frame()}, 10, 14)
     assert calls["freestile_layers"][0]["generate_ids"] is False
     assert calls["freestile"][0]["generate_ids"] is False
+    monkeypatch.setenv(vector_tiles.FEATURE_IDS_ENV, "true")
+    vector_tiles.run_freestiler(tmp_path / "c.pmtiles", {"cells": _frame(), "faces": _frame()}, 10, 14)
+    vector_tiles.run_freestiler(tmp_path / "d.pmtiles", {"cells": _frame()}, 10, 14)
+    assert calls["freestile_layers"][1]["generate_ids"] is True
+    assert calls["freestile"][1]["generate_ids"] is True
 
 
 def test_layered_build_without_gzip_pass_through_warns(monkeypatch, tmp_path):
@@ -151,8 +160,8 @@ def test_stock_freestiler_without_new_api(monkeypatch, tmp_path):
     applied = vector_tiles.run_freestiler(
         tmp_path / "a.pmtiles", {"cells": _frame(), "faces": _frame()}, 10, 14
     )
-    assert applied == {"generate_ids": True, "gzip_level": None, "layered": False}
-    assert calls["freestile"] == [{"layers": ["cells", "faces"], "generate_ids": True}]
+    assert applied == {"generate_ids": False, "gzip_level": None, "layered": False}
+    assert calls["freestile"] == [{"layers": ["cells", "faces"], "generate_ids": False}]
     assert vector_tiles.freestiler_capabilities(sys.modules["freestiler"]) == {
         "layers": False, "gzip": False, "layers_gzip": False,
         "buffer": False, "layers_buffer": False, "arrow": False,
@@ -188,11 +197,14 @@ def test_cli_feature_ids_flag_reaches_the_tiler(monkeypatch, tmp_path):
     monkeypatch.delenv(vector_tiles.FEATURE_IDS_ENV, raising=False)
     source = tmp_path / "in.parquet"
     source.write_bytes(b"")
-    result = CliRunner().invoke(app, ["pmtiles", str(source), str(tmp_path / "o.pmtiles"), "--no-feature-ids"])
+    result = CliRunner().invoke(app, ["pmtiles", str(source), str(tmp_path / "o.pmtiles"), "--feature-ids"])
     assert result.exit_code == 0, result.output
-    assert seen["ids"] is False
+    assert seen["ids"] is True
     result = CliRunner().invoke(app, ["pmtiles", str(source), str(tmp_path / "o.pmtiles")])
-    assert result.exit_code == 0 and seen["ids"] is True
+    assert result.exit_code == 0 and seen["ids"] is False
+    monkeypatch.setenv(vector_tiles.FEATURE_IDS_ENV, "1")
+    result = CliRunner().invoke(app, ["pmtiles", str(source), str(tmp_path / "o.pmtiles"), "--no-feature-ids"])
+    assert result.exit_code == 0 and seen["ids"] is False
 
 
 def test_real_freestiler_capabilities_are_detected():

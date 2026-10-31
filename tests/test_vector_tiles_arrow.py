@@ -260,7 +260,7 @@ def test_arrow_layers_go_to_freestile_layers_with_crs_and_buffer(monkeypatch, tm
     applied = vector_tiles.run_freestiler(tmp_path / "out.pmtiles", layers, 13, 16)
 
     assert applied == {
-        "generate_ids": True,
+        "generate_ids": False,
         "gzip_level": 6,
         "layered": True,
         "input": "arrow",
@@ -268,7 +268,7 @@ def test_arrow_layers_go_to_freestile_layers_with_crs_and_buffer(monkeypatch, tm
         "python_reprojected": [],
     }
     (attempt,) = calls["attempts"]
-    assert attempt["options"] == {"gzip_level": 6, "buffer": 5, "generate_ids": True}
+    assert attempt["options"] == {"gzip_level": 6, "buffer": 5, "generate_ids": False}
     assert [name for name, _, _ in attempt["layers"]] == ["cells", "extent"]
     name, crs, table = attempt["layers"][0]
     # Reprojected in Rust: the table stays in the model CRS.
