@@ -34,6 +34,7 @@ matter:
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import math
@@ -43,6 +44,8 @@ import tempfile
 from typing import Any, Iterator, Mapping, Sequence
 import uuid
 import warnings
+
+LOGGER = logging.getLogger(__name__)
 import xml.etree.ElementTree as ET
 
 # --------------------------------------------------------------------------
@@ -435,6 +438,241 @@ def assert_valid_cog(path: Path, *, require_mask: bool = True) -> CogValidation:
 # --------------------------------------------------------------------------
 # Creation options (M2)
 # --------------------------------------------------------------------------
+
+
+#: Rows read at a time when counting a level. A calibrated depth grid is
+#: routinely 35k x 30k; reading a level whole would be tens of gigabytes.
+_AUDIT_STRIP_ROWS = 2048
+
+#: Above this the extent is inflating enough to be visible on a zoomed-out map.
+_AUDIT_INFLATION_LIMIT = 1.15
+#: Above this it is not a tuning question, it is the AVERAGE-on-nodata bug.
+_AUDIT_BROKEN_LIMIT = 3.0
+#: Below this a majority vote is dissolving sub-pixel channels.
+_AUDIT_EROSION_LIMIT = 0.75
+
+
+@dataclass(frozen=True)
+class OverviewExtentLevel:
+    """Wet extent measured at one stored overview level."""
+
+    level: int
+    wet_pixels: int
+    total_pixels: int
+    wet_fraction: float
+    #: Wet fraction relative to full resolution. 1.0 preserves extent.
+    area_ratio: float
+
+
+@dataclass
+class OverviewExtentAudit:
+    """Whether a raster's overviews preserve the wet extent of level 0.
+
+    Mirrors :class:`OverviewReport`, which records the same quantity at write
+    time; this measures it after the fact from any raster.
+    """
+
+    path: Path
+    threshold: float
+    band: int
+    levels: list[OverviewExtentLevel] = field(default_factory=list)
+    #: ``stable`` | ``inflating`` | ``broken`` | ``eroding`` | ``empty``
+    verdict: str = "stable"
+    detail: str = ""
+
+    @property
+    def max_area_ratio(self) -> float:
+        return max((lv.area_ratio for lv in self.levels), default=1.0)
+
+    @property
+    def min_area_ratio(self) -> float:
+        return min((lv.area_ratio for lv in self.levels), default=1.0)
+
+    @property
+    def ok(self) -> bool:
+        """True when extent is preserved. ``eroding`` is deliberate, not a pass."""
+        return self.verdict in {"stable", "empty"}
+
+    def as_tags(self) -> dict[str, str]:
+        """Same tag shape as :meth:`OverviewReport.as_tags`, for manifests."""
+        return {
+            "overview_audit_verdict": self.verdict,
+            "overview_audit_threshold": f"{self.threshold:g}",
+            "overview_audit_area_ratios": ",".join(
+                f"{lv.area_ratio:.6f}" for lv in self.levels
+            ),
+        }
+
+
+def audit_overview_extent(
+    path: Path | str,
+    *,
+    threshold: float,
+    band: int = 1,
+) -> OverviewExtentAudit:
+    """Measure whether a raster's stored overviews preserve wet extent.
+
+    Counts pixels at or above ``threshold`` at full resolution and at every
+    stored overview level, and compares each level's wet fraction to the
+    full-resolution fraction.
+
+    Why this is not cosmetic: when a depth grid is thresholded so dry becomes
+    nodata, GDAL's ``average`` decimation *skips* nodata children. A coarse
+    cell covering four children with one wet is not "25% wet" - it is fully
+    wet, at that child's value. Every level then doubles the linear width of
+    every wet feature, so a 20 ft creek can draw 1,280 ft wide six levels down
+    and a stream network closes into a sheet. The map is wrong only when
+    zoomed out, which is why it survives review.
+
+    Each level is streamed in row strips and compared in the raster's own
+    dtype, never promoted to float64, so a 35k x 30k grid is safe to audit.
+
+    Args:
+        path: Raster to audit. Any GDAL-readable raster with overviews.
+        threshold: Wet cutoff in the raster's own units - feet for a float
+            depth grid, centi-feet (so ``50``) for an Int16 grid.
+        band: 1-based band index.
+
+    Returns:
+        OverviewExtentAudit: per-level measurements and a verdict.
+
+    Raises:
+        rasterio.errors.RasterioIOError: If the raster cannot be opened.
+        ValueError: If ``band`` is not present in the raster.
+    """
+    import rasterio
+
+    path = Path(path)
+    with rasterio.open(path) as src:
+        if band < 1 or band > src.count:
+            raise ValueError(
+                f"band {band} not present in {path.name} (has {src.count})"
+            )
+        nodata = src.nodata
+        total = src.width * src.height
+        base_wet = _count_wet(src, band, src.height, src.width, threshold, nodata)
+        base_fraction = base_wet / total if total else 0.0
+
+        levels = [
+            OverviewExtentLevel(
+                level=1,
+                wet_pixels=base_wet,
+                total_pixels=total,
+                wet_fraction=base_fraction,
+                area_ratio=1.0,
+            )
+        ]
+
+        if base_wet == 0:
+            audit = OverviewExtentAudit(
+                path=path, threshold=threshold, band=band, levels=levels,
+                verdict="empty",
+                detail=(
+                    f"no pixels at or above {threshold:g} at full resolution; "
+                    "nothing to compare"
+                ),
+            )
+            LOGGER.info("overview audit %s: %s", path.name, audit.detail)
+            return audit
+
+        for factor in src.overviews(band):
+            height = max(1, src.height // factor)
+            width = max(1, src.width // factor)
+            wet = _count_wet(src, band, height, width, threshold, nodata)
+            level_total = height * width
+            fraction = wet / level_total if level_total else 0.0
+            levels.append(
+                OverviewExtentLevel(
+                    level=factor,
+                    wet_pixels=wet,
+                    total_pixels=level_total,
+                    wet_fraction=fraction,
+                    area_ratio=fraction / base_fraction,
+                )
+            )
+
+    audit = OverviewExtentAudit(
+        path=path, threshold=threshold, band=band, levels=levels
+    )
+    audit.verdict, audit.detail = _classify_extent(audit)
+    LOGGER.info("overview audit %s: %s - %s", path.name, audit.verdict, audit.detail)
+    return audit
+
+
+def _count_wet(
+    src: Any,
+    band: int,
+    out_height: int,
+    out_width: int,
+    threshold: float,
+    nodata: float | None,
+) -> int:
+    """Count pixels at or above ``threshold`` for one decimated read shape."""
+    import numpy as np
+    from rasterio.enums import Resampling
+    from rasterio.windows import Window
+
+    scale_y = src.height / out_height
+    wet = 0
+    for top in range(0, out_height, _AUDIT_STRIP_ROWS):
+        rows = min(_AUDIT_STRIP_ROWS, out_height - top)
+        window = Window(0, top * scale_y, src.width, rows * scale_y)
+        block = src.read(
+            band,
+            window=window,
+            out_shape=(rows, out_width),
+            # nearest so the read reports the stored overview rather than
+            # resampling it a second time on the way out.
+            resampling=Resampling.nearest,
+            boundless=False,
+        )
+        keep = block >= threshold
+        if nodata is not None:
+            keep &= block != np.array(nodata).astype(block.dtype)
+        if np.issubdtype(block.dtype, np.floating):
+            keep &= ~np.isnan(block)
+        wet += int(keep.sum())
+    return wet
+
+
+def _classify_extent(audit: OverviewExtentAudit) -> tuple[str, str]:
+    """Turn per-level area ratios into a verdict and a one-line explanation."""
+    worst = audit.max_area_ratio
+    lowest = audit.min_area_ratio
+
+    if worst > _AUDIT_BROKEN_LIMIT:
+        return "broken", (
+            f"wet extent inflates {worst:.2f}x by the coarsest level - "
+            "consistent with AVERAGE decimation over nodata. Rebuild the "
+            "overviews with build_area_matched_overviews()."
+        )
+    if worst > _AUDIT_INFLATION_LIMIT:
+        return "inflating", (
+            f"wet extent grows {worst:.2f}x. If these are already area-matched "
+            "overviews, the wet features are near the pixel floor and no "
+            "decimation rule can hold extent; publish at a shallower level."
+        )
+    if lowest < _AUDIT_EROSION_LIMIT:
+        return "eroding", (
+            f"sub-pixel features thin to {lowest:.2f}x at depth. Correct for an "
+            "extent map, wrong for a locator map - choose deliberately."
+        )
+    return "stable", (
+        f"extent holds across levels ({lowest:.2f}x to {worst:.2f}x)."
+    )
+
+
+def format_overview_audit(audit: OverviewExtentAudit) -> str:
+    """Render an audit as a fixed-width table plus verdict, for logs or CLI."""
+    lines = [f"{'level':>6}  {'wet %':>9}  {'area ratio':>11}"]
+    for level in audit.levels:
+        lines.append(
+            f"{level.level:>6}  {level.wet_fraction * 100:>8.3f}%  "
+            f"{level.area_ratio:>10.2f}x"
+        )
+    lines.append("")
+    lines.append(f"VERDICT: {audit.verdict.upper()} - {audit.detail}")
+    return "\n".join(lines)
 
 
 def numeric_predictor(dtype: Any, *, categorical: bool = False) -> int:
