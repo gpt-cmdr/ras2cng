@@ -119,9 +119,9 @@ dev-dependencies = [
   "httpx>=0.27.0",
 ]
 
-# TEMPORARY (draft PR): ras-commander 0.111.0 is not on PyPI yet. Until it is
+# TEMPORARY (draft PR): ras-commander 0.112.0 is not on PyPI yet. Until it is
 # published, resolve ras-commander from its main branch at a fixed commit. Before
-# merging: require "ras-commander[full]>=0.111.0", delete this section, and run
+# merging: require "ras-commander[full]>=0.112.0", delete this section, and run
 # `uv lock` so the lock pins the PyPI release.
 [tool.uv.sources]
 ras-commander = { git = "https://github.com/gpt-cmdr/ras-commander", rev = "29a2085ef186af16a49e3c9635d17d2bbe92d2ec" }
