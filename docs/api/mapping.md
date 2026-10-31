@@ -141,6 +141,9 @@ ras2cng map /path/to/project /output/maps --engine fast-map \
 
 # Fail instead of falling back (qualification runs)
 ras2cng map /path/to/project /output/maps --engine fast-map --fast-map-strict
+
+# Map a plan with storage areas in Rust (opt-in; otherwise RAS Mapper maps it)
+ras2cng map /path/to/project /output/maps --fast-map-storage-areas
 ```
 
 `RAS2CNG_MAP_ENGINE` selects the engine everywhere, including
@@ -151,7 +154,7 @@ to RAS Mapper without a terrain export.
 | Product | fast-map | Qualification against RAS Mapper |
 |---|---|---|
 | WSE, Depth (Max) | yes | identical float32 values and masks on five models (1.2–3.6× faster for horizontal and plain sloping, 1.8–7.3× for depth-weighted sloping faces; [evidence](https://rascommander.info/ras/development/fim-mapping-performance/)); Davis p02 and Bald Eagle bridges p05 again on the source-terrain path |
-| WSE, Depth with storage areas | yes, as RAS Mapper level pools, when the engine advertises `storage-area-level-pool/1` | identical on Bald Eagle p07 and p04 in every render mode (466,912 / 461,639 storage-area px); p07 Max sloping through `ras2cng map`: 0 mask and 0 bit differences on 1,345,691 px |
+| WSE, Depth with storage areas | **opt-in** (`--fast-map-storage-areas`; slower than RAS Mapper today), as RAS Mapper level pools, when the engine advertises `storage-area-level-pool/1` | identical on Bald Eagle p07 and p04 in every render mode (466,912 / 461,639 storage-area px); p07 Max sloping through `ras2cng map`: 0 mask and 0 bit differences on 1,345,691 px |
 | Arrival time, percent time inundated | yes (`--no-fast-map-whole-simulation` to opt out) | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft, horizontal and plain sloping; with a storage area, p07 (1,333,183 px) |
 | Duration | yes, when the engine advertises RAS Mapper's recession rule (`rasmapper-backward-window-recession/1`); not with storage areas | identical on Davis p02 and bridges p05 at 0.5 ft |
 | Velocity (Max) | yes in plain sloping and horizontal when the engine advertises `velocity_depth`; slopingPretty opt-in (`--fast-map-velocity`); `--no-fast-map-velocity` to opt out; not with storage areas | bridges p05: 0 value and 0 mask differences in sloping (973,902 px) and horizontal (973,532 px). slopingPretty: identical values on every common pixel, but its mask follows the slopingPretty depth, which differs on bridges Max (75 + 28 px). Older engines: opt-in, plain sloping only |
@@ -164,7 +167,8 @@ A plan is sent to RAS Mapper instead when:
 | Condition | Why |
 |---|---|
 | 1D river reaches or cross sections | Outside the engine's method (`RasFim.validate_2d_model`) |
-| Storage areas, with an engine that does not advertise `storage-area-level-pool/1` | It would leave the storage-area pixels blank |
+| Storage areas, unless `--fast-map-storage-areas` (`fast_map_storage_areas=True`, `RAS2CNG_FAST_MAP_STORAGE_AREAS=1`) is given | Not a default until it is faster than RAS Mapper: Bald Eagle p07 WSE + Depth took 18.7 s in Rust against 12.2 s. Opt in to map storage-area plans without HEC-RAS (Linux, FIM batches) |
+| Storage areas, opted in, with an engine that does not advertise `storage-area-level-pool/1` | It would leave the storage-area pixels blank |
 | A profile other than `Max` (per-profile products only; arrival, duration and percent are whole-simulation) | Timestep mapping is not wired through ras2cng yet. Decided before any terrain work |
 | No usable terrain | See below |
 | Engine missing or failed | No arithmetic fallback inside fast-map |
@@ -233,7 +237,9 @@ terrain's pixel grid, with NaN nodata, next to `fast_map_manifest.json`,
 `fast_map_velocity_manifest.json`, `fast_map_derived_manifest.json` and
 `fast_map_whole_simulation_manifest.json` (engine version, method, terrain,
 storage areas, timings). Arrival time is in hours since the simulation start.
-`MapResult.engines` records which engine produced each map type, and
+`MapResult.engines` records which engine produced each map type,
+`MapResult.fast_map_skipped` why a map type went to RAS Mapper under the
+fast-map engine (for example storage areas without the opt-in), and
 `MapResult.fast_map_terrain` which terrain fast-map used (`source`,
 `source-canonical`, `effective`, `export` or `supplied`). Velocity is its own
 engine call, so a velocity refusal never costs WSE/Depth, and WSE/Depth keep
@@ -313,9 +319,31 @@ back to RAS Mapper on its own, so the rasters can still use Rust):
 | Terrain with more than one source TIFF | The method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them |
 | Terrain modifications | Refused by ras2cng before the engine runs (`terrain_modifications`): modified terrains always go to RAS Mapper |
 | `slopingPretty` render mode | Contours support horizontal and plain sloping only |
-| ras-commander without `RasFim.map_inundation_boundaries` | Needs ras-commander #755 (supersedes #709; ras-commander-fast-map #5 is released) |
+| ras-commander without `RasFim.map_inundation_boundaries` | Needs ras-commander 0.113.0 |
 | Storage areas | The contour method draws 2D cells only; the level pool would be missing |
-| A terrain CRS the engine and rasterio read differently (Davis) | ras-commander needs a caller-verified `terrain_crs_fnv1a64`; ras2cng does not guess one |
+| A terrain CRS the engine and rasterio read differently (Davis), without `--fast-map-terrain-crs-hash` | The engine cannot name an EPSG code for it; ras2cng never guesses the identity (see below) |
+
+**User-supplied terrain CRS.** When the engine cannot name the terrain's EPSG
+code and reads its WKT differently from rasterio (Davis), the boundary falls
+back to RAS Mapper, and the message prints the engine's WKT hash, for example:
+
+```
+engine terrain CRS differs from rasterio CRS EPSG:2871; the engine reports
+crs_wkt_fnv1a64=e446f7bd6bdb4d7f for Terrain (1).Davis_terrain2.tif ...
+```
+
+Check the CRS first (`ras2fim-batch terrain-info <terrain.tif>` prints the
+engine's WKT and `crs_wkt_fnv1a64`), then pass the hash:
+
+```bash
+ras2cng map /path/to/Davis /output/maps --inundation-boundary \
+    --fast-map-terrain-crs-hash e446f7bd6bdb4d7f
+```
+
+The Python API takes `fast_map_terrain_crs_fnv1a64=`. It applies to the
+boundary terrain only, is used only when the engine reports no EPSG code, and
+a value that does not equal the engine's hash is refused. The boundary
+manifest records it as `ras2cng.terrain_crs_fnv1a64`.
 
 **Output.** `Inundation Boundary (Max).geojson`: a MultiPolygon with holes, in
 the model CRS. RAS Mapper writes a shapefile. It sits next to

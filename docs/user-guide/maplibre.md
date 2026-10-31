@@ -83,7 +83,7 @@ freestiler options (tippecanoe ignores them; its tiles never carry feature IDs):
 
 | Setting | Default | Effect |
 |---|---|---|
-| `RAS2CNG_VECTOR_TILE_IDS`, CLI `--feature-ids/--no-feature-ids` | on | `0` / `--no-feature-ids` omits MVT feature IDs (`generate_ids=False`). Bald Eagle 87k-cell mesh, z10-15: 1.7 MB smaller (-14%). The ras2cng viewer does not use IDs; keep them if a consumer uses MapLibre `feature-state` without `promoteId` |
+| `RAS2CNG_VECTOR_TILE_IDS`, CLI `--feature-ids/--no-feature-ids` | off (since 0.13) | `1` / `--feature-ids` keeps an MVT feature ID on every feature (`generate_ids=True`). Off, the Bald Eagle 87k-cell mesh, z10-15, is 1.7 MB smaller (-14%), and the Bald Eagle p07 viewer with results is 10.0% smaller than tippecanoe's instead of 5.4% larger. The ras2cng viewer does not use IDs; opt in if a consumer uses MapLibre `feature-state` without `promoteId` |
 | `RAS2CNG_VECTOR_TILE_GZIP_LEVEL` | 6 | Tile gzip level 0-9, when the installed freestiler accepts `gzip_level` (freestiler's own default is 1). Same mesh: -14%, tile contents unchanged |
 | `RAS2CNG_FREESTILER_INPUT` | `auto` | `auto` / `arrow` hand layers over as Arrow with no GeoJSON step (`arrow` fails on a build without Arrow input); `geojson` keeps the older path. Decoded tiles are identical on Bald Eagle p07 and Davis |
 

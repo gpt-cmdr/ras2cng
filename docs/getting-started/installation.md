@@ -48,6 +48,25 @@ example on Windows):
 pip install "ras2cng[freestiler]"
 ```
 
+The fastest vector path (Arrow input, no GeoJSON step) needs the gpt-cmdr fork
+build of freestiler, published as GitHub Release assets rather than on PyPI:
+
+```bash
+pip install freestiler==0.3.0.1 \
+  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.1-gpt-cmdr
+```
+
+Likewise the direct HDF archive path, the native GeoParquet writer and the
+COG report need the gpt-cmdr fork build of terrio:
+
+```bash
+pip install terrio==0.5.0.1 \
+  --find-links https://github.com/gpt-cmdr/terrio/releases/expanded_assets/gpt-cmdr-v0.5.0.1
+```
+
+Both are optional and detected at run time; with the PyPI builds ras2cng keeps
+its Python paths.
+
 Otherwise, vector tiles use two external CLI tools (not available via pip):
 
 - **tippecanoe** — Generates vector tiles from GeoJSON
@@ -66,6 +85,6 @@ For raster PMTiles, `gdal_translate` (part of GDAL) is also required.
 ## Requirements
 
 - Python >= 3.10
-- [ras-commander](https://github.com/gpt-cmdr/ras-commander) 0.100.0 or newer — installed automatically as a dependency
+- [ras-commander](https://github.com/gpt-cmdr/ras-commander) 0.113.0 or newer (with its `full` extra: ras-commander-fast-hdf 0.3.0 and ras-commander-fast-map 0.12.0) — installed automatically as a dependency
 - Core: pandas, geopandas, pyarrow, typer, rich
 - Optional: duckdb, sqlalchemy, geoalchemy2, psycopg2-binary, rasterio

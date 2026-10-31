@@ -467,17 +467,25 @@ Options:
 ```
 Usage: ras2cng mannings [OPTIONS] PROJECT OUTPUT
 
-  Export final Manning's n raster (base landcover + calibration overrides).
+  Export the final Manning's n raster (RAS Mapper's "Final n Values").
 
-  Produces a full-resolution GeoTIFF of Manning's n values matching the
-  land cover raster grid, with all calibration region overrides applied.
+  By default written in Rust and pixel-identical to RAS Mapper 7.0.1's
+  Export Raster of the geometry's Final n Values layer (RAS Mapper's grid:
+  geometry extent, land-cover cell size). Geometries the engine refuses fall
+  back to the older Python estimate with a warning. The method used is
+  recorded in the GeoTIFF tag ras2cng_mannings_method.
 
 Arguments:
   PROJECT  HEC-RAS project directory or .prj file
   OUTPUT   Output GeoTIFF path
 
 Options:
-  -g, --geometry TEXT   Geometry number (e.g. g01). Default: first
+  -g, --geometry TEXT   Geometry number (e.g. g01). Default: g01
+  --method TEXT         auto: RAS Mapper's Final n Values in Rust (pixel-identical
+                        to RAS Mapper 7.0.1, no HEC-RAS), falling back with a
+                        warning to the Python estimate for geometries the engine
+                        refuses (e.g. 1D); rasmapper: no fallback; estimate: the
+                        pre-0.13 Python estimate  [default: auto]
 ```
 
 ## ras2cng raster-calculate

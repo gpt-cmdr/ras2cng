@@ -31,8 +31,9 @@ GeoParquet → GeoDataFrame → freestiler → PMTiles       (older freestiler)
 Without `--min-zoom`/`--max-zoom`, tippecanoe guesses the zoom range (`-zg`);
 freestiler cannot guess and uses 0-14. Archive bbox covering columns (the
 `bbox` struct or the older flat `bbox_*` columns) are dropped before tiling.
-`--no-feature-ids` (or `RAS2CNG_VECTOR_TILE_IDS=0`) omits freestiler's MVT
-feature IDs; see the MapLibre guide for this and the gzip level.
+freestiler tiles carry no MVT feature IDs by default (since 0.13); `--feature-ids`
+(or `RAS2CNG_VECTOR_TILE_IDS=1`) keeps them. See the MapLibre guide for this and
+the gzip level.
 
 ```bash
 ras2cng pmtiles max_depth.parquet flood_depth.pmtiles \
