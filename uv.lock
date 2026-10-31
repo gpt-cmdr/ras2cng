@@ -4171,8 +4171,8 @@ wheels = [
 
 [[package]]
 name = "ras-commander"
-version = "0.110.3"
-source = { git = "https://github.com/gpt-cmdr/ras-commander?rev=29a2085ef186af16a49e3c9635d17d2bbe92d2ec#29a2085ef186af16a49e3c9635d17d2bbe92d2ec" }
+version = "0.112.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -4180,6 +4180,10 @@ dependencies = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "ras-commander-fast-hdf", marker = "(platform_machine == 'arm64' and platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or (platform_machine == 'AMD64' and platform_python_implementation == 'CPython' and sys_platform == 'win32')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e7/42/c4cc48932793c1aa759fe7c5a4290e917da4cb566347bec49e0f4b878979/ras_commander-0.112.0.tar.gz", hash = "sha256:5844151d230e7da52e30bbc4ce058809bb510c42adebc1eb83c2bb574f256a31", size = 4395506, upload-time = "2026-10-31T13:32:38.394Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/0e/9a1330dc9ee86a5418f64157e0bf15940c69b3f6d8f5d25f00d49e0afefa/ras_commander-0.112.0-py3-none-any.whl", hash = "sha256:24622998465bf8c44d91896650549c57eeb7d983e6d287e2f03c704841786a8d", size = 3216522, upload-time = "2026-10-31T13:32:36.225Z" },
 ]
 
 [package.optional-dependencies]
@@ -4216,18 +4220,18 @@ full = [
 
 [[package]]
 name = "ras-commander-fast-hdf"
-version = "0.2.4"
+version = "0.2.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/78/b0cc0a921bcb472da018502c41e1c08b99777ed23cad62faeae93fe89c88/ras_commander_fast_hdf-0.2.4.tar.gz", hash = "sha256:cf58db44dcf992925c991a1727de7d77899eb5ddf77671361fa4525277bd0813", size = 540069, upload-time = "2026-10-28T21:55:29.87Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/37/0e5cad5a862dbb507e69602dc195fa0486db13c3f04cf1386b3b4b878211/ras_commander_fast_hdf-0.2.5.tar.gz", hash = "sha256:9e49642092aa7581f499a6fd384c847e9973ab9f0064aa54b74b11172616469d", size = 565564, upload-time = "2026-10-31T01:27:01.725Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/66/2edaef77848c957f0d65abfcc528d42b4c7a31e24568c87be2a2eb2a72da/ras_commander_fast_hdf-0.2.4-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:7a6333c0ef61498625637aac86c6291ab1bff5254feaaaaf17d69a58039a76fc", size = 6843177, upload-time = "2026-10-28T21:55:23.887Z" },
-    { url = "https://files.pythonhosted.org/packages/95/6a/ea7b3dc3ca587bd91ef8689628f6221d5b0eaac04d2f8048e5586b737d79/ras_commander_fast_hdf-0.2.4-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:51cd4a9926c44b656c173b107d1a0602c2f4a539295fa077874acc188b355581", size = 7035145, upload-time = "2026-10-28T21:55:25.518Z" },
-    { url = "https://files.pythonhosted.org/packages/c1/b9/c894bd7eeb27829b8bf2c90c22cf429294e1855d13d52648b4599b3da16d/ras_commander_fast_hdf-0.2.4-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c53e3048acbe887d0d232bb17d06921ff9c2a8a8afc8b1436a61d47c5627346c", size = 7027680, upload-time = "2026-10-28T21:55:27.205Z" },
-    { url = "https://files.pythonhosted.org/packages/f1/b1/f522ef16d6c6b18c4d25547ca061d129c630f3939e2f2d847db1772bf474/ras_commander_fast_hdf-0.2.4-cp310-abi3-win_amd64.whl", hash = "sha256:a625348e20bffeb52f06261ce4a6eeb5e96770bc945e5fc8f49a4acaba62a968", size = 7062036, upload-time = "2026-10-28T21:55:28.6Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/a3/c874b62d380c77b7fa8617aa3fafc858f062db307fcc64153346d0174e16/ras_commander_fast_hdf-0.2.5-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f4fa40371c9e2605669b64e78500126922ba58f55f52a7dcde92cc5177c70e50", size = 6855789, upload-time = "2026-10-31T01:26:56.316Z" },
+    { url = "https://files.pythonhosted.org/packages/78/e8/40cc4e94e12365db721ab81dc0c70bf818ea056bf227fd9fa78dfcdc10b4/ras_commander_fast_hdf-0.2.5-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:5cd767b846cdf30c8f54436952755343997c16599b7496b1eabc971be1d9fdad", size = 7043176, upload-time = "2026-10-31T01:26:57.877Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/4e/71814b3698870b2ff262e89a8d2f8946303e398b8a62f7c5d21c168ce91b/ras_commander_fast_hdf-0.2.5-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:842222088043de2590ade1681ab56ecec9cfbee72bee10e33b99f60f3d263205", size = 7033910, upload-time = "2026-10-31T01:26:59.106Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/ad/a310aec45367f28b8d3b2ef92a577a8f6c4a4bf7036e63dcd6ccd452cf4e/ras_commander_fast_hdf-0.2.5-cp310-abi3-win_amd64.whl", hash = "sha256:8a9501a94a04e4dd8194e8b40810df0f4490a211da9d15c2005daa52605358ac", size = 7073855, upload-time = "2026-10-31T01:27:00.377Z" },
 ]
 
 [[package]]
@@ -4328,7 +4332,7 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9.0" },
     { name = "psycopg2-binary", marker = "extra == 'postgis'", specifier = ">=2.9.0" },
     { name = "pyarrow", specifier = ">=14.0.0" },
-    { name = "ras-commander", extras = ["full"], git = "https://github.com/gpt-cmdr/ras-commander?rev=29a2085ef186af16a49e3c9635d17d2bbe92d2ec" },
+    { name = "ras-commander", extras = ["full"], specifier = ">=0.112.0" },
     { name = "rasterio", marker = "extra == 'all'", specifier = ">=1.3.0" },
     { name = "rasterio", marker = "extra == 'pmtiles'", specifier = ">=1.3.0" },
     { name = "rich", specifier = ">=13.0.0" },
