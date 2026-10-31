@@ -401,6 +401,41 @@ def _apply_results_geometry_mode(
     return gpd.GeoDataFrame(merged, geometry="geometry", crs=mesh_cells_gdf.crs)
 
 
+def _physical_cell_counts(hdf: h5py.File) -> dict[str, int]:
+    """Return each 2D area's physical cell count from ``Attributes/Cell Count``.
+
+    HEC-RAS lists ghost cells (outside the perimeter) after the physical
+    cells in cell result arrays. Their values are placeholders (summary
+    maxima of 0.0), so cell IDs at or above ``Cell Count`` are not results.
+    """
+    attributes = hdf.get("Geometry/2D Flow Areas/Attributes")
+    if attributes is None or "Cell Count" not in (attributes.dtype.names or ()):
+        return {}
+    return {
+        str(HdfUtils.convert_ras_string(row["Name"])): int(row["Cell Count"])
+        for row in attributes[()]
+        if int(row["Cell Count"]) > 0
+    }
+
+
+def _drop_ghost_cells(frame: pd.DataFrame, plan_hdf: Path) -> pd.DataFrame:
+    """Remove ghost-cell rows from a per-cell result frame.
+
+    Works with any ras-commander version: newer releases already exclude
+    ghost cells, older ones return them with placeholder values.
+    """
+    if len(frame) == 0 or "cell_id" not in frame.columns or not Path(plan_hdf).is_file():
+        return frame
+    with h5py.File(plan_hdf, "r") as hdf:
+        counts = _physical_cell_counts(hdf)
+    if not counts:
+        return frame
+    limits = frame["mesh_name"].astype(str).map(counts)
+    keep = limits.isna().to_numpy() | (frame["cell_id"].to_numpy() < limits.to_numpy())
+    result = frame.loc[keep].drop(columns=["is_ghost_cell"], errors="ignore")
+    return result.reset_index(drop=True)
+
+
 def extract_results_variable_no_geometry(
     plan_hdf: Path,
     variable: str,
@@ -422,6 +457,7 @@ def extract_results_variable_no_geometry(
         d2_flow_areas = hdf.get("Geometry/2D Flow Areas/Attributes")
         if d2_flow_areas is None:
             return pd.DataFrame()
+        cell_counts = _physical_cell_counts(hdf)
 
         for d2_flow_area in d2_flow_areas[:]:
             mesh_name = HdfUtils.convert_ras_string(d2_flow_area[0])
@@ -432,6 +468,8 @@ def extract_results_variable_no_geometry(
 
             data = group[:]
             id_column = result_variable_index_column(variable)
+            if id_column == "cell_id" and mesh_name in cell_counts:
+                data = data[..., : cell_counts[mesh_name]]  # drop ghost cells
 
             if data.ndim == 2 and data.shape[0] == 2:
                 frame = pd.DataFrame(
@@ -480,6 +518,7 @@ def extract_results_variable(
     results_gdf = HdfResultsMesh.get_mesh_summary_output(Path(plan_hdf), variable)
     if len(results_gdf) == 0:
         return results_gdf
+    results_gdf = _drop_ghost_cells(results_gdf, Path(plan_hdf))
     return _apply_results_geometry_mode(
         results_gdf,
         mesh_cells_gdf=mesh_cells_gdf,
@@ -507,6 +546,7 @@ def export_results_layer(
     results_gdf = HdfResultsMesh.get_mesh_summary_output(plan_path, variable)
     if len(results_gdf) == 0:
         raise ValueError(f"No results found for variable: {variable}")
+    results_gdf = _drop_ghost_cells(results_gdf, plan_path)
 
     # If results are points (or empty geometry), optionally join to polygons.
     if _is_pointy(results_gdf) and geom_file:
