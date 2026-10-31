@@ -958,6 +958,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#direct-hdf-mesh-export-with-rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Direct HDF mesh export with Rust
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#raster-pipeline-geotiff-pmtiles" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -965,6 +976,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Raster Pipeline (GeoTIFF → PMTiles)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#streaming-terrio-tiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming terrio tiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2218,6 +2246,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#direct-hdf-mesh-export-with-rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Direct HDF mesh export with Rust
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#raster-pipeline-geotiff-pmtiles" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2225,6 +2264,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Raster Pipeline (GeoTIFF → PMTiles)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#streaming-terrio-tiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming terrio tiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2278,7 +2334,8 @@ serve flood map tiles directly from S3, Cloudflare R2, or GitHub Pages with no t
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <p>Vector tiles need either the <code>tippecanoe</code> + <code>pmtiles</code> CLIs or the in-process
 freestiler tiler (<code>pip install ras2cng[freestiler]</code>); <code>RAS2CNG_VECTOR_TILER</code>
-chooses between them (<code>auto</code>, the default, uses tippecanoe when it is on PATH).
+chooses between them (<code>auto</code>, the default, prefers a freestiler build with Arrow
+input, then tippecanoe when it is on PATH, then any freestiler).
 See <a href="../maplibre/#vector-tiler">MapLibre delivery</a>. External CLI tools:</p>
 <table>
 <thead>
@@ -2308,43 +2365,126 @@ See <a href="../maplibre/#vector-tiler">MapLibre delivery</a>. External CLI tool
 </table>
 <h2 id="vector-pipeline-geoparquet-pmtiles">Vector Pipeline (GeoParquet → PMTiles)<a class="headerlink" href="#vector-pipeline-geoparquet-pmtiles" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>GeoParquet → GeoJSON (temp) → tippecanoe → PMTiles
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>GeoParquet → freestiler → PMTiles                      (RAS2CNG_VECTOR_TILER=freestiler)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>GeoParquet → Arrow → freestiler → PMTiles              (freestiler with Arrow input)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>GeoParquet → GeoDataFrame → freestiler → PMTiles       (older freestiler)
 </code></pre></div>
 <p>Without <code>--min-zoom</code>/<code>--max-zoom</code>, tippecanoe guesses the zoom range (<code>-zg</code>);
-freestiler cannot guess and uses 0-14.</p>
+freestiler cannot guess and uses 0-14. Archive bbox covering columns (the
+<code>bbox</code> struct or the older flat <code>bbox_*</code> columns) are dropped before tiling.
+freestiler tiles carry no MVT feature IDs by default (since 0.13); <code>--feature-ids</code>
+(or <code>RAS2CNG_VECTOR_TILE_IDS=1</code>) keeps them. See the MapLibre guide for this and
+the gzip level.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ras2cng<span class="w"> </span>pmtiles<span class="w"> </span>max_depth.parquet<span class="w"> </span>flood_depth.pmtiles<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--layer<span class="w"> </span>flood_depth<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--min-zoom<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--max-zoom<span class="w"> </span><span class="m">14</span>
 </code></pre></div>
-<h2 id="raster-pipeline-geotiff-pmtiles">Raster Pipeline (GeoTIFF → PMTiles)<a class="headerlink" href="#raster-pipeline-geotiff-pmtiles" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>GeoTIFF → gdal_translate → MBTiles → pmtiles convert → PMTiles
+<h2 id="direct-hdf-mesh-export-with-rust">Direct HDF mesh export with Rust<a class="headerlink" href="#direct-hdf-mesh-export-with-rust" title="Permanent link">&para;</a></h2>
+<p>The optional native backend accepts geometry HDF or a computed plan HDF that
+contains mesh geometry. It constructs cell rings in Rust, transforms coordinates
+with pyproj in one batch, and passes packed geometry to freestiler-core. No
+GeoParquet, GeoJSON or per-cell Python geometry objects are required.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ras2cng<span class="w"> </span>pmtiles<span class="w"> </span>model.g01.hdf<span class="w"> </span>mesh.pmtiles<span class="w"> </span>--layer<span class="w"> </span>mesh_cells<span class="w"> </span>--min-zoom<span class="w"> </span><span class="m">10</span><span class="w"> </span>--max-zoom<span class="w"> </span><span class="m">14</span><span class="w"> </span>--threads<span class="w"> </span><span class="m">4</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ras2cng<span class="w"> </span>pmtiles<span class="w"> </span>results.tif<span class="w"> </span>results.pmtiles
+<p>Use repeated <code>--mesh</code> options to select mesh names. <code>--source-crs</code> supplies an
+explicit CRS override; otherwise the HDF CRS is required. Default HDF zooms are
+10-14. Each feature retains its <code>mesh_name</code> and original <code>cell_id</code>. Output is
+staged beside the destination and atomically published only on success.</p>
+<p>This route uses the <code>ras-commander-fast-hdf</code> wheel, which ras-commander 0.110.1
+and later install by default on Windows x64, Linux x64 and macOS arm64. On
+other platforms, <code>ras2cng[fast-hdf]</code> requests it explicitly (a source build).
+Installing the <code>freestiler</code> Python extra alone does not supply the HDF reader. The HDF route
+explicitly uses the native backend; <code>RAS2CNG_VECTOR_TILER</code> continues to select
+backends for GeoParquet/general-layer export.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.pmtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_mesh_pmtiles</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">generate_mesh_pmtiles</span><span class="p">(</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="s2">"model.g01.hdf"</span><span class="p">,</span> <span class="s2">"mesh.pmtiles"</span><span class="p">,</span> <span class="n">layer_name</span><span class="o">=</span><span class="s2">"mesh_cells"</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">min_zoom</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">max_zoom</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">threads</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="c1"># Optional result arrays, keyed by mesh, indexed by original cell ID:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="c1"># properties={"LockHaven": {"maximum_depth": depth_array}},</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="p">)</span>
+</code></pre></div>
+<p>Cell polygons can collapse at low zoom through tile quantization even with
+feature dropping disabled. Qualify decoded coverage and validity for the chosen
+zoom range. This geometry export does not calculate hydraulic results.</p>
+<h2 id="raster-pipeline-geotiff-pmtiles">Raster Pipeline (GeoTIFF → PMTiles)<a class="headerlink" href="#raster-pipeline-geotiff-pmtiles" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>GeoTIFF → gdal_translate → MBTiles → pmtiles convert → PMTiles      (gdal)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>GeoTIFF → terrio dem → terrio warp → terrio PMTiles                  (terrio)
+</code></pre></div>
+<p><code>RAS2CNG_RASTER_TILER</code> chooses the backend for every raster PMTiles writer
+(terrain, Stored Maps, calculated layers); see <code>ras2cng.raster_tiles</code>.</p>
+<h3 id="streaming-terrio-tiles">Streaming terrio tiles<a class="headerlink" href="#streaming-terrio-tiles" title="Permanent link">&para;</a></h3>
+<p>With a terrio that streams (capability-detected: <code>terrio.dem</code> takes
+<code>max_memory_mib</code> and <code>hillshade_strength</code>; gpt-cmdr/terrio #8, #11, #12), no
+step holds the raster whole:</p>
+<ol>
+<li>The colour relief is computed path to path, a strip of rows at a time. For
+   terrain, the hillshade is blended in the same pass (<code>"shaded-relief"</code>). The
+   result matches the old NumPy blend exactly (0 DN difference).</li>
+<li>The warp to Web Mercator runs in chunks when <code>terrio.warp</code> takes
+   <code>max_memory_mib</code> (#13). Otherwise the relief is warped in memory.</li>
+<li>The PMTiles pyramid is written a tile row at a time from the warped raster,
+   which is opened lazily.</li>
+</ol>
+<p>The intermediates are tiled LZW GeoTIFFs in the scratch directory. The tiles
+are <strong>byte-identical</strong> to the in-memory path (pinned by
+<code>tests/test_terrio_equivalence.py</code>). A streaming terrio has no pixel ceiling,
+so <code>RAS2CNG_TERRIO_MAX_PIXELS</code> only applies to older terrio releases.
+<code>RAS2CNG_TERRIO_MAX_MEMORY_MIB</code> bounds the dem and warp strips. When it is
+unset, terrio uses its defaults of 256 and 64 MiB. A smaller warp chunk can
+change a few pixels by 1 DN, as <code>gdalwarp -wm</code> does.</p>
+<p>Bald Eagle Terrain50 (15,777 × 12,599, z14, hillshaded), peak working set in a
+fresh process:</p>
+<table>
+<thead>
+<tr>
+<th>terrio</th>
+<th>wall</th>
+<th>peak</th>
+<th>output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.5.0 (in memory, NumPy hillshade)</td>
+<td>81.7 s</td>
+<td>13,372 MiB</td>
+<td>145.5 MB</td>
+</tr>
+<tr>
+<td>streaming</td>
+<td>38.7 s</td>
+<td>1,008 MiB</td>
+<td>byte-identical</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ras2cng<span class="w"> </span>pmtiles<span class="w"> </span>results.tif<span class="w"> </span>results.pmtiles
 </code></pre></div>
 <p>Detection is automatic: <code>.tif</code> / <code>.tiff</code> → raster pipeline; everything else → vector pipeline.</p>
 <h2 id="python-api">Python API<a class="headerlink" href="#python-api" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.pmtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_pmtiles_from_input</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">generate_pmtiles_from_input</span><span class="p">(</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">input_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"max_depth.parquet"</span><span class="p">),</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"flood_depth.pmtiles"</span><span class="p">),</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">layer_name</span><span class="o">=</span><span class="s2">"flood_depth"</span><span class="p">,</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">min_zoom</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">max_zoom</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.pmtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_pmtiles_from_input</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">generate_pmtiles_from_input</span><span class="p">(</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">input_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"max_depth.parquet"</span><span class="p">),</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"flood_depth.pmtiles"</span><span class="p">),</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">layer_name</span><span class="o">=</span><span class="s2">"flood_depth"</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">min_zoom</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">max_zoom</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="serving-pmtiles">Serving PMTiles<a class="headerlink" href="#serving-pmtiles" title="Permanent link">&para;</a></h2>
 <p>Once generated, host the <code>.pmtiles</code> file on any static file host that supports HTTP range requests:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1">// MapLibre GL JS with pmtiles plugin</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Protocol</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"pmtiles"</span><span class="p">;</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nx">maplibregl</span><span class="p">.</span><span class="nx">addProtocol</span><span class="p">(</span><span class="s2">"pmtiles"</span><span class="p">,</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">Protocol</span><span class="p">().</span><span class="nx">tile</span><span class="p">);</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nx">map</span><span class="p">.</span><span class="nx">addSource</span><span class="p">(</span><span class="s2">"flood"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nx">type</span><span class="o">:</span><span class="w"> </span><span class="s2">"vector"</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nx">url</span><span class="o">:</span><span class="w"> </span><span class="s2">"pmtiles://https://your-bucket.s3.amazonaws.com/flood_depth.pmtiles"</span><span class="p">,</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="p">});</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1">// MapLibre GL JS with pmtiles plugin</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Protocol</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">"pmtiles"</span><span class="p">;</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nx">maplibregl</span><span class="p">.</span><span class="nx">addProtocol</span><span class="p">(</span><span class="s2">"pmtiles"</span><span class="p">,</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">Protocol</span><span class="p">().</span><span class="nx">tile</span><span class="p">);</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nx">map</span><span class="p">.</span><span class="nx">addSource</span><span class="p">(</span><span class="s2">"flood"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nx">type</span><span class="o">:</span><span class="w"> </span><span class="s2">"vector"</span><span class="p">,</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nx">url</span><span class="o">:</span><span class="w"> </span><span class="s2">"pmtiles://https://your-bucket.s3.amazonaws.com/flood_depth.pmtiles"</span><span class="p">,</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="p">});</span>
 </code></pre></div>
 
 
@@ -2368,7 +2508,7 @@ freestiler cannot guess and uses 0-14.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 12, 2026 21:17:49 UTC">October 12, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 31, 2026 19:32:58 UTC">October 31, 2026</span>
   </span>
 
     

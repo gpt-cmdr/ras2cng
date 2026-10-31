@@ -1836,6 +1836,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#ras2cng.pmtiles.generate_mesh_pmtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        generate_mesh_pmtiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ras2cng.pmtiles.generate_raster_pmtiles" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2159,6 +2170,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#ras2cng.pmtiles.generate_mesh_pmtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        generate_mesh_pmtiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ras2cng.pmtiles.generate_raster_pmtiles" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2214,7 +2236,9 @@
 - GeoParquet -&gt; reproject to EPSG:4326 -&gt; newline-delimited GeoJSON -&gt;
   tippecanoe -&gt; PMTiles, or GeoParquet -&gt; freestiler -&gt; PMTiles when
   <code>RAS2CNG_VECTOR_TILER</code> resolves to freestiler (see
-  :mod:<code>ras2cng.vector_tiles</code>)</p>
+  :mod:<code>ras2cng.vector_tiles</code>). A freestiler with Arrow input reads the
+  GeoParquet as an Arrow table and reprojects it in Rust (in Python with
+  pyproj when it refuses the CRS); older builds get a GeoDataFrame.</p>
 <p>Raster tiles:
 - delegated to :mod:<code>ras2cng.maplibre</code>, which colorizes at native resolution,
   warps to an exact Web Mercator zoom, and builds the tile pyramid.</p>
@@ -2248,6 +2272,100 @@ streams its inputs; this module is the older single-file CLI surface kept for
 <div class="doc doc-object doc-function">
 
 
+<h3 id="ras2cng.pmtiles.generate_mesh_pmtiles" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">generate_mesh_pmtiles</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">layer_name</span><span class="o">=</span><span class="s1">'mesh_cells'</span><span class="p">,</span> <span class="n">mesh_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">properties</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">min_zoom</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">max_zoom</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">source_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">threads</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#ras2cng.pmtiles.generate_mesh_pmtiles" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Tile HDF mesh cells through Rust, using pyproj for bulk reprojection.</p>
+<p>Requires the separately built ras-commander-fast-hdf extension. The source
+may be geometry HDF or a computed plan containing geometry. Properties are
+column arrays keyed by mesh name, indexed by original cell ID. All selected
+meshes share a source layer, with mesh_name/cell_id properties preserving
+identity. This explicit HDF route does not use the GeoParquet tiler selector.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>ras2cng/pmtiles.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-95"> 95</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-96"> 96</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-97"> 97</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-98"> 98</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-99"> 99</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-100">100</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-101">101</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-102">102</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-103">103</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-104">104</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-105">105</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-106">106</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-107">107</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-108">108</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-109">109</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-110">110</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-111">111</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-112">112</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-113">113</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-114">114</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-115">115</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-116">116</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-117">117</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-118">118</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-119">119</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-120">120</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-121">121</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-122">122</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-123">123</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-124">124</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-125">125</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-126">126</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-127">127</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-128">128</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-95" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-95"></a><span class="k">def</span><span class="w"> </span><span class="nf">generate_mesh_pmtiles</span><span class="p">(</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-96" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-96"></a>    <span class="n">input_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-97" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-97"></a>    <span class="n">output</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-98" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-98"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-99" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-99"></a>    <span class="n">layer_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mesh_cells"</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-100" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-100"></a>    <span class="n">mesh_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-101" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-101"></a>    <span class="n">properties</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-102" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-102"></a>    <span class="n">min_zoom</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-103" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-103"></a>    <span class="n">max_zoom</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">14</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-104" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-104"></a>    <span class="n">source_crs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-105" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-105"></a>    <span class="n">threads</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-106" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-106"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-107" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-107"></a><span class="w">    </span><span class="sd">"""Tile HDF mesh cells through Rust, using pyproj for bulk reprojection.</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-108" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-108"></a>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-109" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-109"></a><span class="sd">    Requires the separately built ras-commander-fast-hdf extension. The source</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-110" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-110"></a><span class="sd">    may be geometry HDF or a computed plan containing geometry. Properties are</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-111" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-111"></a><span class="sd">    column arrays keyed by mesh name, indexed by original cell ID. All selected</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-112" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-112"></a><span class="sd">    meshes share a source layer, with mesh_name/cell_id properties preserving</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-113" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-113"></a><span class="sd">    identity. This explicit HDF route does not use the GeoParquet tiler selector.</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-114" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-114"></a><span class="sd">    """</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-115" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-115"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">ras_commander.fast_hdf</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_mesh_pmtiles</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-116" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-116"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng.cog</span><span class="w"> </span><span class="kn">import</span> <span class="n">atomic_output</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-117" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-117"></a>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-118" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-118"></a>    <span class="n">input_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">input_file</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-119" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-119"></a>    <span class="n">output</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-120" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-120"></a>    <span class="k">if</span> <span class="n">input_file</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span> <span class="o">==</span> <span class="n">output</span><span class="o">.</span><span class="n">resolve</span><span class="p">():</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-121" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-121"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Output must not replace the source HDF"</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-122" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-122"></a>    <span class="k">with</span> <span class="n">atomic_output</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">".pmtiles"</span><span class="p">)</span> <span class="k">as</span> <span class="n">staged</span><span class="p">:</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-123" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-123"></a>        <span class="n">export_mesh_pmtiles</span><span class="p">(</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-124" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-124"></a>            <span class="n">input_file</span><span class="p">,</span> <span class="n">staged</span><span class="p">,</span> <span class="n">layer_name</span><span class="o">=</span><span class="n">layer_name</span><span class="p">,</span> <span class="n">mesh_names</span><span class="o">=</span><span class="n">mesh_names</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-125" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-125"></a>            <span class="n">properties</span><span class="o">=</span><span class="n">properties</span><span class="p">,</span> <span class="n">min_zoom</span><span class="o">=</span><span class="n">min_zoom</span><span class="p">,</span> <span class="n">max_zoom</span><span class="o">=</span><span class="n">max_zoom</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-126" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-126"></a>            <span class="n">source_crs</span><span class="o">=</span><span class="n">source_crs</span><span class="p">,</span> <span class="n">threads</span><span class="o">=</span><span class="n">threads</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s2">"rust"</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-127" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-127"></a>        <span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-128" name="ras2cng.pmtiles.generate_mesh_pmtiles--source--__codelineno-0-128"></a>    <span class="k">return</span> <span class="n">output</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="ras2cng.pmtiles.generate_raster_pmtiles" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">generate_raster_pmtiles</span><span class="p">(</span><span class="n">input_file</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">min_zoom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_zoom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">map_type</span><span class="o">=</span><span class="s1">'depth'</span><span class="p">)</span></code>
 
@@ -2270,111 +2388,111 @@ builds the pyramid.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>ras2cng/pmtiles.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-194">194</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-195">195</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-196">196</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-197">197</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-198">198</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-199">199</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-200">200</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-201">201</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-202">202</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-203">203</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-204">204</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-205">205</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-206">206</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-207">207</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-208">208</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-209">209</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-210">210</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-211">211</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-212">212</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-213">213</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-214">214</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-215">215</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-216">216</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-217">217</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-218">218</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-219">219</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-220">220</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-221">221</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-222">222</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-223">223</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-224">224</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-225">225</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-226">226</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-227">227</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-228">228</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-229">229</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-230">230</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-231">231</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-232">232</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-233">233</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-234">234</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-235">235</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-236">236</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-237">237</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-238">238</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-239">239</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-240">240</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-241">241</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-242">242</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-243">243</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-244">244</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-245">245</a></span>
-<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-246">246</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-194" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-194"></a><span class="k">def</span><span class="w"> </span><span class="nf">generate_raster_pmtiles</span><span class="p">(</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-195" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-195"></a>    <span class="n">input_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-196" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-196"></a>    <span class="n">output</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-197" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-197"></a>    <span class="n">min_zoom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-198" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-198"></a>    <span class="n">max_zoom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-199" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-199"></a>    <span class="o">*</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-200" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-200"></a>    <span class="n">map_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"depth"</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-201" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-201"></a><span class="p">):</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-202" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-202"></a><span class="w">    </span><span class="sd">"""Render a numeric raster to PNG PMTiles via the maplibre pipeline.</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-203" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-203"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-204" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-204"></a><span class="sd">    This used to run ``gdal_translate -of MBTiles -co TILE_FORMAT=PNG`` directly</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-205" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-205"></a><span class="sd">    on the source.  Against a float32 depth or WSE COG that produces an 8-bit</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-206" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-206"></a><span class="sd">    image with no color ramp and no alpha -- nodata renders as opaque black --</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-207" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-207"></a><span class="sd">    and it built no overviews at all, so the ``MINZOOM`` creation option had</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-208" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-208"></a><span class="sd">    nothing to apply to.</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-209" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-209"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-210" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-210"></a><span class="sd">    :func:`ras2cng.maplibre._render_raster_pmtiles` is the correct</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-211" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-211"></a><span class="sd">    implementation of this job: it applies the color ramp at native resolution</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-212" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-212"></a><span class="sd">    before any downsampling, warps to an exact Web Mercator zoom resolution, and</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-213" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-213"></a><span class="sd">    builds the pyramid.</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-214" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-214"></a><span class="sd">    """</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-215" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-215"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-216" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-216"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng</span><span class="w"> </span><span class="kn">import</span> <span class="n">maplibre</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-217" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-217"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-218" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-218"></a>    <span class="n">input_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">input_file</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-219" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-219"></a>    <span class="n">output</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-220" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-220"></a>    <span class="n">output</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-221" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-221"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-222" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-222"></a>    <span class="n">_require_cli</span><span class="p">(</span><span class="s2">"gdal_translate"</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-223" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-223"></a>    <span class="n">_require_cli</span><span class="p">(</span><span class="s2">"pmtiles"</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-224" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-224"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-225" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-225"></a>    <span class="n">info</span> <span class="o">=</span> <span class="n">maplibre</span><span class="o">.</span><span class="n">_gdalinfo</span><span class="p">(</span><span class="n">input_path</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-226" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-226"></a>    <span class="n">bands</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"bands"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-227" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-227"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">bands</span><span class="p">:</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-228" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-228"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Raster has no readable bands: </span><span class="si">{</span><span class="n">input_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-229" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-229"></a>    <span class="n">band</span> <span class="o">=</span> <span class="n">bands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-230" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-230"></a>    <span class="n">stats</span> <span class="o">=</span> <span class="p">{</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-231" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-231"></a>        <span class="s2">"minimum"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-232" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-232"></a>        <span class="s2">"maximum"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"maximum"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)),</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-233" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-233"></a>    <span class="p">}</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-234" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-234"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-235" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-235"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">ramp_writer</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-236" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-236"></a>        <span class="n">maplibre</span><span class="o">.</span><span class="n">_result_color_ramp</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="n">map_type</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-237" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-237"></a>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-238" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-238"></a>    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">"ras2cng-raster-pmtiles-"</span><span class="p">)</span> <span class="k">as</span> <span class="n">scratch</span><span class="p">:</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-239" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-239"></a>        <span class="n">maplibre</span><span class="o">.</span><span class="n">_render_raster_pmtiles</span><span class="p">(</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-240" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-240"></a>            <span class="n">input_path</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-241" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-241"></a>            <span class="n">output</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-242" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-242"></a>            <span class="n">ramp_writer</span><span class="o">=</span><span class="n">ramp_writer</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-243" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-243"></a>            <span class="n">max_zoom</span><span class="o">=</span><span class="n">max_zoom</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-244" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-244"></a>            <span class="n">scratch_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="n">scratch</span><span class="p">),</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-245" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-245"></a>            <span class="n">prefix</span><span class="o">=</span><span class="s2">"cli-raster"</span><span class="p">,</span>
-<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-246" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-246"></a>        <span class="p">)</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-299">299</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-301">301</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-302">302</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-303">303</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-304">304</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-305">305</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-306">306</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-307">307</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-308">308</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-309">309</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-310">310</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-311">311</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-312">312</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-313">313</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-314">314</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-315">315</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-316">316</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-317">317</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-318">318</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-331">331</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-332">332</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-333">333</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-334">334</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-335">335</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-336">336</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-337">337</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-338">338</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-339">339</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-340">340</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-341">341</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-342">342</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-343">343</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-344">344</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-345">345</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-346">346</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-347">347</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-348">348</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-349">349</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-350">350</a></span>
+<span class="normal"><a href="#ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-351">351</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-299" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-299"></a><span class="k">def</span><span class="w"> </span><span class="nf">generate_raster_pmtiles</span><span class="p">(</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-300" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-300"></a>    <span class="n">input_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-301" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-301"></a>    <span class="n">output</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-302" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-302"></a>    <span class="n">min_zoom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-303" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-303"></a>    <span class="n">max_zoom</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-304" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-304"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-305" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-305"></a>    <span class="n">map_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"depth"</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-306" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-306"></a><span class="p">):</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-307" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-307"></a><span class="w">    </span><span class="sd">"""Render a numeric raster to PNG PMTiles via the maplibre pipeline.</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-308" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-308"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-309" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-309"></a><span class="sd">    This used to run ``gdal_translate -of MBTiles -co TILE_FORMAT=PNG`` directly</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-310" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-310"></a><span class="sd">    on the source.  Against a float32 depth or WSE COG that produces an 8-bit</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-311" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-311"></a><span class="sd">    image with no color ramp and no alpha -- nodata renders as opaque black --</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-312" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-312"></a><span class="sd">    and it built no overviews at all, so the ``MINZOOM`` creation option had</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-313" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-313"></a><span class="sd">    nothing to apply to.</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-314" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-314"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-315" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-315"></a><span class="sd">    :func:`ras2cng.maplibre._render_raster_pmtiles` is the correct</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-316" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-316"></a><span class="sd">    implementation of this job: it applies the color ramp at native resolution</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-317" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-317"></a><span class="sd">    before any downsampling, warps to an exact Web Mercator zoom resolution, and</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-318" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-318"></a><span class="sd">    builds the pyramid.</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-319" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-319"></a><span class="sd">    """</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-320" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-320"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-321" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-321"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">ras2cng</span><span class="w"> </span><span class="kn">import</span> <span class="n">maplibre</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-322" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-322"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-323" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-323"></a>    <span class="n">input_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">input_file</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-324" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-324"></a>    <span class="n">output</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-325" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-325"></a>    <span class="n">output</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-326" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-326"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-327" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-327"></a>    <span class="n">backend</span> <span class="o">=</span> <span class="n">maplibre</span><span class="o">.</span><span class="n">_raster_backend_for</span><span class="p">(</span><span class="n">input_path</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-328" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-328"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-329" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-329"></a>    <span class="n">info</span> <span class="o">=</span> <span class="n">maplibre</span><span class="o">.</span><span class="n">_gdalinfo</span><span class="p">(</span><span class="n">input_path</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-330" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-330"></a>    <span class="n">bands</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"bands"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-331" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-331"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">bands</span><span class="p">:</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-332" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-332"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Raster has no readable bands: </span><span class="si">{</span><span class="n">input_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-333" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-333"></a>    <span class="n">band</span> <span class="o">=</span> <span class="n">bands</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-334" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-334"></a>    <span class="n">stats</span> <span class="o">=</span> <span class="p">{</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-335" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-335"></a>        <span class="s2">"minimum"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"minimum"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-336" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-336"></a>        <span class="s2">"maximum"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">band</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"maximum"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)),</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-337" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-337"></a>    <span class="p">}</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-338" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-338"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-339" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-339"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">ramp_writer</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-340" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-340"></a>        <span class="n">maplibre</span><span class="o">.</span><span class="n">_result_color_ramp</span><span class="p">(</span><span class="n">stats</span><span class="p">,</span> <span class="n">map_type</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-341" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-341"></a>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-342" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-342"></a>    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">"ras2cng-raster-pmtiles-"</span><span class="p">)</span> <span class="k">as</span> <span class="n">scratch</span><span class="p">:</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-343" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-343"></a>        <span class="n">maplibre</span><span class="o">.</span><span class="n">_render_raster_pmtiles</span><span class="p">(</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-344" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-344"></a>            <span class="n">input_path</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-345" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-345"></a>            <span class="n">output</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-346" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-346"></a>            <span class="n">ramp_writer</span><span class="o">=</span><span class="n">ramp_writer</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-347" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-347"></a>            <span class="n">max_zoom</span><span class="o">=</span><span class="n">max_zoom</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-348" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-348"></a>            <span class="n">scratch_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="n">scratch</span><span class="p">),</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-349" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-349"></a>            <span class="n">prefix</span><span class="o">=</span><span class="s2">"cli-raster"</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-350" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-350"></a>            <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
+<a id="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-351" name="ras2cng.pmtiles.generate_raster_pmtiles--source--__codelineno-0-351"></a>        <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

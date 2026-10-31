@@ -986,6 +986,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#raster-tiler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Raster Tiler
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#layer-behavior" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2251,6 +2262,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#raster-tiler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Raster Tiler
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#layer-behavior" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2435,26 +2457,130 @@ remains a hard error.</p>
 <tbody>
 <tr>
 <td><code>auto</code> (default)</td>
-<td>tippecanoe when <code>tippecanoe</code> and <code>pmtiles</code> are on PATH, otherwise freestiler</td>
-<td>Windows without tippecanoe gets freestiler automatically</td>
+<td>freestiler when the build has Arrow input; otherwise tippecanoe when <code>tippecanoe</code> and <code>pmtiles</code> are on PATH; otherwise any freestiler</td>
+<td>An older freestiler keeps the previous preference</td>
 </tr>
 <tr>
 <td><code>tippecanoe</code></td>
 <td><code>tippecanoe</code> + <code>pmtiles</code> CLIs</td>
-<td>Smallest archives</td>
+<td>Always available by name. Smaller sparse low-zoom layers</td>
 </tr>
 <tr>
 <td><code>freestiler</code></td>
 <td>In-process Rust tiler, <code>pip install ras2cng[freestiler]</code></td>
-<td>No external tools; 8-20x faster; archives about 40-50% larger; holds every layer of a tileset in memory</td>
+<td>No external tools. Bald Eagle p07 viewer with vector results: 36 s against 1,745 s for tippecanoe. Total size +5% with feature IDs, -10% without; Davis +12% and +3%. One layer of a tileset in memory at a time when the build has <code>freestile_layers</code></td>
 </tr>
 </tbody>
 </table>
+<p>freestiler options (tippecanoe ignores them; its tiles never carry feature IDs):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RAS2CNG_VECTOR_TILE_IDS</code>, CLI <code>--feature-ids/--no-feature-ids</code></td>
+<td>off (since 0.13)</td>
+<td><code>1</code> / <code>--feature-ids</code> keeps an MVT feature ID on every feature (<code>generate_ids=True</code>). Off, the Bald Eagle 87k-cell mesh, z10-15, is 1.7 MB smaller (-14%), and the Bald Eagle p07 viewer with results is 10.0% smaller than tippecanoe's instead of 5.4% larger. The ras2cng viewer does not use IDs; opt in if a consumer uses MapLibre <code>feature-state</code> without <code>promoteId</code></td>
+</tr>
+<tr>
+<td><code>RAS2CNG_VECTOR_TILE_GZIP_LEVEL</code></td>
+<td>6</td>
+<td>Tile gzip level 0-9, when the installed freestiler accepts <code>gzip_level</code> (freestiler's own default is 1). Same mesh: -14%, tile contents unchanged</td>
+</tr>
+<tr>
+<td><code>RAS2CNG_FREESTILER_INPUT</code></td>
+<td><code>auto</code></td>
+<td><code>auto</code> / <code>arrow</code> hand layers over as Arrow with no GeoJSON step (<code>arrow</code> fails on a build without Arrow input); <code>geojson</code> keeps the older path. Decoded tiles are identical on Bald Eagle p07 and Davis</td>
+</tr>
+</tbody>
+</table>
+<p>With Arrow input, mesh cell and face layers that are not joined to results go
+from the archive GeoParquet to freestiler in the model CRS and are reprojected
+in Rust. Other layers are already reprojected for the viewer metadata and join,
+and travel as EPSG:4326 Arrow tables. freestiler refuses CRSs that PROJ shifts by
+datum grids (NAD83(HARN), NAD27 and a few others); those layers are reprojected
+in Python with pyproj, with a warning, and still skip GeoJSON. A layer with no
+CRS is refused. The clip buffer is always <code>buffer=5</code> when the build accepts it.</p>
+<p>Multi-layer tilesets use <code>freestiler.freestile_layers</code> when available, reading
+each layer's source only when its turn comes. If that build's
+<code>freestile_layers</code> has no <code>gzip_level</code>, ras2cng warns once and those tilesets
+keep freestiler's default compression.</p>
 <p>Both keep every feature at every zoom of a tileset and keep shared mesh edges
 coincident. Neither ever drops features to cap tile size: thinning a uniform
 mesh renders as stripes. Tile weight is bounded by each tileset's minimum zoom
 instead (see below). The comparison behind this choice is in
 <code>feature_dev_notes/vector_tiler_evaluation_2026-10-12.md</code>.</p>
+<h2 id="raster-tiler">Raster Tiler<a class="headerlink" href="#raster-tiler" title="Permanent link">&para;</a></h2>
+<p>Terrain and result rasters (Stored Maps, calculated layers, <code>ras2cng pmtiles</code> on
+a GeoTIFF) are colorized, warped to Web Mercator and written as PNG PMTiles by
+one of two backends, chosen with <code>RAS2CNG_RASTER_TILER</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Backend</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto</code> (default)</td>
+<td>terrio when installed and the raster fits, otherwise GDAL</td>
+<td>terrio ships in the <code>pmtiles</code>, <code>terrio</code> and <code>all</code> extras</td>
+</tr>
+<tr>
+<td><code>terrio</code></td>
+<td>In-process pure-Rust tiler (<a href="https://github.com/opengeos/terrio">terrio</a>)</td>
+<td>No GDAL or <code>pmtiles</code> CLIs; terrain hillshade; whole raster held in memory</td>
+</tr>
+<tr>
+<td><code>gdal</code></td>
+<td><code>gdaldem</code> → <code>gdalwarp</code> → <code>gdal_translate</code> → <code>gdaladdo</code> → <code>pmtiles convert</code></td>
+<td>Streams through files, so any size; no hillshade</td>
+</tr>
+</tbody>
+</table>
+<p>Measured on Bald Eagle Creek rasters through the real packagers:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>terrio</th>
+<th>GDAL chain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Terrain, 6705 × 4852 px at 20 ft</td>
+<td>6.8 s (hillshaded)</td>
+<td>13.4 s</td>
+</tr>
+<tr>
+<td>Depth Stored Map</td>
+<td>1.6 s</td>
+<td>4.7 s</td>
+</tr>
+</tbody>
+</table>
+<p>At full resolution terrio's tile colours are within 0.2/255 of the GDAL chain on
+average. terrio also fixes two display defects of the GDAL chain:</p>
+<ul>
+<li><strong>Flood extent holds at every zoom.</strong> Result-layer overviews use <code>NEAREST</code>, so
+  the visible wet area at z10 is 1.000× the full-resolution area. The GDAL
+  chain's <code>gdaladdo -r average</code> showed 1.225× at z10. That is the same extent
+  growth <code>ras2cng.cog</code> prevents in COG overviews.</li>
+<li><strong>No dark terrain fringe.</strong> The GDAL chain's semi-transparent terrain-edge
+  pixels were black at every overview level; terrio's keep the ramp colour.</li>
+</ul>
+<p>Terrain overviews use <code>AVERAGE</code> (a smooth, fully covered surface).
+<code>RAS2CNG_RASTER_TILE_RESAMPLING=NEAREST|AVERAGE</code> overrides both kinds. Rasters
+larger than <code>RAS2CNG_TERRIO_MAX_PIXELS</code> (default 400 million pixels) use the
+GDAL chain under <code>auto</code>, because terrio processes the raster in memory.</p>
 <h2 id="layer-behavior">Layer Behavior<a class="headerlink" href="#layer-behavior" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Geometry is delivered as one vector PMTiles file, with source layers for every archive
@@ -2513,6 +2639,13 @@ and adds it to the <code>Terrain</code> control group. Its display palette is th
 palette stretched over the source elevation range. The original COG remains unmodified and
 is referenced as <code>sourceCog</code>, allowing a click to report the original elevation rather than
 the colorized tile value.</p>
+<p>With the terrio raster tiler the display tiles are <strong>hillshaded</strong> by default: a
+multidirectional terrio hillshade is multiplied into the terrain colours, as RAS
+Mapper shades terrain. terrio's hillshade is not pixel-identical to <code>gdaldem</code>;
+that is accepted for a display layer. Identify values still come from the
+unshaded COG. <code>--no-hillshade</code> publishes flat colour relief, and the manifest
+records <code>hillshade</code> and <code>rasterTiler</code> on the terrain tileset. Hillshaded archives
+are larger (Bald Eagle: 6.3 MB against 3.9 MB flat), because shading adds texture.</p>
 <p>The display raster is reprojected to Web Mercator only for tiled delivery. Its maximum zoom
 is capped at the native terrain cell resolution; <code>--max-zoom</code> may lower that cap but cannot
 force an upsample. Use an external <code>--source-cog</code> href only when the archive layout differs
@@ -2590,7 +2723,7 @@ tiling, overviews, and nodata/mask behavior; hosted artifacts can be required to
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 12, 2026 21:17:49 UTC">October 12, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 31, 2026 19:32:58 UTC">October 31, 2026</span>
   </span>
 
     

@@ -1078,27 +1078,22 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#crs-never-guessed" class="md-nav__link">
+    <nav class="md-nav" aria-label="Overviews preserve wet area">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#native-engine-terrio" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CRS: never guessed
+        Native engine: terrio
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#all-the-knobs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        All the knobs
-      
-    </span>
-  </a>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2338,27 +2333,22 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#crs-never-guessed" class="md-nav__link">
+    <nav class="md-nav" aria-label="Overviews preserve wet area">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#native-engine-terrio" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CRS: never guessed
+        Native engine: terrio
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#all-the-knobs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        All the knobs
-      
-    </span>
-  </a>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2508,6 +2498,166 @@ solves for a per-level coverage threshold from the coverage histogram, breaks
 ties on a coherence rank with a deterministic dither, and writes the <strong>mean</strong> of
 each cell's wet contributors — never the max, which would inflate flood volume.</p>
 <p>Categorical rasters get the same mask with a modal value.</p>
+<h3 id="native-engine-terrio">Native engine: terrio<a class="headerlink" href="#native-engine-terrio" title="Permanent link">&para;</a></h3>
+<p>When the installed <code>terrio</code> has the area-matched COG writer (gpt-cmdr/terrio</p>
+<h1 id="9-rasterwritemetadata-overview_resamplingarea_matched-the">9: <code>Raster.write(metadata=..., overview_resampling="area_matched")</code>), the<a class="headerlink" href="#9-rasterwritemetadata-overview_resamplingarea_matched-the" title="Permanent link">&para;</a></h1>
+<p>whole COG is written by terrio: the overviews are built in Rust and encoded by
+terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
+(0.5.0) keeps the GDAL path. Pinned by <code>tests/test_terrio_equivalence.py</code>:</p>
+<ul>
+<li><strong>Lossless output</strong> (DEFLATE/ZSTD floats, integer, categorical) is the GDAL
+  path's file, level for level and pixel for pixel, with the same tags.</li>
+<li><strong>LERC output</strong> holds the same bound, but not the same values. Measured on
+  Bald Eagle Depth (Max) (1,345,691 wet pixels, <code>MAX_Z_ERROR=0.01</code>, 512 tiles):<ul>
+<li>Both encoders hold the bound exactly: max error 0.01000 each, mean
+  0.0048 each.</li>
+<li><strong>8.1% of pixels decode differently</strong>, by <strong>at most one quantization
+  step (≤ 0.02)</strong>. The differences come in whole 8×8 micro-blocks:
+  terrio's lerc-writer stores the exact block minimum as the offset, and
+  Esri/GDAL often does not.</li>
+<li><strong>Size.</strong> With ras2cng's default <code>LERC_DEFLATE</code> the terrio file is
+  within 0.4% of GDAL's; with plain <code>LERC</code> it is up to 18% larger on a
+  sparse result raster (table below). Since gpt-cmdr/terrio #22 the
+  padding of partial edge tiles is masked as GDAL masks it. The rest of
+  the plain-LERC gap is lerc-writer's encoder; a size fix is pending
+  upstream (roteiro-gis/lerc-rust #48) and ras2cng does not depend on it.</li>
+<li>The nodata mask is identical, and so are <code>compression_lossy</code>,
+  <code>compression_max_z_error</code> and the overview provenance tags.</li>
+</ul>
+</li>
+</ul>
+<p><strong>Code that relies on byte or value equality with artifacts written by
+  the GDAL path must ask for lossless</strong> (<code>lerc_max_z_error=None</code> or
+  <code>RAS2CNG_LERC_MAX_Z_ERROR=off</code>). It is lossless output that is identical
+  across engines, not LERC output.
+- <code>overview_area_ratios</code> and <code>overview_base_valid_pixels</code>:
+    - <strong>terrio with gpt-cmdr/terrio #23</strong> (<code>report_metadata=</code> and
+      <code>area_matched_nan_valid=</code> on <code>Raster.write</code>, capability-detected)
+      measures them in the pass that builds the levels and writes them into
+      the header itself, formatted as ras2cng formats them. ras2cng makes
+      <strong>no pre-scan</strong>. NaN under a numeric nodata counts as valid, as in
+      rasterio's mask, so those rasters stay on terrio and match the GDAL
+      path. Report tags carried by a re-COGed ras2cng COG are dropped from
+      the copied source tags and rewritten. The returned report is still
+      checked: a missing report or different factors discard terrio's file
+      and the GDAL path runs; an empty raster goes to the GDAL path, which
+      labels it <code>average</code> with a <code>fallback_reason</code>. The files are
+      byte-identical to the scan path's (measured below).
+    - <strong>Older terrio</strong>: one streamed pass over level 0, made before the
+      write because the tags go into the COG header. That pass is exact: the
+      selection keeps <code>round(valid / f²)</code> cells, or every partly wet cell
+      when there are fewer. It is also the check for NaN under a numeric
+      nodata (below). terrio with gpt-cmdr/terrio #18 returns its own
+      measurement from <code>Raster.write()</code>; ras2cng compares the factors, the
+      valid count and every ratio at the tag's precision against the scan,
+      and on any difference discards terrio's file and writes the GDAL path
+      instead. The pass cost about 45% of terrio's write time. It remains
+      the fallback and the oracle the tests compare #23's tags against.
+- ras2cng never passes overview factors to terrio's COG writer: it relies on
+  the automatic pyramid, which halves until a level fits one block, exactly
+  as <code>overview_factors()</code> does. Since gpt-cmdr/terrio #19 explicit factors are
+  honoured on COG, which does not change this path, and the report check
+  above would catch a different pyramid.
+- The GDAL path still runs for:
+    - a raster with no nodata;
+    - more than one band;
+    - an internal mask or alpha band;
+    - a raster above the pixel ceiling;
+    - a creation option terrio does not act on;
+    - <strong>NaN under a numeric nodata, on terrio without #23</strong>. That terrio
+      treats NaN as dry, but rasterio's mask treats it as a wet value.</p>
+<p>Each fallback reports exactly what it did before.</p>
+<p>Measured on Bald Eagle (peak working set, fresh process, default LERC 0.01):</p>
+<table>
+<thead>
+<tr>
+<th>artifact</th>
+<th>GDAL path</th>
+<th>terrio</th>
+<th>size (GDAL → terrio)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Terrain50 COG (15,777 × 12,599, <code>LERC_DEFLATE</code>, <code>LEVEL=9</code>)</td>
+<td>71.6 s / 2,197 MiB</td>
+<td>25.8 s / 2,071 MiB</td>
+<td>377.96 → 377.74 MB (−0.06%)</td>
+</tr>
+<tr>
+<td>Depth (Max) COG (<code>LERC_DEFLATE</code>)</td>
+<td>4.3–5.6 s / 621 MiB</td>
+<td>2.5 s / 485 MiB</td>
+<td>2.243 → 2.252 MB (+0.37%)</td>
+</tr>
+<tr>
+<td>Terrain50 COG, plain <code>LERC</code> (<code>SPARSE_OK</code>)</td>
+<td></td>
+<td></td>
+<td>386.62 → 387.13 MB (+0.13%)</td>
+</tr>
+<tr>
+<td>Depth (Max) COG, plain <code>LERC</code></td>
+<td></td>
+<td></td>
+<td>3.009 → 3.542 MB (+17.7%)</td>
+</tr>
+</tbody>
+</table>
+<p>terrio main with #18, #19 and #22, 2026-10-28. The terrio times include the
+level-0 scan. They were taken on a shared, loaded host, so compare them only
+against each other. Before #22 the <code>LERC_DEFLATE</code> Depth file was 2.262 MB
+(+0.8%). On this Depth COG, 4.5% of base pixels differ from GDAL's, by at
+most 0.0197, and every level is within 0.01 of the lossless pyramid with an
+identical mask.</p>
+<p>Dropping the pre-scan (terrio #23, T13, 2026-10-30; <code>area_matched_cog</code>
+in-process time, fresh process each, two rounds, default <code>LERC_DEFLATE</code>):</p>
+<table>
+<thead>
+<tr>
+<th>artifact</th>
+<th>scan + terrio write</th>
+<th>terrio with report</th>
+<th>peak (process)</th>
+<th>output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Terrain50 1x (197,179,058 valid px, terrain options)</td>
+<td>13.0–14.2 s</td>
+<td>6.0–6.7 s</td>
+<td>1,941–2,042 → 1,922 MiB</td>
+<td>byte-identical</td>
+</tr>
+<tr>
+<td>p07 Depth (Max) (1,345,691 valid px)</td>
+<td>0.82 s</td>
+<td>0.32–0.35 s</td>
+<td>unchanged (308–375 MiB)</td>
+<td>byte-identical</td>
+</tr>
+<tr>
+<td>p07 WSE (Max)</td>
+<td>0.82 s</td>
+<td>0.33 s</td>
+<td>unchanged</td>
+<td>byte-identical</td>
+</tr>
+</tbody>
+</table>
+<p>Tags are identical by construction (<code>overview_area_ratios</code>
+<code>1.000000,1.000000,1.000000,1.000000,1.000002</code> and
+<code>overview_base_valid_pixels</code> <code>197179058</code> on Terrain50). Peak memory does not
+change, because the scan streamed and terrio holds the base level whole.</p>
+<p>terrio reads the base level whole, so peak memory is still about the
+raster's size. Only the NumPy accumulators go.</p>
+<h3 id="layout-validation">Layout validation<a class="headerlink" href="#layout-validation" title="Permanent link">&para;</a></h3>
+<p><code>validate_cog</code> uses <code>terrio.validate_cog</code> when it exists (gpt-cmdr/terrio</p>
+<h1 id="10-it-is-a-port-of-rio_cogeocog_validate-with-the-same-checks-and">10). It is a port of <code>rio_cogeo.cog_validate</code> with the same checks and<a class="headerlink" href="#10-it-is-a-port-of-rio_cogeocog_validate-with-the-same-checks-and" title="Permanent link">&para;</a></h1>
+<p>messages, and it reads only the TIFF structure. If terrio cannot read a file,
+the check falls through to rio-cogeo. Set <code>RAS2CNG_COG_ENGINE=gdal</code> to use
+GDAL and rio-cogeo for both the writer and the validator.</p>
 <h2 id="crs-never-guessed">CRS: never guessed<a class="headerlink" href="#crs-never-guessed" title="Permanent link">&para;</a></h2>
 <p>An authority code is published only when the registered definition round-trips
 the source's linear unit and ellipsoid. Matching at a permissive confidence
@@ -2546,6 +2696,11 @@ instead, and <code>sourceProj4</code> remains the authoritative field for the br
 <td>ceiling above which overviews fall back to GDAL resampling</td>
 </tr>
 <tr>
+<td><code>RAS2CNG_COG_ENGINE</code></td>
+<td><code>auto</code></td>
+<td><code>auto</code>: terrio where it reproduces the GDAL path; <code>terrio</code>: require it; <code>gdal</code>: never use it</td>
+</tr>
+<tr>
 <td><code>RAS2CNG_TIPPECANOE_BOUNDED</code></td>
 <td>unset</td>
 <td>cap vector tile size on every tileset</td>
@@ -2577,7 +2732,7 @@ indistinguishable from the fix having worked.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="September 15, 2026 16:42:02 UTC">September 15, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 30, 2026 17:56:44 UTC">October 30, 2026</span>
   </span>
 
     

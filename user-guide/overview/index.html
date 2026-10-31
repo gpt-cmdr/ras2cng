@@ -2253,7 +2253,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ras2cng/
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── cli.py           — Typer CLI for archive, extraction, mapping, MapLibre packaging, and validation
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── project.py       — Full-project orchestration: inspect, archive, metadata export
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── catalog.py       — Manifest schema v2.5 for archive catalogs (manifest.json)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── catalog.py       — Manifest schema v3.0 for archive catalogs (manifest.json)
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── geometry.py      — HDF + text geometry export via ras-commander (20 HDF + 3 text layers)
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── results.py       — Plan HDF results export with polygon/point/geometryless modes and cell/face join keys
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── precipitation.py — Gridded precipitation GeoTIFF export from HDF meteorology results
@@ -2282,7 +2282,7 @@ optional extras are not installed.</p>
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>     ▼                                  ▼
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>GeoParquet/Parquet (ZSTD, bbox, indexes)  GeoTIFF rasters + terrain HDFs
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>     │
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>     ├── catalog.py         →  manifest.json (schema v2.5)
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>     ├── catalog.py         →  manifest.json (schema v3.0)
 <a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>     ├── duckdb_session.py  →  SQL analytics
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>     ├── pmtiles.py         →  GeoJSON → tippecanoe → PMTiles
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>     └── postgis_sync.py    →  SQLAlchemy → PostGIS + GIST index
@@ -2303,7 +2303,7 @@ never next to the HEC-RAS <code>.prj</code>, which would break project resolutio
 <h2 id="key-design-decisions">Key Design Decisions<a class="headerlink" href="#key-design-decisions" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Spatial post-processing by default</strong>: <code>archive_project()</code> runs the archive index pass unless <code>sort=False</code> or <code>--no-sort</code> is used. The CLI command <code>ras2cng spatial-index ARCHIVE_DIR</code> runs the same pass later for extraction-only archives.</li>
-<li><strong>ZSTD compression for archives</strong>: <code>archive_project()</code> uses ZSTD compression with per-row bbox columns and GeoParquet <code>covering</code> metadata for spatial predicate pushdown. Post-processing preserves that metadata while adding <code>hilbert_index</code> to GeoParquet geometry and sorting by <code>layer,hilbert_index</code>. Legacy single-file exports still use snappy for maximum read performance</li>
+<li><strong>ZSTD compression for archives</strong>: <code>archive_project()</code> uses ZSTD compression with a GeoParquet 1.1 <code>bbox</code> struct and <code>covering</code> metadata for spatial predicate pushdown, row groups that end at layer boundaries, and Hilbert order within each layer (<code>ras2cng.geoparquet</code>; terrio's native writer when installed). Post-processing preserves that metadata and order while adding <code>hilbert_index</code>. Legacy single-file exports still use snappy for maximum read performance</li>
 <li><strong>snake_case columns</strong>: ras-commander normalizes all column names (e.g., "Maximum Depth" → <code>maximum_depth</code>)</li>
 <li><strong>Table alias <code>_</code></strong>: DuckDB queries always use <code>_</code> as the table name — consistent, short, collision-free</li>
 <li><strong>Suffix-based detection</strong>: File type is determined from the file extension, not file inspection — fast and predictable</li>
@@ -2331,7 +2331,7 @@ never next to the HEC-RAS <code>.prj</code>, which would break project resolutio
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="July 16, 2026 03:14:30 UTC">July 16, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 30, 2026 15:46:52 UTC">October 30, 2026</span>
   </span>
 
     
