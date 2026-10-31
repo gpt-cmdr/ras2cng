@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ras2cng"
-version = "0.12.0"
+version = "0.13.0"
 description = "CLI for exporting HEC-RAS geometry/results to cloud-native GIS formats (GeoParquet, PMTiles, DuckDB, PostGIS)"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -83,14 +83,24 @@ gpio = [
 ]
 terrio = [
   # In-process raster tiling, colour relief and hillshade; selected by
-  # RAS2CNG_RASTER_TILER (auto prefers it when installed).
+  # RAS2CNG_RASTER_TILER (auto prefers it when installed).  The floor is the
+  # PyPI release.  The direct archive path, the native GeoParquet writer and
+  # the COG report need the gpt-cmdr fork build 0.5.0.1, published only as
+  # GitHub Release assets (PyPI rejects direct URL dependencies):
+  #   pip install terrio==0.5.0.1 --find-links
+  #     https://github.com/gpt-cmdr/terrio/releases/expanded_assets/gpt-cmdr-v0.5.0.1
+  # Every fork feature is capability-detected; PyPI terrio keeps the Python paths.
   "terrio>=0.5.0",
 ]
 freestiler = [
   # In-process vector tiler; an alternative to the tippecanoe + pmtiles CLIs.
   # Selected by RAS2CNG_VECTOR_TILER. auto prefers a build with Arrow input over
   # tippecanoe, and uses an older build only when tippecanoe is absent, e.g. on
-  # Windows.  See ras2cng/vector_tiles.py.
+  # Windows.  See ras2cng/vector_tiles.py.  Arrow input and `buffer` need the
+  # gpt-cmdr fork build 0.3.0.1 (GitHub Release assets only, not PyPI):
+  #   pip install freestiler==0.3.0.1 --find-links
+  #     https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.1-gpt-cmdr
+  # PyPI freestiler 0.3.0 still works through NDGeoJSON.
   "freestiler>=0.3.0",
 ]
 webgis = [
