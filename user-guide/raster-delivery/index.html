@@ -2499,7 +2499,7 @@ ties on a coherence rank with a deterministic dither, and writes the <strong>mea
 each cell's wet contributors — never the max, which would inflate flood volume.</p>
 <p>Categorical rasters get the same mask with a modal value.</p>
 <h3 id="native-engine-terrio">Native engine: terrio<a class="headerlink" href="#native-engine-terrio" title="Permanent link">&para;</a></h3>
-<p>When the installed <code>terrio</code> has the area-matched COG writer (gpt-cmdr/terrio</p>
+<p>When the installed <code>terrio</code> has the area-matched COG writer (CLB-Engineering-Corporation/terrio</p>
 <h1 id="9-rasterwritemetadata-overview_resamplingarea_matched-the">9: <code>Raster.write(metadata=..., overview_resampling="area_matched")</code>), the<a class="headerlink" href="#9-rasterwritemetadata-overview_resamplingarea_matched-the" title="Permanent link">&para;</a></h1>
 <p>whole COG is written by terrio: the overviews are built in Rust and encoded by
 terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
@@ -2517,7 +2517,7 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
   Esri/GDAL often does not.</li>
 <li><strong>Size.</strong> With ras2cng's default <code>LERC_DEFLATE</code> the terrio file is
   within 0.4% of GDAL's; with plain <code>LERC</code> it is up to 18% larger on a
-  sparse result raster (table below). Since gpt-cmdr/terrio #22 the
+  sparse result raster (table below). Since CLB-Engineering-Corporation/terrio #22 the
   padding of partial edge tiles is masked as GDAL masks it. The rest of
   the plain-LERC gap is lerc-writer's encoder; a size fix is pending
   upstream (roteiro-gis/lerc-rust #48) and ras2cng does not depend on it.</li>
@@ -2531,7 +2531,7 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
   <code>RAS2CNG_LERC_MAX_Z_ERROR=off</code>). It is lossless output that is identical
   across engines, not LERC output.
 - <code>overview_area_ratios</code> and <code>overview_base_valid_pixels</code>:
-    - <strong>terrio with gpt-cmdr/terrio #23</strong> (<code>report_metadata=</code> and
+    - <strong>terrio with CLB-Engineering-Corporation/terrio #23</strong> (<code>report_metadata=</code> and
       <code>area_matched_nan_valid=</code> on <code>Raster.write</code>, capability-detected)
       measures them in the pass that builds the levels and writes them into
       the header itself, formatted as ras2cng formats them. ras2cng makes
@@ -2547,7 +2547,7 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
       write because the tags go into the COG header. That pass is exact: the
       selection keeps <code>round(valid / f²)</code> cells, or every partly wet cell
       when there are fewer. It is also the check for NaN under a numeric
-      nodata (below). terrio with gpt-cmdr/terrio #18 returns its own
+      nodata (below). terrio with CLB-Engineering-Corporation/terrio #18 returns its own
       measurement from <code>Raster.write()</code>; ras2cng compares the factors, the
       valid count and every ratio at the tag's precision against the scan,
       and on any difference discards terrio's file and writes the GDAL path
@@ -2555,7 +2555,7 @@ terrio, LERC included. The choice is capability-detected, so stock PyPI terrio
       the fallback and the oracle the tests compare #23's tags against.
 - ras2cng never passes overview factors to terrio's COG writer: it relies on
   the automatic pyramid, which halves until a level fits one block, exactly
-  as <code>overview_factors()</code> does. Since gpt-cmdr/terrio #19 explicit factors are
+  as <code>overview_factors()</code> does. Since CLB-Engineering-Corporation/terrio #19 explicit factors are
   honoured on COG, which does not change this path, and the report check
   above would catch a different pyramid.
 - The GDAL path still runs for:
@@ -2653,7 +2653,7 @@ change, because the scan streamed and terrio holds the base level whole.</p>
 <p>terrio reads the base level whole, so peak memory is still about the
 raster's size. Only the NumPy accumulators go.</p>
 <h3 id="layout-validation">Layout validation<a class="headerlink" href="#layout-validation" title="Permanent link">&para;</a></h3>
-<p><code>validate_cog</code> uses <code>terrio.validate_cog</code> when it exists (gpt-cmdr/terrio</p>
+<p><code>validate_cog</code> uses <code>terrio.validate_cog</code> when it exists (CLB-Engineering-Corporation/terrio</p>
 <h1 id="10-it-is-a-port-of-rio_cogeocog_validate-with-the-same-checks-and">10). It is a port of <code>rio_cogeo.cog_validate</code> with the same checks and<a class="headerlink" href="#10-it-is-a-port-of-rio_cogeocog_validate-with-the-same-checks-and" title="Permanent link">&para;</a></h1>
 <p>messages, and it reads only the TIFF structure. If terrio cannot read a file,
 the check falls through to rio-cogeo. Set <code>RAS2CNG_COG_ENGINE=gdal</code> to use
@@ -2732,7 +2732,7 @@ indistinguishable from the fix having worked.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 30, 2026 17:56:44 UTC">October 30, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 31, 2026 21:01:09 UTC">October 31, 2026</span>
   </span>
 
     
