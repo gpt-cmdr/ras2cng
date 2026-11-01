@@ -85,10 +85,11 @@ terrio = [
   # In-process raster tiling, colour relief and hillshade; selected by
   # RAS2CNG_RASTER_TILER (auto prefers it when installed).  The floor is the
   # PyPI release.  The direct archive path, the native GeoParquet writer and
-  # the COG report need the gpt-cmdr fork build 0.5.0.1, published only as
-  # GitHub Release assets (PyPI rejects direct URL dependencies):
+  # the COG report need the CLB build 0.5.0.1, published only as GitHub
+  # Release assets on CLB-Engineering-Corporation/terrio-clb (PyPI rejects
+  # direct URL dependencies):
   #   pip install terrio==0.5.0.1 --find-links
-  #     https://github.com/gpt-cmdr/terrio/releases/expanded_assets/gpt-cmdr-v0.5.0.1
+  #     https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.1
   # Every fork feature is capability-detected; PyPI terrio keeps the Python paths.
   "terrio>=0.5.0",
 ]

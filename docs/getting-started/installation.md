@@ -57,11 +57,12 @@ pip install freestiler==0.3.0.1 \
 ```
 
 Likewise the direct HDF archive path, the native GeoParquet writer and the
-COG report need the gpt-cmdr fork build of terrio:
+COG report need the CLB build of terrio (terrio-clb), also published as
+GitHub Release assets rather than on PyPI:
 
 ```bash
 pip install terrio==0.5.0.1 \
-  --find-links https://github.com/gpt-cmdr/terrio/releases/expanded_assets/gpt-cmdr-v0.5.0.1
+  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.1
 ```
 
 Both are optional and detected at run time; with the PyPI builds ras2cng keeps

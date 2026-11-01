@@ -93,7 +93,7 @@ GeoTIFF → terrio dem → terrio warp → terrio PMTiles                  (terr
 ### Streaming terrio tiles
 
 With a terrio that streams (capability-detected: `terrio.dem` takes
-`max_memory_mib` and `hillshade_strength`; gpt-cmdr/terrio #8, #11, #12), no
+`max_memory_mib` and `hillshade_strength`; CLB-Engineering-Corporation/terrio #8, #11, #12), no
 step holds the raster whole:
 
 1. The colour relief is computed path to path, a strip of rows at a time. For
