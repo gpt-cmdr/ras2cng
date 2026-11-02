@@ -34,7 +34,7 @@ from ras2cng.cog import (
     describe_crs,
     overview_factors,
 )
-from ras2cng import raster_tiles, vector_tiles
+from ras2cng import raster_tiles, simplify, vector_tiles
 from ras2cng.pmtiles import _require_cli
 from ras2cng.viewer_manifest import apply_manifest_v2
 
@@ -415,7 +415,17 @@ def _to_wgs84(
     gdf: gpd.GeoDataFrame,
     source: Path,
     fallback_crs: str | None = None,
+    *,
+    simplify_kind: str | None = None,
+    simplification: dict[str, Any] | None = None,
 ) -> gpd.GeoDataFrame:
+    """A delivery copy in EPSG:4326, 2D, without null or empty geometries.
+
+    With ``simplify_kind``, the layer's polygons are first simplified in the
+    model CRS (Douglas-Peucker at the web-map tolerance, see
+    :mod:`ras2cng.simplify`; never mesh cells or faces), and the record of what
+    was done is put in ``simplification``.
+    """
     if gdf.crs is None:
         if not fallback_crs:
             raise ValueError(f"GeoParquet layer has no CRS and cannot be published: {source}")
@@ -428,6 +438,12 @@ def _to_wgs84(
     # unclosed 3D ring whose closing NaN does not compare equal. Browser tiles
     # are 2D by definition, so drop Z only in this delivery copy.
     gdf.geometry = shapely.force_2d(gdf.geometry.values)
+    if simplify_kind is not None:
+        gdf, record = simplify.simplify_frame(
+            gdf, kind=simplify_kind, tolerance_ft=simplify.tile_tolerance_ft()
+        )
+        if record is not None and simplification is not None:
+            simplification.update(simplify.camel_record(record))
     return gdf.to_crs("EPSG:4326")
 
 
@@ -1446,7 +1462,14 @@ def package_maplibre_stored_vector(
         frame = gpd.read_parquet(vector_path)
     else:
         frame = gpd.read_file(vector_path)
-    frame = _to_wgs84(frame, vector_path, crs)
+    stored_simplification: dict[str, Any] = {}
+    frame = _to_wgs84(
+        frame,
+        vector_path,
+        crs,
+        simplify_kind=map_slug.replace("-", "_"),
+        simplification=stored_simplification,
+    )
     if frame.empty:
         raise ValueError(f"Stored Map vector has no publishable features: {vector_path}")
 
@@ -1505,6 +1528,8 @@ def package_maplibre_stored_vector(
         "queryable": True,
         "provenance": provenance,
     }
+    if stored_simplification:
+        layer["simplification"] = stored_simplification
     tileset = {
         "id": layer_id,
         "type": "vector",
@@ -1786,7 +1811,11 @@ def _package_maplibre_numeric_raster(
     )
 
 
-def _extent_from_hdf(hdf_path: Path, fallback_crs: str | None = None) -> gpd.GeoDataFrame:
+def _extent_from_hdf(
+    hdf_path: Path,
+    fallback_crs: str | None = None,
+    simplification: dict[str, Any] | None = None,
+) -> gpd.GeoDataFrame:
     """Return the authoritative no-buffer footprint from ras-commander."""
 
     from ras_commander.hdf import HdfProject
@@ -1805,7 +1834,13 @@ def _extent_from_hdf(hdf_path: Path, fallback_crs: str | None = None) -> gpd.Geo
         ) from error
     if footprint.empty:
         raise ValueError(f"No model footprint was returned for {hdf_path}")
-    return _to_wgs84(footprint, hdf_path, fallback_crs)
+    return _to_wgs84(
+        footprint,
+        hdf_path,
+        fallback_crs,
+        simplify_kind="model_extents",
+        simplification=simplification,
+    )
 
 
 def _result_style(variable: str) -> dict[str, float | str]:
@@ -2033,7 +2068,10 @@ def package_maplibre_viewer(
                 }
             )
 
-            extent = _extent_from_hdf(Path(geometry_hdfs[entry["geom_id"]]), project_crs)
+            extent_simplification: dict[str, Any] = {}
+            extent = _extent_from_hdf(
+                Path(geometry_hdfs[entry["geom_id"]]), project_crs, extent_simplification
+            )
             extent["geometry_id"] = geom_id
             extent_source = f"{group_id}-model-extents"
             extent_delivery, count, geometry_types, bounds = _write_delivery_source(
@@ -2058,6 +2096,8 @@ def package_maplibre_viewer(
                     "extentSource": "HdfProject.get_project_extent(geometry_type='footprint')",
                 }
             )
+            if extent_simplification:
+                group_layers[-1]["simplification"] = extent_simplification
             extent_features.extend(extent.iterfeatures(drop_id=True, na="null", show_bbox=False))
 
             archive_geometry_path = archive_dir / entry["parquet"]
@@ -2069,6 +2109,7 @@ def package_maplibre_viewer(
                 source_layer = f"{group_id}-{_slug(kind)}"
                 source_path = work_dir / "geometry" / f"{source_layer}.ndgeojson"
                 cache_geometry = (geom_id, kind) in result_geometry_keys
+                layer_simplification: dict[str, Any] = {}
                 gdf: gpd.GeoDataFrame | None = None
                 delivery: DeliverySource = source_path
                 if _is_detail_geometry(kind) and not cache_geometry and arrow:
@@ -2093,6 +2134,8 @@ def package_maplibre_viewer(
                         _read_layer(archive_geometry_path, filter_value),
                         archive_geometry_path,
                         project_crs,
+                        simplify_kind=kind,
+                        simplification=layer_simplification,
                     )
                     if gdf.empty:
                         continue
@@ -2127,6 +2170,8 @@ def package_maplibre_viewer(
                         "queryable": True,
                     }
                 )
+                if layer_simplification:
+                    group_layers[-1]["simplification"] = layer_simplification
                 if gdf is not None and not cache_geometry:
                     del gdf
 
@@ -2156,10 +2201,13 @@ def package_maplibre_viewer(
                 if not kind or not parquet_href:
                     continue
                 source_path_archive = archive_dir / parquet_href
+                terrain_simplification: dict[str, Any] = {}
                 gdf = _to_wgs84(
                     gpd.read_parquet(source_path_archive),
                     source_path_archive,
                     project_crs,
+                    simplify_kind=kind,
+                    simplification=terrain_simplification,
                 )
                 if gdf.empty:
                     continue
@@ -2188,6 +2236,8 @@ def package_maplibre_viewer(
                         "terrain": terrain_name,
                     },
                 }
+                if terrain_simplification:
+                    viewer_layer["simplification"] = terrain_simplification
                 geometry_overview_layers.append(viewer_layer)
                 geometry_layers.append(viewer_layer)
 
@@ -2208,10 +2258,13 @@ def package_maplibre_viewer(
                 if not kind or not parquet_href:
                     continue
                 source_path_archive = archive_dir / parquet_href
+                terrain_simplification: dict[str, Any] = {}
                 gdf = _to_wgs84(
                     gpd.read_parquet(source_path_archive),
                     source_path_archive,
                     project_crs,
+                    simplify_kind=kind,
+                    simplification=terrain_simplification,
                 )
                 if gdf.empty:
                     continue
@@ -2241,6 +2294,8 @@ def package_maplibre_viewer(
                         "sourceHdf": Path(str(terrain_entry.get("source_hdf") or "")).name,
                     },
                 }
+                if terrain_simplification:
+                    viewer_layer["simplification"] = terrain_simplification
                 geometry_overview_layers.append(viewer_layer)
                 geometry_layers.append(viewer_layer)
 
@@ -2449,6 +2504,7 @@ def package_maplibre_viewer(
         "center": center,
         "zoom": _default_zoom(final_bounds),
         "sourceCrs": project_crs,
+        "vectorSimplification": _vector_simplification_summary(),
         "tilesets": geometry_tilesets,
         "groups": groups,
         "notes": (
@@ -2542,6 +2598,21 @@ def _geometry_sort(kind: str) -> int:
         "terrain_source_footprints": 190,
     }
     return order.get(kind, 90)
+
+
+def _vector_simplification_summary() -> dict[str, Any]:
+    """The viewer manifest's ``vectorSimplification``: the web-map polygon filter."""
+
+    tolerance = simplify.tile_tolerance_ft()
+    if tolerance is None:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "method": simplify.METHOD,
+        "toleranceFt": tolerance,
+        "engine": simplify.resolve_engine(),
+        "scope": "polygons of every layer except mesh_cells and mesh_faces; lines and points unchanged",
+    }
 
 
 def _is_detail_geometry(kind: str) -> bool:

@@ -1,3 +1,11 @@
+# Unreleased
+
+## Behaviour changes
+
+- **Web-map polygon simplification (default on, 0.1 ft).** `ras2cng maplibre` and `maplibre-stored-vector` simplify the polygons of every layer except mesh cells and faces with Douglas-Peucker at 0.1 ft (RAS Mapper's default filter), converted to the CRS units (0.03048 m in a metre CRS), before tiling. Lines, points, geographic CRSs and the mesh are unchanged. `--simplify-tolerance FT`, `--no-simplify`, `RAS2CNG_SIMPLIFY_TOLERANCE` (feet; `0`/`off`), `RAS2CNG_SIMPLIFY_ENGINE` (`auto`/`terrio`/`shapely`). The viewer manifest records it (`vectorSimplification`, per-layer `simplification`). UPGU3 (FEMA eBFE): the 1,062,037-vertex land-cover polygon drops to 407,116 vertices and geometry tiling from 1,615 s to about 600 s.
+- `ras2cng archive --simplify-tolerance FT` (`archive_project(simplify_tolerance_ft=)`): the same filter for the archive GeoParquet, **opt-in** (off by default; the environment variable does not apply). Recorded in `manifest.geometry[].simplification`.
+- With a terrio build that has `simplify_wkb` (CLB terrio build, terrio-clb #10) the filter runs in Rust; otherwise in shapely/GEOS, with the same vertices.
+
 # ras2cng 0.13.0
 
 Rust engines release. Every engine feature is capability-detected: with older engines, or the PyPI builds of terrio and freestiler, ras2cng keeps its Python paths.

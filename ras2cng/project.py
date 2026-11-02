@@ -610,6 +610,7 @@ def archive_project(
     rasprocess_path: Optional[Path] = None,
     crs: Optional[str] = None,
     archive_engine: Optional[str] = None,
+    simplify_tolerance_ft: Optional[float] = None,
 ) -> Manifest:
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -649,6 +650,11 @@ def archive_project(
         archive_engine: ``auto``, ``prefer-native``, ``native`` or ``python``
             (default: ``RAS2CNG_ARCHIVE_ENGINE``, else ``auto``). See
             :mod:`ras2cng.archive_direct`.
+        simplify_tolerance_ft: Opt-in Douglas-Peucker tolerance in feet for the
+            polygons of the geometry layers (never ``mesh_cells``/``mesh_faces``),
+            converted to the CRS units; recorded in each geometry entry's
+            ``simplification``. Default None: the archive keeps every vertex.
+            See :mod:`ras2cng.simplify`.
 
     Returns:
         Manifest: The completed project manifest (also written to output_dir/manifest.json)
@@ -755,6 +761,7 @@ def archive_project(
                 plans_using=plans_using,
             )
             file_types = []
+            geom_simplification: list[dict] = []
 
             console.print(f"  [{geom_id}] -> {parquet_name}")
             try:
@@ -772,6 +779,8 @@ def archive_project(
                                 parquet_path,
                                 project_crs=crs,
                                 engine=engine,
+                                simplify_tolerance_ft=simplify_tolerance_ft,
+                                simplification=geom_simplification,
                             )
                             direct_done = True
                         except DirectArchiveRequired:
@@ -813,6 +822,12 @@ def archive_project(
                 if merged_gdf is not None and len(merged_gdf) > 0:
                     if merged_gdf.crs is None and crs:
                         merged_gdf = merged_gdf.set_crs(crs)
+                    if simplify_tolerance_ft:
+                        from ras2cng.simplify import simplify_layers
+
+                        merged_gdf, geom_simplification[:] = simplify_layers(
+                            merged_gdf, tolerance_ft=simplify_tolerance_ft, fallback_crs=crs
+                        )
                     if hdf_path:
                         file_types.append("hdf")
                     if text_path:
@@ -864,6 +879,14 @@ def archive_project(
                 if not skip_errors:
                     raise
 
+            if geom_simplification:
+                from ras2cng.simplify import METHOD
+
+                geom_entry.simplification = {
+                    "method": METHOD,
+                    "tolerance_ft": float(simplify_tolerance_ft),
+                    "layers": geom_simplification,
+                }
             geom_entry.file_type = "+".join(file_types) if file_types else "unknown"
             if file_types:
                 manifest.add_geom_entry(geom_entry)

@@ -123,6 +123,15 @@ def archive_command(
             "Default: RAS2CNG_ARCHIVE_ENGINE, else auto"
         ),
     ),
+    simplify_tolerance: Optional[float] = typer.Option(
+        None,
+        "--simplify-tolerance",
+        min=0.0,
+        help=(
+            "Opt in: Douglas-Peucker tolerance in feet for the polygons of the archived geometry "
+            "layers (never mesh cells/faces), e.g. 0.1. Default: off (the archive is the data of record)"
+        ),
+    ),
 ):
     """Archive a HEC-RAS project to consolidated GeoParquet files.
 
@@ -171,6 +180,7 @@ def archive_command(
             ras_version=ras_version,
             rasprocess_path=rasprocess,
             crs=crs,
+            simplify_tolerance_ft=simplify_tolerance or None,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
@@ -483,6 +493,19 @@ def maplibre_command(
         "--feature-ids/--no-feature-ids",
         help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
     ),
+    simplify_tolerance: Optional[float] = typer.Option(
+        None,
+        "--simplify-tolerance",
+        min=0.0,
+        help=(
+            "Douglas-Peucker tolerance in feet for polygon layers before tiling, converted to the "
+            "CRS units (0.03048 m per 0.1 ft); never mesh cells/faces. "
+            "Default: RAS2CNG_SIMPLIFY_TOLERANCE, else 0.1 (RAS Mapper's filter); 0 = off"
+        ),
+    ),
+    no_simplify: bool = typer.Option(
+        False, "--no-simplify", help="Tile polygon layers without simplification"
+    ),
 ):
     """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
 
@@ -494,6 +517,7 @@ def maplibre_command(
 
     from ras2cng.maplibre import package_maplibre_viewer
     from ras2cng.vector_tiles import vector_tile_options
+    from ras2cng.simplify import simplify_options
 
     mappings: dict[str, Path] = {}
     for item in geometry_hdf:
@@ -508,7 +532,9 @@ def maplibre_command(
         mappings[geom_id] = Path(raw_path.strip())
 
     try:
-        with vector_tile_options(feature_ids=feature_ids):
+        with vector_tile_options(feature_ids=feature_ids), simplify_options(
+            tolerance_ft=simplify_tolerance, enabled=False if no_simplify else None
+        ):
             summary = package_maplibre_viewer(
                 archive_dir,
                 output,
@@ -689,14 +715,30 @@ def maplibre_stored_vector_command(
         "--feature-ids/--no-feature-ids",
         help="Keep MVT feature IDs in freestiler tiles (default: RAS2CNG_VECTOR_TILE_IDS, else off)",
     ),
+    simplify_tolerance: Optional[float] = typer.Option(
+        None,
+        "--simplify-tolerance",
+        min=0.0,
+        help=(
+            "Douglas-Peucker tolerance in feet for polygon layers before tiling, converted to the "
+            "CRS units (0.03048 m per 0.1 ft); never mesh cells/faces. "
+            "Default: RAS2CNG_SIMPLIFY_TOLERANCE, else 0.1 (RAS Mapper's filter); 0 = off"
+        ),
+    ),
+    no_simplify: bool = typer.Option(
+        False, "--no-simplify", help="Tile polygon layers without simplification"
+    ),
 ):
     """Publish a queryable RASMapper vector Stored Map under its source plan."""
 
     from ras2cng.maplibre import package_maplibre_stored_vector
     from ras2cng.vector_tiles import vector_tile_options
+    from ras2cng.simplify import simplify_options
 
     try:
-        with vector_tile_options(feature_ids=feature_ids):
+        with vector_tile_options(feature_ids=feature_ids), simplify_options(
+            tolerance_ft=simplify_tolerance, enabled=False if no_simplify else None
+        ):
             summary = package_maplibre_stored_vector(
                 vector_path,
                 viewer_dir,
