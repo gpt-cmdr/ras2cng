@@ -1,5 +1,60 @@
 # Unreleased
 
+## Tile content changes
+
+**Viewers with vector results and viewers with short lines change content in three ways, and in no other.** Decoded per tile, layer and feature against the previous output on UPGU3, UPGU4, Spring, Bald Eagle p07 and Davis (0 failures): every other feature is unchanged and in the same order, and every other tileset is byte-identical.
+
+1. **Three properties are gone from result tiles:** `mesh_name_result`, `layer_result`, `hilbert_index_result`. They were a copy of `mesh_name`, the variable the layer already is, and a sort key, left by the join's name suffixes. Nothing in the viewer or in the repositories under the shared workspace names them. A consumer outside those that reads one must read `mesh_name` instead, or use the layer's `rawResult.variable`.
+2. **Multi-mesh models: mesh results now attach to the right mesh** (below). Features are removed from Davis's tiles.
+3. **Short mesh faces and breaklines are now in the tiles at every zoom,** with freestiler 0.3.0.3 (below). Features are added.
+
+## Mesh results were misattributed on multi-mesh models
+
+`ras2cng maplibre --vector-results` joined each mesh result on the cell or face ID alone, but IDs restart in every 2D flow area. **Every viewer of a model with more than one 2D flow area was affected, since vector results first shipped.** Each ID present in two meshes gave four features, two of them carrying the other mesh's value, drawn over the right ones. The archive itself was right; only the tiles were wrong.
+
+Of the ten plans on hand only Davis p02 has two meshes. Its 11-cell `DS Channel` and the first 11 cells of `area2`, and 35 faces of each:
+
+| Variable | Features before / after | Features with the other mesh's value | That value was off by (median / max) |
+|---|---:|---:|---:|
+| `maximum_water_surface` | 2,738 / 2,716 | 22 | 6.94 / 9.43 ft |
+| `minimum_water_surface` | 2,738 / 2,716 | 22 | 9.37 / 11.10 ft |
+| `maximum_face_velocity` | 5,660 / 5,590 | 70 (46 differing) | 0.10 / 1.46 ft/s |
+| `minimum_face_velocity` | 5,660 / 5,590 | 70 (0 differing) | 0 |
+| `cell_last_iteration` | 2,738 / 2,716 | 22 | 119 / 6,935 |
+| `cell_maximum_water_surface_error` | 2,738 / 2,716 | 22 | 0.005 / 0.007 ft |
+| `cell_cumulative_iteration` | 2,738 / 2,716 | 22 (0 differing) | 0 |
+
+Both joins now use `mesh_name` when both tables have it. Keys that are not unique are refused with an error rather than attributed to a feature, so **a multi-mesh archive whose result files have no `mesh_name` now fails instead of showing wrong values**; none of the archives on hand is like that, including manifest 2.6. A result row with no feature, or a feature with no result row, raises a `RuntimeWarning`. The manifest records `rawResult.joinKeys`. Rebuild any published multi-mesh viewer.
+
+## Short lines at every zoom
+
+With freestiler 0.3.0.3 and Arrow input, `mesh_faces` and `breaklines`, alone or joined to results, pass `keep_short_lines`: a line whose two ends snap to one tile pixel is written once per zoom as a one-unit segment with its properties, where it used to be absent at that zoom. Those layers are now complete at every zoom against the archive on all five models. Lines already written do not change.
+
+- **Other line layers stay as they were** (conduits, BC and reference lines, structures): Davis `geometry.pmtiles` was +18.37% with its conduits on. Widening is one line, `vector_tiles.KEEP_SHORT_LINES_KINDS`.
+- **Off switch:** `RAS2CNG_KEEP_SHORT_LINES=0` or `--no-keep-short-lines`. The manifest's `vectorShortLines` records the layers or why none got it. Older freestiler, GeoJSON input and tippecanoe tile as before.
+- **Rendered in MapLibre 6.16 (headless Edge, software WebGL), UPGU3 breaklines at z0-z12, width 1 px:** at most 4 pixels differ at any zoom and none is away from existing line work. On this model the stand-ins land on what is already drawn. Other models were not rendered.
+
+## Sizes and peak
+
+Fresh process, median of three, base and new alternating, peak of the process tree. Base is `master` before these changes with freestiler 0.3.0.2, whose tiles are byte-identical to 0.14.0. **Wall times are not comparable:** background CPU reached 100%, and more often during the new runs. Peak is steady to about 1%.
+
+| Model, with vector results | Peak MiB | `results-detail.pmtiles` | `geometry.pmtiles` | `geometry-detail.pmtiles` |
+|---|---:|---:|---:|---:|
+| UPGU4 | 2,253 -> **1,642** (-27%) | 1,196.3 -> **893.0 MB** (-25.4%) | +2.35% | +220 B |
+| UPGU3 | 832 -> **654** (-21%) | 450.8 -> **343.3 MB** (-23.9%) | +0.82% | -4 B |
+| Spring | 864 -> **689** (-20%) | 446.2 -> **345.4 MB** (-22.6%) | +0.77% | identical |
+| Bald Eagle p07 | 440 -> **366** (-17%) | 78.3 -> **52.4 MB** (-33.0%) | +0.03% | identical |
+| Davis | 206 -> 202 | 3.05 -> 2.17 MB (-28.8%) | identical | identical |
+
+## Requirements
+
+- Optional fork build: freestiler 0.3.0.3, `pip install freestiler==0.3.0.3 --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr`. Not on PyPI.
+
+## Fixes
+
+- The Arrow result join failed with `ArrowInvalid` when the result rows with no feature were the last rows of the variable.
+- A result whose geometry layer does not exist in the archive was skipped without a word; it now raises a `RuntimeWarning`. On Davis that is `one_d_structure_summary`.
+
 ## Lower memory for viewers with vector results
 
 `ras2cng maplibre --vector-results` read the whole plan file (every variable, with its geometry) through pandas once per variable, and held each mesh layer as shapely objects for the whole run. With freestiler Arrow input, a mesh layer is now written to disk in EPSG:4326 batch by batch, each variable is read with row-group and column pruning and joined on its keys, and the tiler attaches the one geometry column when it reaches the layer.

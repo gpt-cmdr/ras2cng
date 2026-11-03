@@ -101,7 +101,7 @@ and less at every lower zoom. The polygon's area changed by -0.2% on the models 
 
 ### Per-zoom simplification
 
-With a freestiler build that has `polygon_simplify` (the fork build 0.3.0.2, see
+With a freestiler build that has `polygon_simplify` (the fork build 0.3.0.2 or later, see
 [Installation](../getting-started/installation.md)) and Arrow input, the same polygon
 layers also get `polygon_simplify=0.5`: the tiler simplifies each ring once per zoom and
 cuts it down a tile tree, where it otherwise sweeps the whole ring once per tile in the
@@ -165,6 +165,27 @@ mesh renders as stripes. Tile weight is bounded by each tileset's minimum zoom
 instead (see below). The comparison behind this choice is in
 `feature_dev_notes/vector_tiler_evaluation_2026-10-12.md`.
 
+### Short lines
+
+A vector tile cannot hold a line of zero length, so a line whose two ends snap to one tile
+pixel has no form at that zoom. With a freestiler build that has `keep_short_lines` (the fork
+build 0.3.0.3, see [Installation](../getting-started/installation.md)) and Arrow input,
+`mesh_faces` and `breaklines`, alone or joined to results, write such a line once per zoom as
+a one-unit segment (1/4096 of a tile) that carries its properties, in the tile holding its
+first vertex. Those layers are then complete at every zoom. At low zoom such a feature draws as
+a dot the width of the line style.
+
+Other line layers (conduits, BC and reference lines, structures) stay as they were, and a
+line that collapses is absent at that zoom: their low-zoom tiles would repeat every feature's
+properties, +18.4% of `geometry.pmtiles` on the Davis pipe network. Older freestiler builds,
+`RAS2CNG_FREESTILER_INPUT=geojson` and tippecanoe also keep the old behaviour.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `RAS2CNG_KEEP_SHORT_LINES`, CLI `--keep-short-lines/--no-keep-short-lines` | on | `0` or `--no-keep-short-lines` turns it off |
+
+The manifest's `vectorShortLines` records the layers that got the option, or why none did.
+
 ## Raster Tiler
 
 Terrain and result rasters (Stored Maps, calculated layers, `ras2cng pmtiles` on
@@ -224,8 +245,10 @@ GDAL chain under `auto`, because terrio processes the raster in memory.
   `flow_maximum`, `flow_maximum_time`, `flow_units` and so on. Every value is kept, and a
   table where a value would be lost is refused. The archive keeps the long table.
 - `--vector-results` creates separate sources, grouped by plan. Each result is raw HDF
-  summary data joined to the matching model feature only for visual delivery. Its manifest
-  record identifies its raw HDF source and geometry join key. Results joined to sparse
+  summary data joined to the matching model feature only for visual delivery. Mesh results
+  join on `mesh_name` and the cell or face ID, because IDs restart in every 2D flow area;
+  keys that are not unique are refused rather than attributed to a feature. Its manifest
+  record identifies its raw HDF source and geometry join key (`rawResult.joinKeys`). Results joined to sparse
   features (cross sections, reference lines and points) go in `results.pmtiles` at every
   zoom; results joined to mesh cells or faces are as dense as the mesh and go in
   `results-detail.pmtiles`, which shares the detail floor. Use the published stored-map
