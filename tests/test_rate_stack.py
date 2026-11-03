@@ -1,4 +1,7 @@
 import json
+import os
+import stat
+import sys
 import zlib
 
 import numpy as np
@@ -25,6 +28,47 @@ def raster(path, values, x=100):
     ) as dst:
         dst.write(np.asarray(values, dtype="float32"), 1)
     return path
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_published_stack_follows_the_umask(tmp_path):
+    previous = os.umask(0o022)
+    try:
+        target = tmp_path / "stack.nc"
+        write_rate_stack(
+            {"depth": [raster(tmp_path / "a.tif", [[1, 2, 3], [4, 5, 6]])]},
+            target,
+            rate_k16=[0],
+            units={"depth": "ft"},
+            provenance={"model": "x"},
+        )
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
+def test_failed_stack_leaves_no_partial_file(tmp_path):
+    with pytest.raises(ValueError):
+        write_rate_stack(
+            {"depth": [raster(tmp_path / "a.tif", [[-1, 2, 3], [4, 5, 6]])]},
+            tmp_path / "out" / "stack.nc",
+            rate_k16=[0],
+            units={"depth": "ft"},
+            provenance={"model": "x"},
+        )
+    assert list((tmp_path / "out").iterdir()) == []
+
+
+def test_missing_netcdf4_names_the_extra(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "netCDF4", None)
+    with pytest.raises(ModuleNotFoundError, match=r"ras2cng\[netcdf\]"):
+        write_rate_stack(
+            {"depth": [tmp_path / "a.tif"]},
+            tmp_path / "stack.nc",
+            rate_k16=[0],
+            units={"depth": "ft"},
+            provenance={"model": "x"},
+        )
 
 
 def test_rate_stack_and_exact_range_decode(tmp_path):

@@ -373,6 +373,15 @@ def _written_indexed(entry: Mapping[str, Any]) -> bool:
     return record.get("hilbert_column") == HILBERT_COLUMN
 
 
+def _manifest_path(archive_dir: Path, path: Path) -> str:
+    """Return a portable archive-relative path for manifest diagnostics."""
+
+    try:
+        return path.relative_to(archive_dir).as_posix()
+    except ValueError:
+        return path.name
+
+
 def postprocess_archive(
     archive_dir: Path,
     *,
@@ -418,7 +427,7 @@ def postprocess_archive(
                 layer["bbox_covering"] = result.get("bbox_covering", "")
             summary["geometry_files"].append(result)
         except Exception as exc:
-            error = {"path": str(parquet_path), "error": str(exc)}
+            error = {"path": _manifest_path(archive_dir, parquet_path), "error": str(exc)}
             summary["errors"].append(error)
             if not skip_errors:
                 raise
@@ -440,7 +449,7 @@ def postprocess_archive(
                     variable["index_status"] = "spatial"
                 summary["result_files"].append(result)
             except Exception as exc:
-                error = {"path": str(plan_parquet), "error": str(exc)}
+                error = {"path": _manifest_path(archive_dir, plan_parquet), "error": str(exc)}
                 summary["errors"].append(error)
                 if not skip_errors:
                     raise
@@ -472,7 +481,7 @@ def postprocess_archive(
                 summary["result_files"].append(result)
             except Exception as exc:
                 variable["index_status"] = "error"
-                error = {"path": str(variable_path), "error": str(exc)}
+                error = {"path": _manifest_path(archive_dir, variable_path), "error": str(exc)}
                 summary["errors"].append(error)
                 if not skip_errors:
                     raise

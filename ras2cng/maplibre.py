@@ -526,21 +526,29 @@ DeliverySource = Union[Path, vector_tiles.ArrowLayer]
 
 
 def _write_delivery_source(
-    gdf: gpd.GeoDataFrame, path: Path, arrow: bool
+    gdf: gpd.GeoDataFrame, path: Path, arrow: bool, *, kind: str | None = None
 ) -> tuple[DeliverySource, int, list[str], list[float]]:
     """Write one WGS84 delivery layer for the vector tiler.
 
     NDGeoJSON for tippecanoe and older freestiler builds; with freestiler Arrow
     input, an Arrow IPC spill file beside it (``.arrow``) that is read back
-    only when the tiler reaches the layer.
+    only when the tiler reaches the layer. ``kind`` names the layer the features
+    come from: with it, a polygon layer gets the tiler's per-zoom simplification
+    (:func:`ras2cng.simplify.tile_polygon_pixels`; never mesh cells or faces).
     """
 
     if not arrow:
         count, geometry_types, bounds = _write_ndgeojson(gdf, path)
         return path, count, geometry_types, bounds
     cleaned = _drop_internal_columns(gdf)
+    pixels = None
+    if vector_tiles.polygon_simplify_available() and cleaned.geom_type.isin(("Polygon", "MultiPolygon")).any():
+        pixels = simplify.tile_polygon_pixels(kind)
     layer = vector_tiles.write_arrow_spill(
-        vector_tiles.frame_table(cleaned), path.with_suffix(".arrow")
+        vector_tiles.frame_table(cleaned),
+        path.with_suffix(".arrow"),
+        polygon_simplify=pixels,
+        kind=kind,
     )
     return layer, len(cleaned), sorted(set(cleaned.geom_type.dropna())), _bounds(cleaned)
 
@@ -1485,7 +1493,7 @@ def package_maplibre_stored_vector(
     ) as temporary:
         work_dir = Path(temporary)
         delivery, feature_count, geometry_types, bounds = _write_delivery_source(
-            frame, work_dir / f"{layer_id}.ndgeojson", arrow
+            frame, work_dir / f"{layer_id}.ndgeojson", arrow, kind=map_slug.replace("-", "_")
         )
         _run_vector_tiler(
             output,
@@ -1528,6 +1536,8 @@ def package_maplibre_stored_vector(
         "queryable": True,
         "provenance": provenance,
     }
+    if isinstance(delivery, vector_tiles.ArrowLayer) and delivery.polygon_simplify is not None:
+        stored_simplification["tilePolygonSimplifyPx"] = delivery.polygon_simplify
     if stored_simplification:
         layer["simplification"] = stored_simplification
     tileset = {
@@ -1902,7 +1912,11 @@ def _join_raw_result(
     join_columns: Mapping[str, str] | None = None,
     filters: Mapping[str, Any] | None = None,
 ) -> gpd.GeoDataFrame:
-    """Join raw HDF values to the feature geometry solely for vector delivery."""
+    """Join raw HDF values to the feature geometry solely for vector delivery.
+
+    A long summary table (reference lines and points) is first pivoted to one row
+    per feature, so that a feature carries all of its values.
+    """
 
     result = pd.read_parquet(result_path)
     if filters:
@@ -1928,6 +1942,8 @@ def _join_raw_result(
                 f"Cannot join raw results from {result_path}: missing geometry columns "
                 f"{missing_geometry} or result columns {missing_result}."
             )
+        if {"Variable", "Statistic", "Value"}.issubset(attributes.columns):
+            attributes = _pivot_long_summary(attributes, result_columns, result_path)
         if attributes.duplicated(subset=result_columns).any():
             raise ValueError(
                 f"Cannot join raw results from {result_path}: composite result keys are not unique."
@@ -1963,6 +1979,65 @@ def _join_raw_result(
     else:
         raise ValueError(f"Cannot join raw results from {result_path}: no join key was declared.")
     return gpd.GeoDataFrame(joined, geometry="geometry", crs=geometry.crs)
+
+
+def _summary_column(*parts: Any) -> str:
+    return "_".join(re.sub(r"[^0-9a-z]+", "_", str(part).strip().lower()).strip("_") for part in parts)
+
+
+def _pivot_long_summary(
+    table: pd.DataFrame, keys: Sequence[str], result_path: Path
+) -> pd.DataFrame:
+    """One row per feature from a long ``Variable``/``Statistic``/``Value`` summary.
+
+    ``HdfResultsPlan.get_reference_summary`` returns one row per feature, variable
+    and statistic, and a tile feature carries one set of properties. The rows
+    become ``<variable>_<statistic>`` and ``<variable>_<statistic>_time`` columns
+    plus ``<variable>_units``, for example ``flow_maximum``, so every value is
+    kept. A table in which this would lose a value is refused: a repeated
+    variable and statistic, or another column that varies within a feature.
+    The archive table stays long.
+    """
+
+    keys = list(keys)
+    identity = [*keys, "Variable", "Statistic"]
+    if "Mesh Name" in table.columns:
+        # The same name in two 2D areas is two features the name cannot tell apart.
+        if table.groupby(keys, dropna=False)["Mesh Name"].nunique().gt(1).any():
+            raise ValueError(
+                f"Cannot join raw results from {result_path}: composite result keys are not unique "
+                "(a name appears in more than one 2D flow area)."
+            )
+    if table.duplicated(subset=identity).any():
+        raise ValueError(
+            f"Cannot join raw results from {result_path}: composite result keys are not unique "
+            "(a feature repeats a variable and statistic)."
+        )
+    pivoted = {"Value", "Time", "Units", "Variable", "Statistic"}
+    fixed = [
+        column
+        for column in table.dropna(axis=1, how="all").columns
+        if column not in pivoted and column not in keys and column not in _INTERNAL_COLUMNS
+    ]
+    groups = table.groupby(keys, sort=False, dropna=False)
+    varying = [column for column in fixed if groups[column].nunique(dropna=False).gt(1).any()]
+    if "Units" in table.columns and table.groupby([*keys, "Variable"], dropna=False)["Units"].nunique().gt(1).any():
+        varying.append("Units")
+    if varying:
+        raise ValueError(
+            f"Cannot join raw results from {result_path}: columns {varying} vary within a feature."
+        )
+    wide = groups[fixed].first()
+    for (variable, statistic), rows in table.groupby(["Variable", "Statistic"], sort=False):
+        rows = rows.set_index(keys)
+        name = _summary_column(variable, statistic)
+        wide[name] = rows["Value"]
+        if "Time" in rows.columns:
+            wide[f"{name}_time"] = rows["Time"]
+    if "Units" in table.columns:
+        for variable, rows in table.groupby("Variable", sort=False):
+            wide[_summary_column(variable, "units")] = rows.groupby(keys, sort=False, dropna=False)["Units"].first()
+    return wide.reset_index()
 
 
 def _project_metadata(archive_dir: Path) -> dict[str, Any]:
@@ -2075,7 +2150,7 @@ def package_maplibre_viewer(
             extent["geometry_id"] = geom_id
             extent_source = f"{group_id}-model-extents"
             extent_delivery, count, geometry_types, bounds = _write_delivery_source(
-                extent, work_dir / "geometry" / f"{extent_source}.ndgeojson", arrow
+                extent, work_dir / "geometry" / f"{extent_source}.ndgeojson", arrow, kind="model_extents"
             )
             geometry_overview_sources.append((extent_source, extent_delivery))
             all_bounds.append(bounds)
@@ -2144,7 +2219,7 @@ def package_maplibre_viewer(
                     if _is_detail_geometry(kind):
                         detail_pixel_sizes.append(_feature_pixel_sizes(gdf.geometry.values[::10]))
                     delivery, count, geometry_types, bounds = _write_delivery_source(
-                        gdf, source_path, arrow
+                        gdf, source_path, arrow, kind=kind
                     )
                 source_layers = (
                     geometry_detail_sources if _is_detail_geometry(kind) else geometry_overview_sources
@@ -2213,7 +2288,7 @@ def package_maplibre_viewer(
                     continue
                 source_layer = f"{group_id}-{_slug(kind)}"
                 delivery, count, geometry_types, bounds = _write_delivery_source(
-                    gdf, work_dir / "terrain-sources" / f"{source_layer}.ndgeojson", arrow
+                    gdf, work_dir / "terrain-sources" / f"{source_layer}.ndgeojson", arrow, kind=kind
                 )
                 geometry_overview_sources.append((source_layer, delivery))
                 all_bounds.append(bounds)
@@ -2270,7 +2345,7 @@ def package_maplibre_viewer(
                     continue
                 source_layer = f"{group_id}-{_slug(kind)}"
                 delivery, count, geometry_types, bounds = _write_delivery_source(
-                    gdf, work_dir / "terrain-modifications" / f"{source_layer}.ndgeojson", arrow
+                    gdf, work_dir / "terrain-modifications" / f"{source_layer}.ndgeojson", arrow, kind=kind
                 )
                 geometry_overview_sources.append((source_layer, delivery))
                 all_bounds.append(bounds)
@@ -2382,7 +2457,10 @@ def package_maplibre_viewer(
                         profile_suffix = f"-{_slug(str(profile))}" if profile is not None else ""
                         source_layer = f"{result_group_id}-{_slug(variable_name)}{profile_suffix}"
                         delivery, count, geometry_types, bounds = _write_delivery_source(
-                            joined, work_dir / "results" / f"{source_layer}.ndgeojson", arrow
+                            joined,
+                            work_dir / "results" / f"{source_layer}.ndgeojson",
+                            arrow,
+                            kind=geometry_kind,
                         )
                         dense_result = _is_detail_geometry(geometry_kind)
                         (result_detail_sources if dense_result else result_sources).append(
@@ -2504,7 +2582,14 @@ def package_maplibre_viewer(
         "center": center,
         "zoom": _default_zoom(final_bounds),
         "sourceCrs": project_crs,
-        "vectorSimplification": _vector_simplification_summary(),
+        "vectorSimplification": _vector_simplification_summary(
+            [
+                *geometry_overview_sources,
+                *geometry_detail_sources,
+                *result_sources,
+                *result_detail_sources,
+            ]
+        ),
         "tilesets": geometry_tilesets,
         "groups": groups,
         "notes": (
@@ -2600,19 +2685,50 @@ def _geometry_sort(kind: str) -> int:
     return order.get(kind, 90)
 
 
-def _vector_simplification_summary() -> dict[str, Any]:
-    """The viewer manifest's ``vectorSimplification``: the web-map polygon filter."""
+def _vector_simplification_summary(
+    sources: Sequence[tuple[str, DeliverySource]] = (),
+) -> dict[str, Any]:
+    """The viewer manifest's ``vectorSimplification``: the web-map polygon filters."""
 
     tolerance = simplify.tile_tolerance_ft()
-    if tolerance is None:
-        return {"enabled": False}
-    return {
-        "enabled": True,
-        "method": simplify.METHOD,
-        "toleranceFt": tolerance,
-        "engine": simplify.resolve_engine(),
-        "scope": "polygons of every layer except mesh_cells and mesh_faces; lines and points unchanged",
+    summary: dict[str, Any] = {"enabled": False}
+    if tolerance is not None:
+        summary = {
+            "enabled": True,
+            "method": simplify.METHOD,
+            "toleranceFt": tolerance,
+            "engine": simplify.resolve_engine(),
+            "scope": "polygons of every layer except mesh_cells and mesh_faces; lines and points unchanged",
+        }
+    summary["perZoom"] = _per_zoom_summary(sources)
+    return summary
+
+
+def _per_zoom_summary(sources: Sequence[tuple[str, DeliverySource]]) -> dict[str, Any]:
+    """What the tiler's per-zoom ``polygon_simplify`` did, or why it did not run."""
+
+    used = {
+        name: source.polygon_simplify
+        for name, source in sources
+        if isinstance(source, vector_tiles.ArrowLayer) and source.polygon_simplify is not None
     }
+    if used:
+        return {
+            "enabled": True,
+            "method": "freestiler polygon_simplify",
+            "tilePixels": next(iter(used.values())),
+            "scope": "polygons of every layer except mesh_cells and mesh_faces",
+            "layers": list(used),
+        }
+    if simplify.tile_pixels_setting() is None:
+        reason = "turned off"
+    elif not vector_tiles.polygon_simplify_available():
+        reason = "the installed freestiler has no polygon_simplify, or none is installed"
+    elif not any(isinstance(source, vector_tiles.ArrowLayer) for _, source in sources):
+        reason = "the layers did not go to freestiler as Arrow"
+    else:
+        reason = "no polygon layer outside mesh_cells and mesh_faces"
+    return {"enabled": False, "reason": reason}
 
 
 def _is_detail_geometry(kind: str) -> bool:

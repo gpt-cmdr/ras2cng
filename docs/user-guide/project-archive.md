@@ -153,7 +153,8 @@ ras2cng archive path/to/project /output/archive --terrain --consolidate-terrain
 ras2cng archive path/to/project /output/archive --terrain --consolidate-terrain \
   --terrain-resolution "Existing Terrain=6"
 
-# Opt in: simplify the polygons of the geometry layers (never mesh cells/faces) at 0.1 ft
+# Opt in: simplify the polygons of the geometry layers (never mesh cells/faces) at 0.1 ft,
+# RAS Mapper's own filter. The archive is the data of record and is off by default.
 ras2cng archive /path/to/project /output/archive --simplify-tolerance 0.1
 
 # Skip spatial post-processing during extraction

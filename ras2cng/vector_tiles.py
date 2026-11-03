@@ -8,8 +8,8 @@ layer per input:
     In-process Rust tiler from the optional ``freestiler`` extra
     (``pip install ras2cng[freestiler]``). It snaps vertices to the tile pixel
     grid, so shared mesh vertices stay shared, and keeps every feature. A build
-    with Arrow input and the ``buffer`` option (the gpt-cmdr fork build 0.3.0.1,
-    GitHub Release assets only) is the preferred backend: it needs no GeoJSON,
+    with Arrow input and the ``buffer`` option (the gpt-cmdr fork build, GitHub
+    Release assets only) is the preferred backend: it needs no GeoJSON,
     mbtiles or ``pmtiles convert`` step. Viewer on Bald Eagle p07 with vector
     results: 36 s against 1,745 s for tippecanoe. Archives with the default (no
     feature IDs) are 10% smaller than tippecanoe's, and 5% larger with IDs;
@@ -58,6 +58,12 @@ freestiler options (ignored by tippecanoe, whose tiles never carry IDs):
     default 6 (-14% on the same mesh, tile contents unchanged). freestiler's
     own default is 1.
 
+``ArrowLayer.polygon_simplify`` (tile pixels) is passed per layer when the
+installed ``FreestileLayer`` accepts it (the fork build 0.3.0.2): the tiler
+simplifies the layer once per zoom and cuts it down a tile tree, which takes a
+large polygon from minutes to under a second. :mod:`ras2cng.simplify` decides
+which layers get it, and :class:`ArrowLayer` refuses it on mesh cells and faces.
+
 The clip buffer is passed explicitly as ``buffer=5`` (:data:`TILE_BUFFER`) when
 the installed freestiler accepts it: 5 pixels of a 256-pixel tile, tippecanoe's
 default. freestiler's own default (12.8 px) repeats 10-12% more mesh features
@@ -97,6 +103,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
+
+from ras2cng.simplify import NEVER_SIMPLIFY
 
 TIPPECANOE = "tippecanoe"
 FREESTILER = "freestiler"
@@ -243,6 +251,12 @@ def vector_tiler_backend(required_commands: Sequence[str] | None = None) -> str:
     return TIPPECANOE
 
 
+def polygon_simplify_available() -> bool:
+    """Whether the installed freestiler accepts per-layer ``polygon_simplify``."""
+
+    return freestiler_available() and freestiler_capabilities()["polygon_simplify"]
+
+
 def arrow_input_enabled() -> bool:
     """Whether freestiler layers go in as Arrow (``RAS2CNG_FREESTILER_INPUT``)."""
 
@@ -325,11 +339,20 @@ class ArrowLayer:
     called only when the tiler reaches the layer, so a tileset holds one layer
     at a time. ``crs`` is the CRS of that column (PROJJSON or any string
     pyproj accepts); ``EPSG:4326`` means it is already reprojected.
+    ``polygon_simplify`` is the tiler's per-zoom tolerance in tile pixels and
+    ``kind`` the layer it was chosen for; mesh cells and faces refuse it, because
+    their shared edges would stop being coincident.
     """
 
     load: Callable[[], pa.Table]
     crs: str
     geometry_column: str = "geometry"
+    polygon_simplify: Optional[float] = None
+    kind: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.polygon_simplify is not None and (not self.kind or self.kind in NEVER_SIMPLIFY):
+            raise ValueError(f"polygon_simplify cannot be set on layer kind {self.kind!r}")
 
 
 def crs_text(crs: Any) -> str:
@@ -555,7 +578,13 @@ def _is_missing(value: Any) -> bool:
         return False
 
 
-def write_arrow_spill(table: pa.Table, path: Path) -> ArrowLayer:
+def write_arrow_spill(
+    table: pa.Table,
+    path: Path,
+    *,
+    polygon_simplify: Optional[float] = None,
+    kind: Optional[str] = None,
+) -> ArrowLayer:
     """Spill a WGS84 delivery table to an Arrow IPC file; load it back lazily."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -566,7 +595,7 @@ def write_arrow_spill(table: pa.Table, path: Path) -> ArrowLayer:
         with pa.OSFile(str(path), "rb") as source:
             return pa.ipc.open_file(source).read_all()
 
-    return ArrowLayer(load=load, crs=WGS84)
+    return ArrowLayer(load=load, crs=WGS84, polygon_simplify=polygon_simplify, kind=kind)
 
 
 def _accepts(function, name: str) -> bool:
@@ -584,7 +613,9 @@ def freestiler_capabilities(module=None) -> dict[str, bool]:
     ``freestile_layers(gzip_level=...)``; ``buffer`` / ``layers_buffer``: the
     clip buffer on ``freestile`` / ``freestile_layers``; ``arrow``: Arrow
     stream layers with a per-layer CRS, reprojected in Rust
-    (``_LayeredTiler.add_arrow_layer`` and ``FreestileLayer.crs``).
+    (``_LayeredTiler.add_arrow_layer`` and ``FreestileLayer.crs``);
+    ``polygon_simplify``: ``FreestileLayer(polygon_simplify=...)``, the per-zoom
+    polygon path.
     """
 
     if module is None:
@@ -600,6 +631,7 @@ def freestiler_capabilities(module=None) -> dict[str, bool]:
         "buffer": _accepts(module.freestile, "buffer"),
         "layers_buffer": layered_ok and _accepts(layered, "buffer"),
         "arrow": layered_ok and hasattr(tiler, "add_arrow_layer") and "crs" in layer_fields,
+        "polygon_simplify": _accepts(getattr(module, "FreestileLayer", None), "polygon_simplify"),
     }
 
 
@@ -644,6 +676,7 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
 
     from ras2cng.cog import atomic_output
 
+    polygon_simplify = freestiler_capabilities(freestiler)["polygon_simplify"]
     while True:
         attempt: dict[str, Any] = {"crs": None, "layer": None}
         python_reprojected: list[str] = []
@@ -658,8 +691,11 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
                     if crs != source.crs:
                         python_reprojected.append(name)
                     attempt.update(crs=crs, layer=name)
+                    options = {}
+                    if source.polygon_simplify is not None and polygon_simplify:
+                        options["polygon_simplify"] = source.polygon_simplify
                     yield name, freestiler.FreestileLayer(
-                        input=table, crs=crs, geometry_column=source.geometry_column
+                        input=table, crs=crs, geometry_column=source.geometry_column, **options
                     )
                     del table
                 else:

@@ -1,18 +1,31 @@
 """Douglas-Peucker polygon simplification before vector tiling (and, opt-in, archiving).
 
 RAS Mapper filters polygon outlines with Douglas-Peucker at 0.1 ft by default.
-ras2cng applies the same first-pass filter to the **polygon** layers of the web
-map before they are tiled: Manning's n land cover, 2D flow area perimeters,
-refinement regions, storage areas, terrain modification and source footprint
-polygons, model extents and Stored Map polygons. Some FEMA eBFE models carry a
-single land-cover polygon of one million vertices (UPGU3), which dominated the
-whole tiling run; at 0.1 ft the filter removes 54-62% of those vertices.
+ras2cng applies the same first-pass filter, at **1 ft** by default (user decision
+2026-11-02), to the **polygon** layers of the web map before they are tiled:
+Manning's n land cover, 2D flow area perimeters, refinement regions, storage
+areas, terrain modification and source footprint polygons, model extents and
+Stored Map polygons. Some FEMA eBFE models carry a single land-cover polygon of
+one million vertices (UPGU3), which dominated the whole tiling run; 1 ft removes
+85-89% of those vertices (0.1 ft: 54-62%) and changes the polygon's area by -0.2%.
+
+With a freestiler build that has ``polygon_simplify`` (the fork build 0.3.0.2) the
+tiler then simplifies those same layers once per zoom, in tile pixels
+(:data:`DEFAULT_TILE_POLYGON_SIMPLIFY_PX`, 0.5 of 4096 per tile), and cuts them down
+a tile tree instead of clipping the whole ring against every tile. 0.5 was chosen
+over 1.0 because it has less area bias at mid zooms (-4.8% against -7.3% at z8 on
+UPGU3, where the unsimplified tiles are within 0.05%), for tiles about 7.5% larger.
+``RAS2CNG_TILE_POLYGON_SIMPLIFY`` (tile pixels; ``0`` or ``off``) and CLI
+``--tile-polygon-simplify`` / ``--no-tile-polygon-simplify`` set it. ``--no-simplify``
+turns both filters off. It needs freestiler's Arrow input; older builds, the GeoJSON
+input and tippecanoe tile as before.
 
 What is never simplified:
 
 - ``mesh_cells`` and ``mesh_faces`` (:data:`NEVER_SIMPLIFY`): neighbouring
   cells share edges, and simplifying each cell on its own would open gaps and
-  overlaps along them. The tilers keep those edges coincident.
+  overlaps along them. The tilers keep those edges coincident. This holds for the
+  per-zoom option too (:func:`tile_polygon_pixels`).
 - Lines and points. HEC-RAS lines (cross sections, centerlines, breaklines, BC
   and reference lines, structures) are digitized sparsely, so the filter has
   little to remove, and results are joined to them by identity.
@@ -23,14 +36,14 @@ Tolerance (``RAS2CNG_SIMPLIFY_TOLERANCE``, CLI ``--simplify-tolerance`` /
 ``--no-simplify``) is given in **feet** and converted to the layer's CRS units:
 0.1 ft stays 0.1 in a US survey foot or international foot CRS and becomes
 0.03048 m in a metre CRS. ``0`` or ``off`` turns the filter off. Web-map tiles
-use :data:`DEFAULT_TILE_TOLERANCE_FT` (0.1 ft) by default; the archive GeoParquet
+use :data:`DEFAULT_TILE_TOLERANCE_FT` (1 ft) by default; the archive GeoParquet
 is the data of record and is simplified only when asked
 (``ras2cng archive --simplify-tolerance``; the environment variable does not
 apply to archives).
 
-0.1 ft is also below what a tile can show: at the default maximum zoom (17) one
-MVT coordinate unit (extent 4096) is about 0.12-0.13 ft at Texas latitudes, so
-the tiles drawn from simplified polygons are visually unchanged.
+At the default maximum zoom (17) one MVT coordinate unit (extent 4096) is about
+0.12-0.13 ft at Texas latitudes, so 1 ft is about 8 of those units: half of one
+CSS pixel at z17, and less at every lower zoom.
 
 Engines (``RAS2CNG_SIMPLIFY_ENGINE`` = ``auto`` | ``terrio`` | ``shapely``):
 ``auto`` uses ``terrio.simplify_wkb`` (Rust, parallel over features; the CLB
@@ -69,7 +82,10 @@ import shapely
 
 TOLERANCE_ENV = "RAS2CNG_SIMPLIFY_TOLERANCE"
 ENGINE_ENV = "RAS2CNG_SIMPLIFY_ENGINE"
-DEFAULT_TILE_TOLERANCE_FT = 0.1
+DEFAULT_TILE_TOLERANCE_FT = 1.0
+TILE_POLYGON_SIMPLIFY_ENV = "RAS2CNG_TILE_POLYGON_SIMPLIFY"
+DEFAULT_TILE_POLYGON_SIMPLIFY_PX = 0.5
+MAX_TILE_POLYGON_SIMPLIFY_PX = 64.0
 METHOD = "douglas-peucker"
 FOOT_M = 0.3048
 NEVER_SIMPLIFY = frozenset({"mesh_cells", "mesh_faces"})
@@ -82,11 +98,19 @@ _OPTIONS: contextvars.ContextVar[dict] = contextvars.ContextVar("ras2cng_simplif
 
 
 @contextlib.contextmanager
-def simplify_options(*, tolerance_ft: Optional[float] = None, enabled: Optional[bool] = None) -> Iterator[None]:
+def simplify_options(
+    *,
+    tolerance_ft: Optional[float] = None,
+    enabled: Optional[bool] = None,
+    tile_pixels: Optional[float] = None,
+    tile_pixels_enabled: Optional[bool] = None,
+) -> Iterator[None]:
     """Override the web-map simplification for the enclosed calls.
 
-    ``enabled=False`` turns it off; ``tolerance_ft`` sets the tolerance in feet
-    (``0`` turns it off). ``None`` leaves each to the environment or default.
+    ``enabled=False`` turns off both filters; ``tolerance_ft`` sets the first-pass
+    tolerance in feet (``0`` turns only that off). ``tile_pixels`` sets the
+    tiler's per-zoom tolerance and ``tile_pixels_enabled=False`` turns only that
+    off. ``None`` leaves each to the environment or default.
     """
 
     current = dict(_OPTIONS.get())
@@ -94,6 +118,10 @@ def simplify_options(*, tolerance_ft: Optional[float] = None, enabled: Optional[
         current["tolerance_ft"] = _checked_tolerance(tolerance_ft, "simplify tolerance")
     if enabled is not None:
         current["enabled"] = bool(enabled)
+    if tile_pixels is not None:
+        current["tile_pixels"] = _checked_tile_pixels(tile_pixels, "tile polygon simplify")
+    if tile_pixels_enabled is not None:
+        current["tile_pixels_enabled"] = bool(tile_pixels_enabled)
     token = _OPTIONS.set(current)
     try:
         yield
@@ -125,6 +153,47 @@ def tile_tolerance_ft() -> Optional[float]:
     if not raw:
         return DEFAULT_TILE_TOLERANCE_FT
     return _checked_tolerance(raw, TOLERANCE_ENV)
+
+
+def _checked_tile_pixels(value: Any, source: str) -> Optional[float]:
+    if isinstance(value, str) and value.strip().lower() in _OFF:
+        return None
+    message = f"{source} must be above 0 and at most {MAX_TILE_POLYGON_SIMPLIFY_PX:g} tile pixels, or 'off'; got {value!r}"
+    try:
+        pixels = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(message) from None
+    if pixels == 0:
+        return None
+    if not np.isfinite(pixels) or pixels < 0 or pixels > MAX_TILE_POLYGON_SIMPLIFY_PX:
+        raise ValueError(message)
+    return pixels
+
+
+def tile_pixels_setting() -> Optional[float]:
+    """The requested per-zoom tolerance in tile pixels, or None when it is off."""
+
+    options = _OPTIONS.get()
+    if options.get("enabled") is False or options.get("tile_pixels_enabled") is False:
+        return None
+    if "tile_pixels" in options:
+        return options["tile_pixels"]
+    raw = os.environ.get(TILE_POLYGON_SIMPLIFY_ENV, "").strip()
+    if not raw:
+        return DEFAULT_TILE_POLYGON_SIMPLIFY_PX
+    return _checked_tile_pixels(raw, TILE_POLYGON_SIMPLIFY_ENV)
+
+
+def tile_polygon_pixels(kind: Optional[str]) -> Optional[float]:
+    """The per-zoom tolerance for one layer; always None for mesh cells and faces.
+
+    Polygons are simplified independently, so shared mesh edges would stop being
+    coincident. A layer of unknown kind gets None too.
+    """
+
+    if not kind or kind in NEVER_SIMPLIFY:
+        return None
+    return tile_pixels_setting()
 
 
 def terrio_simplify() -> Any:

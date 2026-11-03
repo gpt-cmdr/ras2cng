@@ -26,6 +26,7 @@ uv pip install "ras2cng[all]"
 pip install "ras2cng[duckdb]"    # DuckDB SQL analytics
 pip install "ras2cng[postgis]"   # PostGIS sync (SQLAlchemy + GeoAlchemy2 + psycopg2)
 pip install "ras2cng[pmtiles]"   # rasterio (PMTiles pipeline also needs external CLIs)
+pip install "ras2cng[netcdf]"    # netCDF4, for ras2cng.rate_stack.write_rate_stack
 ```
 
 ## Dev Install from Source
@@ -48,21 +49,21 @@ example on Windows):
 pip install "ras2cng[freestiler]"
 ```
 
-The fastest vector path (Arrow input, no GeoJSON step) needs the gpt-cmdr fork
-build of freestiler, published as GitHub Release assets rather than on PyPI:
+The fastest vector path (Arrow input with no GeoJSON step, and per-zoom polygon
+simplification) needs the gpt-cmdr fork build of freestiler, published as GitHub Release assets rather than on PyPI:
 
 ```bash
-pip install freestiler==0.3.0.1 \
-  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.1-gpt-cmdr
+pip install freestiler==0.3.0.2 \
+  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.2-gpt-cmdr
 ```
 
-Likewise the direct HDF archive path, the native GeoParquet writer and the
-COG report need the CLB build of terrio (terrio-clb), also published as
+Likewise the direct HDF archive path, the native GeoParquet writer, the COG
+report and the Rust polygon filter need the CLB build of terrio (terrio-clb), also published as
 GitHub Release assets rather than on PyPI:
 
 ```bash
-pip install terrio==0.5.0.1 \
-  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.1
+pip install terrio==0.5.0.2 \
+  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2
 ```
 
 Both are optional and detected at run time; with the PyPI builds ras2cng keeps

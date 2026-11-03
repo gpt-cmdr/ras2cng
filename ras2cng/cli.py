@@ -500,11 +500,27 @@ def maplibre_command(
         help=(
             "Douglas-Peucker tolerance in feet for polygon layers before tiling, converted to the "
             "CRS units (0.03048 m per 0.1 ft); never mesh cells/faces. "
-            "Default: RAS2CNG_SIMPLIFY_TOLERANCE, else 0.1 (RAS Mapper's filter); 0 = off"
+            "Default: RAS2CNG_SIMPLIFY_TOLERANCE, else 1; 0 = off (RAS Mapper's own filter is 0.1)"
         ),
     ),
     no_simplify: bool = typer.Option(
-        False, "--no-simplify", help="Tile polygon layers without simplification"
+        False,
+        "--no-simplify",
+        help="Tile polygon layers without simplification (the first-pass filter and the per-zoom option)",
+    ),
+    tile_polygon_simplify: Optional[float] = typer.Option(
+        None,
+        "--tile-polygon-simplify",
+        min=0.0,
+        max=64.0,
+        help=(
+            "Per-zoom polygon tolerance in tile pixels (1/4096 of a tile), with a freestiler that "
+            "has polygon_simplify; never mesh cells/faces. "
+            "Default: RAS2CNG_TILE_POLYGON_SIMPLIFY, else 0.5; 0 = off"
+        ),
+    ),
+    no_tile_polygon_simplify: bool = typer.Option(
+        False, "--no-tile-polygon-simplify", help="Turn off only the per-zoom polygon option"
     ),
 ):
     """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
@@ -533,7 +549,10 @@ def maplibre_command(
 
     try:
         with vector_tile_options(feature_ids=feature_ids), simplify_options(
-            tolerance_ft=simplify_tolerance, enabled=False if no_simplify else None
+            tolerance_ft=simplify_tolerance,
+            enabled=False if no_simplify else None,
+            tile_pixels=tile_polygon_simplify,
+            tile_pixels_enabled=False if no_tile_polygon_simplify or tile_polygon_simplify == 0 else None,
         ):
             summary = package_maplibre_viewer(
                 archive_dir,
@@ -722,11 +741,27 @@ def maplibre_stored_vector_command(
         help=(
             "Douglas-Peucker tolerance in feet for polygon layers before tiling, converted to the "
             "CRS units (0.03048 m per 0.1 ft); never mesh cells/faces. "
-            "Default: RAS2CNG_SIMPLIFY_TOLERANCE, else 0.1 (RAS Mapper's filter); 0 = off"
+            "Default: RAS2CNG_SIMPLIFY_TOLERANCE, else 1; 0 = off (RAS Mapper's own filter is 0.1)"
         ),
     ),
     no_simplify: bool = typer.Option(
-        False, "--no-simplify", help="Tile polygon layers without simplification"
+        False,
+        "--no-simplify",
+        help="Tile polygon layers without simplification (the first-pass filter and the per-zoom option)",
+    ),
+    tile_polygon_simplify: Optional[float] = typer.Option(
+        None,
+        "--tile-polygon-simplify",
+        min=0.0,
+        max=64.0,
+        help=(
+            "Per-zoom polygon tolerance in tile pixels (1/4096 of a tile), with a freestiler that "
+            "has polygon_simplify; never mesh cells/faces. "
+            "Default: RAS2CNG_TILE_POLYGON_SIMPLIFY, else 0.5; 0 = off"
+        ),
+    ),
+    no_tile_polygon_simplify: bool = typer.Option(
+        False, "--no-tile-polygon-simplify", help="Turn off only the per-zoom polygon option"
     ),
 ):
     """Publish a queryable RASMapper vector Stored Map under its source plan."""
@@ -737,7 +772,10 @@ def maplibre_stored_vector_command(
 
     try:
         with vector_tile_options(feature_ids=feature_ids), simplify_options(
-            tolerance_ft=simplify_tolerance, enabled=False if no_simplify else None
+            tolerance_ft=simplify_tolerance,
+            enabled=False if no_simplify else None,
+            tile_pixels=tile_polygon_simplify,
+            tile_pixels_enabled=False if no_tile_polygon_simplify or tile_polygon_simplify == 0 else None,
         ):
             summary = package_maplibre_stored_vector(
                 vector_path,

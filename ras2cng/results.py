@@ -410,17 +410,17 @@ def extract_results_variable_no_geometry(
     Reads ras-commander's typed value table
     (``HdfResultsMesh.get_mesh_summary_output(..., include_geometry=False)``),
     which reads the stored arrays without building cell points or face lines
-    (natively where the HDF engine proves the layout). Every stored row is kept,
-    ghost cells included, with the same columns and values as before:
-    ``mesh_name``, ``cell_id``/``face_id``, the value column and, for
-    ``[value, time]`` summaries, ``<variable>_time``. It is the preferred path
-    for large archives that store results as DRY attribute tables.
+    (natively where the HDF engine proves the layout). Ghost cells (the placeholder
+    rows HEC-RAS stores after the physical cells) are excluded, as on the polygon
+    and point paths. The columns are ``mesh_name``, ``cell_id``/``face_id``, the
+    value column and, for ``[value, time]`` summaries, ``<variable>_time``. It is
+    the preferred path for large archives that store results as DRY attribute tables.
     """
     values = HdfResultsMesh.get_mesh_summary_output(
         Path(plan_hdf),
         variable,
         round_to=round_to,
-        include_ghost_cells=True,
+        include_ghost_cells=False,
         include_geometry=False,
     )
     if values.empty:

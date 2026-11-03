@@ -32,6 +32,7 @@ pip install "ras2cng[all]"
 pip install "ras2cng[duckdb]"    # DuckDB SQL analytics
 pip install "ras2cng[postgis]"   # PostGIS sync
 pip install "ras2cng[pmtiles]"   # rasterio (PMTiles also needs tippecanoe + pmtiles CLIs)
+pip install "ras2cng[netcdf]"    # netCDF4, for ras2cng.rate_stack.write_rate_stack
 ```
 
 ## Quick Start

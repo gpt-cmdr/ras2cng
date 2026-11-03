@@ -205,6 +205,7 @@ result variables, such as maximum face velocity, join this layer on
 | `mesh_name` | `str` | Name of 2D flow area | `"BaldEagleCr"` |
 | `cell_id` | `int64` | Cell index (0-based) | `0`, `1`, `2` |
 | `maximum_depth` | `float64` | Maximum water depth (ft) | `4.237`, `0.0`, `12.51` |
+| `is_ghost_cell` | `bool` | `False` on every row: ghost cells are excluded | `False` |
 | `geometry` | `Point` | Cell centroid | `POINT (2083650 370850)` |
 
 ### Schema — Polygons (with `--geometry mesh_cells.parquet`)
@@ -233,6 +234,10 @@ for viewer-side or SQL joins:
 | `layer` | `str` | Variable slug when exported from an archive |
 | `join_index` | `int64` | Added by spatial post-processing for deterministic key ordering |
 | `hilbert_index` | `uint64` | Added when a matching `mesh_cells` or `mesh_faces` layer can provide spatial order |
+
+Ghost cells (the placeholder rows HEC-RAS stores after the physical cells) are not in
+these tables, as they are not in the point or polygon layers. Before 0.14 they were: Bald
+Eagle p07 goes from 89,879 to 87,039 rows, and all 2,840 removed rows held 0.0.
 
 Each variable table carries the relevant mesh key: cell variables use `cell_id`,
 and face variables use `face_id`.

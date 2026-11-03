@@ -9,7 +9,7 @@ import hashlib
 import json
 import math
 import os
-import tempfile
+import uuid
 from collections.abc import Mapping, Sequence
 from itertools import pairwise
 from pathlib import Path
@@ -31,7 +31,13 @@ def write_rate_stack(
     compressed chunk spans one rate and at most 256 by 256 pixels. Callers write
     the returned JSON beside the stack as ``ranges.json``.
     """
-    import netCDF4
+    try:
+        import netCDF4
+    except ImportError as exc:
+        raise ModuleNotFoundError(
+            "write_rate_stack needs netCDF4, which is the ras2cng 'netcdf' extra: "
+            "pip install ras2cng[netcdf]"
+        ) from exc
     import numpy as np
     import rasterio
     from rasterio.windows import Window
@@ -82,10 +88,12 @@ def write_rate_stack(
                 expected = grid
     crs, transform, width, height = expected
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(suffix=".nc", dir=target.parent)
-    os.close(fd)
+    # A name, not a file: mkstemp's mode 0600 would survive the hard link below, so
+    # a published stack could be read only by its owner. NetCDF creates the file
+    # under the process umask, as any other published file.
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.partial.nc"
     try:
-        with netCDF4.Dataset(temporary, "w", format="NETCDF4") as nc:
+        with netCDF4.Dataset(str(temporary), "w", format="NETCDF4") as nc:
             nc.Conventions = "CF-1.8"
             nc.schema = "ras2cng-rate-stack/v1"
             nc.provenance_json = json.dumps(
@@ -155,13 +163,13 @@ def write_rate_stack(
                                     col : col + data.shape[1],
                                 ] = data
         # The index records exact compressed bytes; it never changes the NetCDF.
-        index = rate_stack_index(Path(temporary))
+        index = rate_stack_index(temporary)
         # A hard-link publication refuses concurrent targets atomically. The
         # temporary lives on the same filesystem and is removed below.
         os.link(temporary, target)
         return index
     finally:
-        Path(temporary).unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
 
 
 def rate_stack_index(path: str | Path) -> dict:
