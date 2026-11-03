@@ -622,7 +622,7 @@ def _dense_layer_arrow(
         table = pq.read_table(source, columns=columns, filters=[("layer", "==", filter_value)])
         return vector_tiles.delivery_table(table, geometry_column)
 
-    layer = vector_tiles.ArrowLayer(load=load, crs=crs, geometry_column=geometry_column)
+    layer = vector_tiles.ArrowLayer(load=load, crs=crs, geometry_column=geometry_column, kind=kind)
     return layer, count, sorted(geometry_types), _merge_bounds(bounds)
 
 
@@ -3089,6 +3089,14 @@ def package_maplibre_viewer(
                 *result_detail_sources,
             ]
         ),
+        "vectorShortLines": _short_lines_summary(
+            [
+                *geometry_overview_sources,
+                *geometry_detail_sources,
+                *result_sources,
+                *result_detail_sources,
+            ]
+        ),
         "tilesets": geometry_tilesets,
         "groups": groups,
         "notes": (
@@ -3228,6 +3236,28 @@ def _per_zoom_summary(sources: Sequence[tuple[str, DeliverySource]]) -> dict[str
     else:
         reason = "no polygon layer outside mesh_cells and mesh_faces"
     return {"enabled": False, "reason": reason}
+
+
+def _short_lines_summary(sources: Sequence[tuple[str, DeliverySource]]) -> dict[str, Any]:
+    """The viewer manifest's ``vectorShortLines``: which layers keep collapsed lines, or why none."""
+
+    scope = sorted(vector_tiles.KEEP_SHORT_LINES_KINDS)
+    if not vector_tiles.keep_short_lines_enabled():
+        return {"enabled": False, "reason": "turned off"}
+    if not vector_tiles.keep_short_lines_available():
+        return {"enabled": False, "reason": "the installed freestiler has no keep_short_lines, or none is installed"}
+    arrow = [(name, source) for name, source in sources if isinstance(source, vector_tiles.ArrowLayer)]
+    if not arrow:
+        return {"enabled": False, "reason": "the layers did not go to freestiler as Arrow"}
+    used = [name for name, source in arrow if vector_tiles.keeps_short_lines(source.kind)]
+    if not used:
+        return {"enabled": False, "reason": f"no layer of kind {', '.join(scope)}"}
+    return {
+        "enabled": True,
+        "method": "freestiler keep_short_lines",
+        "scope": f"{' and '.join(scope)}, alone or joined to results",
+        "layers": used,
+    }
 
 
 def _is_detail_geometry(kind: str) -> bool:

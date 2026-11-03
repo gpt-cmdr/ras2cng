@@ -97,6 +97,7 @@ def test_capabilities_detect_arrow_and_buffer(monkeypatch):
         "layers_buffer": True,
         "arrow": True,
         "polygon_simplify": False,
+        "keep_short_lines": False,
     }
 
 
