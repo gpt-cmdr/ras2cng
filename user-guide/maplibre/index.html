@@ -975,6 +975,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#polygon-simplification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Polygon Simplification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vector-tiler" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2251,6 +2262,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#polygon-simplification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Polygon Simplification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vector-tiler" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2443,6 +2465,58 @@ directs the vector tiler's own workspace beneath it; no source features are drop
 records a verified CRS from packaged projection material. In that case the command uses
 the archive CRS. A validated CRS can be supplied explicitly with <code>--crs</code>; an unknown CRS
 remains a hard error.</p>
+<h2 id="polygon-simplification">Polygon Simplification<a class="headerlink" href="#polygon-simplification" title="Permanent link">&para;</a></h2>
+<p>Before polygon layers are tiled, ras2cng simplifies them with Douglas-Peucker at
+<strong>0.1 ft</strong>, the default filter RAS Mapper applies to polygon outlines. The tolerance is
+converted to each layer's CRS units (0.1 in a US survey or international foot CRS,
+0.03048 m in a metre CRS) and applied in the model CRS, before reprojection.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RAS2CNG_SIMPLIFY_TOLERANCE</code>, CLI <code>--simplify-tolerance FT</code></td>
+<td>0.1 ft</td>
+<td>Tolerance in feet; <code>0</code> or <code>off</code> turns the filter off</td>
+</tr>
+<tr>
+<td>CLI <code>--no-simplify</code></td>
+<td></td>
+<td>Tile every polygon vertex</td>
+</tr>
+<tr>
+<td><code>RAS2CNG_SIMPLIFY_ENGINE</code></td>
+<td><code>auto</code></td>
+<td><code>terrio</code> (Rust <code>terrio.simplify_wkb</code>, in the CLB terrio build), <code>shapely</code> (GEOS), or <code>auto</code>: terrio when the installed build has it</td>
+</tr>
+</tbody>
+</table>
+<p>What is simplified: the polygons of every layer, for example Manning's n land cover,
+2D flow area perimeters, refinement regions, storage areas, terrain modification and
+source footprint polygons, model extents and Stored Map polygons. What is never
+simplified: <code>mesh_cells</code> and <code>mesh_faces</code> (neighbouring cells share edges, which must
+stay coincident), lines and points, and layers in a geographic CRS (skipped with a
+warning).</p>
+<p>Both engines run GEOS's <code>DouglasPeuckerSimplifier</code> ring by ring and give the same
+vertices. A ring that would be left with fewer than four points keeps its vertices, so
+no polygon or hole disappears. There is no repair step, so at large tolerances a ring can
+self-intersect; at 0.1 ft none did on the models measured. At the default maximum zoom
+(17) one tile coordinate unit is about 0.12-0.13 ft at Texas latitudes, so the filter
+does not change what the map can show.</p>
+<p>The manifest records what was done: <code>vectorSimplification</code> at the top, and a
+<code>simplification</code> record (tolerance in feet and CRS units, engine, vertices in and out,
+collapsed rings kept, seconds) on each simplified layer.</p>
+<p>Measured on FEMA eBFE models whose single Manning's n land-cover polygon dominated
+tiling: UPGU3 1,062,037 vertices to 407,116 (-62%), <code>maplibre</code> geometry tiles 1,615 s
+(0.13.0) to about 600 s; UPGU4 533,600 to 247,605 (-54%). The polygons are smooth,
+over-densified outlines rather than raster staircases: larger tolerances remove more
+(UPGU3: -88.5% at 1 ft, -94% at 1 m), and tiling time falls in proportion to the
+vertices left. Models without such a polygon tile in the same time as before.</p>
 <h2 id="vector-tiler">Vector Tiler<a class="headerlink" href="#vector-tiler" title="Permanent link">&para;</a></h2>
 <p>Vector PMTiles are built by one of two interchangeable backends, chosen with
 <code>RAS2CNG_VECTOR_TILER</code>:</p>
@@ -2723,7 +2797,7 @@ tiling, overviews, and nodata/mask behavior; hosted artifacts can be required to
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 31, 2026 19:32:58 UTC">October 31, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 2, 2026 14:07:11 UTC">November 2, 2026</span>
   </span>
 
     
