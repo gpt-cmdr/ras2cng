@@ -71,14 +71,18 @@ remains a hard error.
 ## Polygon Simplification
 
 Before polygon layers are tiled, ras2cng simplifies them with Douglas-Peucker at
-**0.1 ft**, the default filter RAS Mapper applies to polygon outlines. The tolerance is
-converted to each layer's CRS units (0.1 in a US survey or international foot CRS,
-0.03048 m in a metre CRS) and applied in the model CRS, before reprojection.
+**1 ft** (RAS Mapper's own default filter is 0.1 ft; pass `--simplify-tolerance 0.1` for
+that). The tolerance is converted to each layer's CRS units (1 in a US survey or
+international foot CRS, 0.3048 m in a metre CRS) and applied in the model CRS, before
+reprojection. With the freestiler fork build the tiler then simplifies the same layers
+once per zoom (below).
 
 | Setting | Default | Effect |
 |---|---|---|
-| `RAS2CNG_SIMPLIFY_TOLERANCE`, CLI `--simplify-tolerance FT` | 0.1 ft | Tolerance in feet; `0` or `off` turns the filter off |
-| CLI `--no-simplify` | | Tile every polygon vertex |
+| `RAS2CNG_SIMPLIFY_TOLERANCE`, CLI `--simplify-tolerance FT` | 1 ft | Tolerance in feet; `0` or `off` turns this filter off |
+| `RAS2CNG_TILE_POLYGON_SIMPLIFY`, CLI `--tile-polygon-simplify PX` | 0.5 tile pixels | The tiler's per-zoom tolerance, above 0 and at most 64, in 1/4096 of a tile; `0` or `off` turns it off |
+| CLI `--no-tile-polygon-simplify` | | Turn off only the per-zoom option |
+| CLI `--no-simplify` | | Turn off both: tile every polygon vertex at every zoom |
 | `RAS2CNG_SIMPLIFY_ENGINE` | `auto` | `terrio` (Rust `terrio.simplify_wkb`, in the CLB terrio build), `shapely` (GEOS), or `auto`: terrio when the installed build has it |
 
 What is simplified: the polygons of every layer, for example Manning's n land cover,
@@ -91,20 +95,37 @@ warning).
 Both engines run GEOS's `DouglasPeuckerSimplifier` ring by ring and give the same
 vertices. A ring that would be left with fewer than four points keeps its vertices, so
 no polygon or hole disappears. There is no repair step, so at large tolerances a ring can
-self-intersect; at 0.1 ft none did on the models measured. At the default maximum zoom
-(17) one tile coordinate unit is about 0.12-0.13 ft at Texas latitudes, so the filter
-does not change what the map can show.
+self-intersect. At the default maximum zoom (17) one tile coordinate unit is about
+0.12-0.13 ft at Texas latitudes, so 1 ft is about 8 units there: half of one CSS pixel,
+and less at every lower zoom. The polygon's area changed by -0.2% on the models measured.
 
-The manifest records what was done: `vectorSimplification` at the top, and a
-`simplification` record (tolerance in feet and CRS units, engine, vertices in and out,
-collapsed rings kept, seconds) on each simplified layer.
+### Per-zoom simplification
+
+With a freestiler build that has `polygon_simplify` (the fork build 0.3.0.2, see
+[Installation](../getting-started/installation.md)) and Arrow input, the same polygon
+layers also get `polygon_simplify=0.5`: the tiler simplifies each ring once per zoom and
+cuts it down a tile tree, where it otherwise sweeps the whole ring once per tile in the
+layer's bounding box. **It is never applied to `mesh_cells` or `mesh_faces`**, including
+results joined to them, because each polygon is simplified on its own and shared edges
+would stop matching. Every vertex of the input is kept at the layer's maximum zoom, and a
+feature whose area collapses at a low zoom is still drawn, so no feature is dropped.
+
+0.5 pixels was chosen over 1.0 for less area bias at middle zooms (-4.8% against -7.3%
+at z8 on the thin UPGU3 land-cover network, where unsimplified tiles are within 0.05%)
+for tiles about 7.5% larger. Older freestiler builds, `RAS2CNG_FREESTILER_INPUT=geojson`
+and tippecanoe tile as before.
+
+The manifest records what was done: `vectorSimplification` at the top, with
+`perZoom` saying which layers got the option or why it did not run, and a `simplification`
+record (tolerance in feet and CRS units, engine, vertices in and out, collapsed rings
+kept, seconds) on each simplified layer.
 
 Measured on FEMA eBFE models whose single Manning's n land-cover polygon dominated
-tiling: UPGU3 1,062,037 vertices to 407,116 (-62%), `maplibre` geometry tiles 1,615 s
-(0.13.0) to about 600 s; UPGU4 533,600 to 247,605 (-54%). The polygons are smooth,
-over-densified outlines rather than raster staircases: larger tolerances remove more
-(UPGU3: -88.5% at 1 ft, -94% at 1 m), and tiling time falls in proportion to the
-vertices left. Models without such a polygon tile in the same time as before.
+tiling (`maplibre` geometry tiles, median of three, freestiler 0.3.0.2): UPGU3 1,062,037
+vertices to 122,122, 1,615 s (0.13.0) to 14.9 s; UPGU4 533,600 vertices to 79,364, 400 s
+(0.1 ft) to 32.9 s. The speed comes from the per-zoom option: on one host at one load
+UPGU3 took 16.1 s with it alone and 150 s with the 1 ft filter alone. The polygons are
+smooth, over-densified outlines rather than raster staircases.
 
 ## Vector Tiler
 
@@ -198,6 +219,10 @@ GDAL chain under `auto`, because terrio processes the raster in memory.
   every zoom where the layer is drawn. Below the floor, complete mesh tiles are
   multi-megabyte (measured 1.2-1.6 MB at z12 and 4-9 MB at z10), and thinning them to
   fit renders as stripes, so the layer is simply not drawn there.
+- Reference line and point summaries are stored long, one row per feature, variable and
+  statistic. A tile feature carries one row, so the viewer pivots them to
+  `flow_maximum`, `flow_maximum_time`, `flow_units` and so on. Every value is kept, and a
+  table where a value would be lost is refused. The archive keeps the long table.
 - `--vector-results` creates separate sources, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
   record identifies its raw HDF source and geometry join key. Results joined to sparse

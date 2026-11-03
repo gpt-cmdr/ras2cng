@@ -1,7 +1,7 @@
 # Precipitation-indexed raster stacks
 
 `ras2cng.rate_stack.write_rate_stack(sources, target, rate_k16=..., units=..., provenance=...)`
-writes a new NetCDF4 raster stack. It leaves inputs unchanged. Sources map each quantity
+writes a new NetCDF4 raster stack (`pip install "ras2cng[netcdf]"`, also in `[all]`). It leaves inputs unchanged. Sources map each quantity
 to single-band float32 rasters on one projected north-up grid. Native CRS is preserved.
 Quantities and units are `depth` and `wse` in ft, `velocity` in ft/s, and `hazard` dimensionless.
 The caller defines the hazard categories. Negative depth, speed, and hazard values are refused.

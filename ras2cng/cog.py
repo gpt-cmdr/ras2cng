@@ -44,9 +44,9 @@ import tempfile
 from typing import Any, Iterator, Mapping, Sequence
 import uuid
 import warnings
+import xml.etree.ElementTree as ET
 
 LOGGER = logging.getLogger(__name__)
-import xml.etree.ElementTree as ET
 
 # --------------------------------------------------------------------------
 # Policy defaults

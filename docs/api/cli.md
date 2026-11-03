@@ -19,6 +19,7 @@ Commands:
   precip       Export gridded precipitation and cumulative precipitation GeoTIFFs.
   query        Query GeoParquet files using DuckDB SQL.
   pmtiles      Generate PMTiles from GeoParquet (vector) or GeoTIFF (raster).
+  audit-overviews Check whether a raster's overviews preserve wet extent.
   maplibre     Build a MapLibre PMTiles bundle from a completed ras2cng archive.
   maplibre-terrain  Publish a RAS-styled terrain PMTiles layer into a MapLibre viewer.
   maplibre-stored-map  Publish a queryable RASMapper Stored Map into a MapLibre viewer.
@@ -202,6 +203,37 @@ Options:
   --min-zoom INTEGER  Minimum zoom
   --max-zoom INTEGER  Maximum zoom
 ```
+
+## ras2cng maplibre
+
+Polygon simplification options, also on `maplibre-stored-vector` (see
+[MapLibre](../user-guide/maplibre.md#polygon-simplification)):
+
+```text
+  --simplify-tolerance FLOAT     Douglas-Peucker tolerance in feet before tiling (default 1; 0 = off)
+  --no-simplify                  Turn off the filter and the per-zoom option
+  --tile-polygon-simplify FLOAT  Per-zoom tolerance in tile pixels (default 0.5; 0 = off)
+  --no-tile-polygon-simplify     Turn off only the per-zoom option
+```
+
+## ras2cng audit-overviews
+
+```text
+Usage: ras2cng audit-overviews [OPTIONS] RASTER
+
+  Check whether a raster's overviews preserve wet extent. Reads whatever overviews
+  the file stores, so it works on rasters ras2cng did not write.
+
+Options:
+  -t, --threshold FLOAT  Wet cutoff in the raster's own units  [required]
+  -b, --band INTEGER     1-based band index  [default: 1]
+  --json                 Output as JSON instead of a table
+  --strict               Exit non-zero unless the verdict is stable (for CI gates)
+```
+
+Python: `ras2cng.cog.audit_overview_extent`. It reads each level at `size // factor`, so
+its ratios can differ slightly from the written `overview_area_ratios` tag (0.994 against
+1.000 at level 16 on Bald Eagle).
 
 ## ras2cng maplibre-stored-map
 

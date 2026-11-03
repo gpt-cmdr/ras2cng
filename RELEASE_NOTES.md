@@ -1,10 +1,59 @@
-# Unreleased
+# ras2cng 0.14.0
+
+Web-map tiling of models with a huge land-cover polygon goes from minutes to seconds, vector results work on models with reference lines, and several bugs found while reviewing the open branches are fixed. Fork engine features stay capability-detected: with the PyPI builds of terrio and freestiler ras2cng keeps its Python paths.
+
+## Requirements
+
+- Optional fork builds, published only as GitHub Release assets (not on PyPI; the `terrio` and `freestiler` extras keep PyPI-installable floors):
+  - freestiler 0.3.0.2: `pip install freestiler==0.3.0.2 --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.2-gpt-cmdr`
+  - terrio 0.5.0.2: `pip install terrio==0.5.0.2 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2`
+- **New `netcdf` extra** (`netCDF4>=1.6.5`), included in `all`. `ras2cng.rate_stack.write_rate_stack` needs it; before this release no extra declared it, so it failed after `pip install ras2cng[all]`. The error now names the extra.
+- The terrio floor is `>=0.5.0.1`: PyPI has yanked every release up to 0.5.0 ("Superseded by 0.6.0"). It stays below 0.6 so that the CLB builds still satisfy it. A plain install gets PyPI terrio 0.6.x, which has none of the fork features and keeps the Python and GDAL paths (full test suite passes on 0.6.1).
 
 ## Behaviour changes
 
-- **Web-map polygon simplification (default on, 0.1 ft).** `ras2cng maplibre` and `maplibre-stored-vector` simplify the polygons of every layer except mesh cells and faces with Douglas-Peucker at 0.1 ft (RAS Mapper's default filter), converted to the CRS units (0.03048 m in a metre CRS), before tiling. Lines, points, geographic CRSs and the mesh are unchanged. `--simplify-tolerance FT`, `--no-simplify`, `RAS2CNG_SIMPLIFY_TOLERANCE` (feet; `0`/`off`), `RAS2CNG_SIMPLIFY_ENGINE` (`auto`/`terrio`/`shapely`). The viewer manifest records it (`vectorSimplification`, per-layer `simplification`). UPGU3 (FEMA eBFE): the 1,062,037-vertex land-cover polygon drops to 407,116 vertices and geometry tiling from 1,615 s to about 600 s.
-- `ras2cng archive --simplify-tolerance FT` (`archive_project(simplify_tolerance_ft=)`): the same filter for the archive GeoParquet, **opt-in** (off by default; the environment variable does not apply). Recorded in `manifest.geometry[].simplification`.
-- With a terrio build that has `simplify_wkb` (CLB terrio build, terrio-clb #10) the filter runs in Rust; otherwise in shapely/GEOS, with the same vertices.
+- **Web-map tiles are simplified at 1 ft by default, up from none in 0.13.0.** `ras2cng maplibre` and `maplibre-stored-vector` simplify the polygons of every layer except mesh cells and faces with Douglas-Peucker at 1 ft, converted to the CRS units (0.3048 m in a metre CRS), before tiling. RAS Mapper's own default filter is 0.1 ft: **tile polygons therefore differ from RAS Mapper's outline by up to 1 ft**, about half a CSS pixel at z17, and the UPGU3 and UPGU4 land-cover areas change by about -0.2%. Lines, points, geographic CRSs, layers with no CRS and the mesh are unchanged. `--simplify-tolerance FT`, `--no-simplify`, `RAS2CNG_SIMPLIFY_TOLERANCE` (feet; `0`/`off`), `RAS2CNG_SIMPLIFY_ENGINE` (`auto`/`terrio`/`shapely`). Pass `--simplify-tolerance 0.1` for RAS Mapper's filter.
+- **Per-zoom polygon simplification in the tiler.** With freestiler 0.3.0.2 and Arrow input, the same non-mesh polygon layers get `polygon_simplify=0.5` tile pixels: each ring is simplified once per zoom and cut down a tile tree. Tile polygons at lower zooms therefore no longer carry every vertex; the maximum zoom does. 0.5 was chosen over 1.0 for less area bias at middle zooms (-4.8% against -7.3% at z8 on the thin UPGU3 land-cover network, where unsimplified tiles are within 0.05%), for tiles about 7.5% larger. **It is never applied to `mesh_cells` or `mesh_faces`.** `--tile-polygon-simplify PX`, `--no-tile-polygon-simplify`, `RAS2CNG_TILE_POLYGON_SIMPLIFY` (`0`/`off`); `--no-simplify` turns off both. Older freestiler, GeoJSON input and tippecanoe tile as before. Recorded in the viewer manifest: `vectorSimplification` and its `perZoom`, and `simplification` per layer.
+- **Ghost cells are gone from results without geometry: row counts change.** `archive --results-geometry none` and `extract_results_variable_no_geometry` used to publish the placeholder ghost cells as results. Bald Eagle p07 goes from 89,879 to 87,039 rows per cell variable; all 2,840 removed rows held 0.0. Consumers counting rows, or joining on them, see fewer. Polygon and point output already excluded them.
+- **Spatial-index error paths in `manifest.json` are now relative to the archive** instead of absolute local paths, so a manifest no longer exposes the machine that built it. A consumer that opened those paths directly must resolve them against the archive.
+- `build_raster_asset_catalog` no longer picks up manifests under hidden directories, so a partial release in a dot directory stays out of the catalog.
+- `ras2cng archive --simplify-tolerance FT` (`archive_project(simplify_tolerance_ft=)`): the filter for the archive GeoParquet, **opt-in and off by default**, because the archive is the data of record; the environment variable does not apply. Recorded in `manifest.geometry[].simplification`.
+
+## Measured
+
+`ras2cng maplibre`, fresh process per run, median of three, same harness (peak is the process tree). The 0.13.0 and 0.1 ft columns were measured on a more loaded host (47-78% background CPU against 9-18% now), so read the same-host rows below for the cause.
+
+| Model | Operation | Before | 0.14.0 | Peak |
+|---|---|---:|---:|---:|
+| UPGU3 (292,676 cells) | geometry tiles | 1,615 s (0.13.0), 613 s (0.1 ft) | **14.9 s** | 641 MiB |
+| UPGU4 (1,063,548 cells) | geometry tiles | 400 s (0.1 ft) | **32.9 s** | 1,556 MiB |
+| Spring (340,163 cells) | geometry tiles | 76 s (0.1 ft) | **20.4 s** | 751 MiB |
+| UPGU3 | tiles + vector results | failed | **92.6 s** | 4,081 MiB |
+| UPGU4 | tiles + vector results, one run | not run | 302 s | 16.3 GB |
+
+On one host at one load, one run each, UPGU3 geometry tiles: 0.1 ft alone 468 s, 1 ft alone 150 s, per-zoom alone 16.1 s, both 14.9 s. **The speed comes from the per-zoom option;** without freestiler 0.3.0.2, 1 ft is what is left. `geometry-detail.pmtiles` (the mesh) is byte-identical to the previous output on all four models, and no polygon layer lost a feature at any zoom.
+
+## Fixes
+
+- **Vector results on models with reference lines failed** (`composite result keys are not unique`). Reference summaries hold one row per feature, variable and statistic, which the join refused. The viewer now pivots them to one feature with `flow_maximum`, `flow_maximum_time`, `flow_units` and so on; every value is kept, a table that would lose one is refused, and the archive keeps the long table. UPGU3: 60 of 60 values on the 15 reference lines.
+- A published rate stack was mode 0600 on Linux, readable only by its owner; it now follows the umask.
+- `is_ghost_cell` is documented in `ras2cng/schemas.py` (schema version 1.3).
+- A terrain test compared a warning's file name as a string, which could fail on a lower-case drive letter.
+
+## New
+
+- `ras2cng audit-overviews` and `ras2cng.cog.audit_overview_extent`: check whether a raster's stored overviews preserve wet extent, on rasters ras2cng did not write too. No new dependency.
+
+## Known limits
+
+- freestiler omits a line whose two ends snap to the same tile pixel at a zoom, so very short mesh faces and breaklines thin out at low zoom: UPGU3 4 of 637,473 faces absent at z13 and none below; UPGU4 2 of 2,273,372 absent even at z17 (faces of 0.10 ft). Not new in this release: the mesh tiles are byte-identical to before. Polygons, mesh cells included, are complete at every zoom.
+
+## Upgrade notes
+
+- Pass `--simplify-tolerance 0.1` for RAS Mapper's filter, `--no-tile-polygon-simplify` for every vertex at every zoom after the filter, or `--no-simplify` for no simplification at all.
+- Code reading `--results-geometry none` tables sees fewer rows (ghost cells).
+- Code reading spatial-index errors in `manifest.json` sees archive-relative paths.
+- `pip install "ras2cng[netcdf]"` for `write_rate_stack`, if you do not use `[all]`.
 
 # ras2cng 0.13.0
 
