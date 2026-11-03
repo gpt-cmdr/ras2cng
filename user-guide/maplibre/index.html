@@ -983,6 +983,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Polygon Simplification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-zoom-simplification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-zoom simplification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2270,6 +2287,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Polygon Simplification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-zoom-simplification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-zoom simplification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2467,9 +2501,11 @@ the archive CRS. A validated CRS can be supplied explicitly with <code>--crs</co
 remains a hard error.</p>
 <h2 id="polygon-simplification">Polygon Simplification<a class="headerlink" href="#polygon-simplification" title="Permanent link">&para;</a></h2>
 <p>Before polygon layers are tiled, ras2cng simplifies them with Douglas-Peucker at
-<strong>0.1 ft</strong>, the default filter RAS Mapper applies to polygon outlines. The tolerance is
-converted to each layer's CRS units (0.1 in a US survey or international foot CRS,
-0.03048 m in a metre CRS) and applied in the model CRS, before reprojection.</p>
+<strong>1 ft</strong> (RAS Mapper's own default filter is 0.1 ft; pass <code>--simplify-tolerance 0.1</code> for
+that). The tolerance is converted to each layer's CRS units (1 in a US survey or
+international foot CRS, 0.3048 m in a metre CRS) and applied in the model CRS, before
+reprojection. With the freestiler fork build the tiler then simplifies the same layers
+once per zoom (below).</p>
 <table>
 <thead>
 <tr>
@@ -2481,13 +2517,23 @@ converted to each layer's CRS units (0.1 in a US survey or international foot CR
 <tbody>
 <tr>
 <td><code>RAS2CNG_SIMPLIFY_TOLERANCE</code>, CLI <code>--simplify-tolerance FT</code></td>
-<td>0.1 ft</td>
-<td>Tolerance in feet; <code>0</code> or <code>off</code> turns the filter off</td>
+<td>1 ft</td>
+<td>Tolerance in feet; <code>0</code> or <code>off</code> turns this filter off</td>
+</tr>
+<tr>
+<td><code>RAS2CNG_TILE_POLYGON_SIMPLIFY</code>, CLI <code>--tile-polygon-simplify PX</code></td>
+<td>0.5 tile pixels</td>
+<td>The tiler's per-zoom tolerance, above 0 and at most 64, in 1/4096 of a tile; <code>0</code> or <code>off</code> turns it off</td>
+</tr>
+<tr>
+<td>CLI <code>--no-tile-polygon-simplify</code></td>
+<td></td>
+<td>Turn off only the per-zoom option</td>
 </tr>
 <tr>
 <td>CLI <code>--no-simplify</code></td>
 <td></td>
-<td>Tile every polygon vertex</td>
+<td>Turn off both: tile every polygon vertex at every zoom</td>
 </tr>
 <tr>
 <td><code>RAS2CNG_SIMPLIFY_ENGINE</code></td>
@@ -2505,18 +2551,32 @@ warning).</p>
 <p>Both engines run GEOS's <code>DouglasPeuckerSimplifier</code> ring by ring and give the same
 vertices. A ring that would be left with fewer than four points keeps its vertices, so
 no polygon or hole disappears. There is no repair step, so at large tolerances a ring can
-self-intersect; at 0.1 ft none did on the models measured. At the default maximum zoom
-(17) one tile coordinate unit is about 0.12-0.13 ft at Texas latitudes, so the filter
-does not change what the map can show.</p>
-<p>The manifest records what was done: <code>vectorSimplification</code> at the top, and a
-<code>simplification</code> record (tolerance in feet and CRS units, engine, vertices in and out,
-collapsed rings kept, seconds) on each simplified layer.</p>
+self-intersect. At the default maximum zoom (17) one tile coordinate unit is about
+0.12-0.13 ft at Texas latitudes, so 1 ft is about 8 units there: half of one CSS pixel,
+and less at every lower zoom. The polygon's area changed by -0.2% on the models measured.</p>
+<h3 id="per-zoom-simplification">Per-zoom simplification<a class="headerlink" href="#per-zoom-simplification" title="Permanent link">&para;</a></h3>
+<p>With a freestiler build that has <code>polygon_simplify</code> (the fork build 0.3.0.2, see
+<a href="../../getting-started/installation/">Installation</a>) and Arrow input, the same polygon
+layers also get <code>polygon_simplify=0.5</code>: the tiler simplifies each ring once per zoom and
+cuts it down a tile tree, where it otherwise sweeps the whole ring once per tile in the
+layer's bounding box. <strong>It is never applied to <code>mesh_cells</code> or <code>mesh_faces</code></strong>, including
+results joined to them, because each polygon is simplified on its own and shared edges
+would stop matching. Every vertex of the input is kept at the layer's maximum zoom, and a
+feature whose area collapses at a low zoom is still drawn, so no feature is dropped.</p>
+<p>0.5 pixels was chosen over 1.0 for less area bias at middle zooms (-4.8% against -7.3%
+at z8 on the thin UPGU3 land-cover network, where unsimplified tiles are within 0.05%)
+for tiles about 7.5% larger. Older freestiler builds, <code>RAS2CNG_FREESTILER_INPUT=geojson</code>
+and tippecanoe tile as before.</p>
+<p>The manifest records what was done: <code>vectorSimplification</code> at the top, with
+<code>perZoom</code> saying which layers got the option or why it did not run, and a <code>simplification</code>
+record (tolerance in feet and CRS units, engine, vertices in and out, collapsed rings
+kept, seconds) on each simplified layer.</p>
 <p>Measured on FEMA eBFE models whose single Manning's n land-cover polygon dominated
-tiling: UPGU3 1,062,037 vertices to 407,116 (-62%), <code>maplibre</code> geometry tiles 1,615 s
-(0.13.0) to about 600 s; UPGU4 533,600 to 247,605 (-54%). The polygons are smooth,
-over-densified outlines rather than raster staircases: larger tolerances remove more
-(UPGU3: -88.5% at 1 ft, -94% at 1 m), and tiling time falls in proportion to the
-vertices left. Models without such a polygon tile in the same time as before.</p>
+tiling (<code>maplibre</code> geometry tiles, median of three, freestiler 0.3.0.2): UPGU3 1,062,037
+vertices to 122,122, 1,615 s (0.13.0) to 14.9 s; UPGU4 533,600 vertices to 79,364, 400 s
+(0.1 ft) to 32.9 s. The speed comes from the per-zoom option: on one host at one load
+UPGU3 took 16.1 s with it alone and 150 s with the 1 ft filter alone. The polygons are
+smooth, over-densified outlines rather than raster staircases.</p>
 <h2 id="vector-tiler">Vector Tiler<a class="headerlink" href="#vector-tiler" title="Permanent link">&para;</a></h2>
 <p>Vector PMTiles are built by one of two interchangeable backends, chosen with
 <code>RAS2CNG_VECTOR_TILER</code>:</p>
@@ -2675,6 +2735,10 @@ GDAL chain under <code>auto</code>, because terrio processes the raster in memor
   every zoom where the layer is drawn. Below the floor, complete mesh tiles are
   multi-megabyte (measured 1.2-1.6 MB at z12 and 4-9 MB at z10), and thinning them to
   fit renders as stripes, so the layer is simply not drawn there.</li>
+<li>Reference line and point summaries are stored long, one row per feature, variable and
+  statistic. A tile feature carries one row, so the viewer pivots them to
+  <code>flow_maximum</code>, <code>flow_maximum_time</code>, <code>flow_units</code> and so on. Every value is kept, and a
+  table where a value would be lost is refused. The archive keeps the long table.</li>
 <li><code>--vector-results</code> creates separate sources, grouped by plan. Each result is raw HDF
   summary data joined to the matching model feature only for visual delivery. Its manifest
   record identifies its raw HDF source and geometry join key. Results joined to sparse
@@ -2797,7 +2861,7 @@ tiling, overviews, and nodata/mask behavior; hosted artifacts can be required to
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 2, 2026 14:07:11 UTC">November 2, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 3, 2026 02:46:35 UTC">November 3, 2026</span>
   </span>
 
     

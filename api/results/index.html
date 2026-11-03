@@ -3403,11 +3403,11 @@ archive profile can be reused across mixed projects.</p>
 <p>Reads ras-commander's typed value table
 (<code>HdfResultsMesh.get_mesh_summary_output(..., include_geometry=False)</code>),
 which reads the stored arrays without building cell points or face lines
-(natively where the HDF engine proves the layout). Every stored row is kept,
-ghost cells included, with the same columns and values as before:
-<code>mesh_name</code>, <code>cell_id</code>/<code>face_id</code>, the value column and, for
-<code>[value, time]</code> summaries, <code>&lt;variable&gt;_time</code>. It is the preferred path
-for large archives that store results as DRY attribute tables.</p>
+(natively where the HDF engine proves the layout). Ghost cells (the placeholder
+rows HEC-RAS stores after the physical cells) are excluded, as on the polygon
+and point paths. The columns are <code>mesh_name</code>, <code>cell_id</code>/<code>face_id</code>, the
+value column and, for <code>[value, time]</code> summaries, <code>&lt;variable&gt;_time</code>. It is
+the preferred path for large archives that store results as DRY attribute tables.</p>
 
 
             <details class="mkdocstrings-source">
@@ -3452,17 +3452,17 @@ for large archives that store results as DRY attribute tables.</p>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-410" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-410"></a><span class="sd">    Reads ras-commander's typed value table</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-411" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-411"></a><span class="sd">    (``HdfResultsMesh.get_mesh_summary_output(..., include_geometry=False)``),</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-412" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-412"></a><span class="sd">    which reads the stored arrays without building cell points or face lines</span>
-<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-413" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-413"></a><span class="sd">    (natively where the HDF engine proves the layout). Every stored row is kept,</span>
-<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-414" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-414"></a><span class="sd">    ghost cells included, with the same columns and values as before:</span>
-<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-415" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-415"></a><span class="sd">    ``mesh_name``, ``cell_id``/``face_id``, the value column and, for</span>
-<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-416" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-416"></a><span class="sd">    ``[value, time]`` summaries, ``&lt;variable&gt;_time``. It is the preferred path</span>
-<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-417" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-417"></a><span class="sd">    for large archives that store results as DRY attribute tables.</span>
+<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-413" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-413"></a><span class="sd">    (natively where the HDF engine proves the layout). Ghost cells (the placeholder</span>
+<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-414" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-414"></a><span class="sd">    rows HEC-RAS stores after the physical cells) are excluded, as on the polygon</span>
+<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-415" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-415"></a><span class="sd">    and point paths. The columns are ``mesh_name``, ``cell_id``/``face_id``, the</span>
+<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-416" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-416"></a><span class="sd">    value column and, for ``[value, time]`` summaries, ``&lt;variable&gt;_time``. It is</span>
+<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-417" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-417"></a><span class="sd">    the preferred path for large archives that store results as DRY attribute tables.</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-418" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-418"></a><span class="sd">    """</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-419" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-419"></a>    <span class="n">values</span> <span class="o">=</span> <span class="n">HdfResultsMesh</span><span class="o">.</span><span class="n">get_mesh_summary_output</span><span class="p">(</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-420" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-420"></a>        <span class="n">Path</span><span class="p">(</span><span class="n">plan_hdf</span><span class="p">),</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-421" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-421"></a>        <span class="n">variable</span><span class="p">,</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-422" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-422"></a>        <span class="n">round_to</span><span class="o">=</span><span class="n">round_to</span><span class="p">,</span>
-<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-423" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-423"></a>        <span class="n">include_ghost_cells</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-423" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-423"></a>        <span class="n">include_ghost_cells</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-424" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-424"></a>        <span class="n">include_geometry</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-425" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-425"></a>    <span class="p">)</span>
 <a id="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-426" name="ras2cng.results.extract_results_variable_no_geometry--source--__codelineno-0-426"></a>    <span class="k">if</span> <span class="n">values</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
