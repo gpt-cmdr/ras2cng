@@ -33,6 +33,77 @@ def _completed(command, stdout: str = "", stderr: str = ""):
     )()
 
 
+def _long_summary(names=("RL 1", "RL 2")) -> pd.DataFrame:
+    rows = []
+    for offset, name in enumerate(names):
+        for variable, units in (("Flow", "cfs"), ("Water Surface", "ft")):
+            for statistic, value in (("Maximum", 100.0), ("Minimum", 1.0)):
+                rows.append(
+                    {
+                        "reference_name": name,
+                        "Mesh Name": "Area",
+                        "Variable": variable,
+                        "Statistic": statistic,
+                        "Value": value + offset + (0.5 if variable == "Flow" else 0.0),
+                        "Time": pd.Timestamp("2020-01-01 12:00") + pd.Timedelta(hours=offset),
+                        "Units": units,
+                        "layer": "reference_lines_summary",
+                        "join_index": len(rows),
+                        "hilbert_index": offset,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def _reference_lines() -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        {"Name": ["RL 1", "RL 2", "RL no result"], "mesh_name": ["Area"] * 3},
+        geometry=[LineString([(0, i), (1, i)]) for i in range(3)],
+        crs="EPSG:2278",
+    )
+
+
+def test_join_pivots_long_reference_summary_and_keeps_every_value(tmp_path: Path):
+    path = tmp_path / "reference_lines_summary.parquet"
+    frame = _long_summary()
+    frame.to_parquet(path)
+
+    joined = maplibre._join_raw_result(
+        path, _reference_lines(), join_columns={"Name": "reference_name"}
+    )
+
+    assert sorted(joined["Name"]) == ["RL 1", "RL 2"]
+    assert joined.crs == _reference_lines().crs
+    row = joined.set_index("Name").loc["RL 2"]
+    assert row["flow_maximum"] == 101.5 and row["flow_minimum"] == 2.5
+    assert row["water_surface_maximum"] == 101.0 and row["water_surface_minimum"] == 2.0
+    assert row["flow_maximum_time"] == pd.Timestamp("2020-01-01 13:00")
+    assert row["flow_units"] == "cfs" and row["water_surface_units"] == "ft"
+    # Every source value is on a feature, under its own variable and statistic.
+    for source in frame.itertuples():
+        name = f"{source.Variable.lower().replace(' ', '_')}_{source.Statistic.lower()}"
+        assert joined.set_index("Name").loc[source.reference_name, name] == source.Value
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        (lambda f: pd.concat([f, f.iloc[[0]]]), "repeats a variable and statistic"),
+        (lambda f: f.assign(**{"Mesh Name": ["A", "B"] * 4}), "more than one 2D flow area"),
+        (lambda f: f.assign(extra=range(len(f))), "vary within a feature"),
+        (
+            lambda f: f.assign(Units=[*["cfs", "m3/s"] * 2, *f["Units"].iloc[4:]]),
+            "vary within a feature",
+        ),
+    ],
+)
+def test_join_refuses_a_long_summary_it_would_lose_values_from(tmp_path: Path, change, message):
+    path = tmp_path / "summary.parquet"
+    change(_long_summary()).to_parquet(path)
+    with pytest.raises(ValueError, match=message):
+        maplibre._join_raw_result(path, _reference_lines(), join_columns={"Name": "reference_name"})
+
+
 def test_raw_sa2d_results_join_prefixed_hdf_names_to_geometry_connections(
     tmp_path: Path,
 ) -> None:

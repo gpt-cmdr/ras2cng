@@ -51,7 +51,7 @@ def test_tolerance_is_feet_converted_to_crs_units():
 
 
 def test_tile_tolerance_defaults_env_and_overrides(monkeypatch):
-    assert simplify.tile_tolerance_ft() == simplify.DEFAULT_TILE_TOLERANCE_FT == 0.1
+    assert simplify.tile_tolerance_ft() == simplify.DEFAULT_TILE_TOLERANCE_FT == 1.0
     monkeypatch.setenv(simplify.TOLERANCE_ENV, "0.5")
     assert simplify.tile_tolerance_ft() == 0.5
     for off in ("off", "0", "none"):
@@ -67,7 +67,7 @@ def test_tile_tolerance_defaults_env_and_overrides(monkeypatch):
             assert simplify.tile_tolerance_ft() is None
     with simplify.simplify_options(tolerance_ft=0):
         assert simplify.tile_tolerance_ft() is None
-    assert simplify.tile_tolerance_ft() == 0.1
+    assert simplify.tile_tolerance_ft() == 1.0
 
 
 def test_engine_selection(monkeypatch):
@@ -217,10 +217,10 @@ def _layers(manifest: dict) -> dict[str, dict]:
 def test_viewer_simplifies_polygon_layers_by_default_and_records_it(monkeypatch, tmp_path: Path):
     manifest, delivered = _package(monkeypatch, tmp_path)
     summary = manifest["vectorSimplification"]
-    assert summary["enabled"] is True and summary["toleranceFt"] == 0.1 and summary["method"] == "douglas-peucker"
+    assert summary["enabled"] is True and summary["toleranceFt"] == 1.0 and summary["method"] == "douglas-peucker"
     layers = _layers(manifest)
     record = layers["mannings_n_regions"]["simplification"]
-    assert record["toleranceFt"] == 0.1 and record["units"] == "US survey foot"
+    assert record["toleranceFt"] == 1.0 and record["units"] == "US survey foot"
     assert record["verticesOut"] < record["verticesIn"] and record["ringsKept"] == 1
     assert "simplification" not in layers["mesh_cells"]
     land = next(frame for name, frame in delivered.items() if name.endswith("mannings-n-regions"))
@@ -229,7 +229,7 @@ def test_viewer_simplifies_polygon_layers_by_default_and_records_it(monkeypatch,
 
 def test_viewer_without_simplification(monkeypatch, tmp_path: Path):
     manifest, delivered = _package(monkeypatch, tmp_path, enabled=False)
-    assert manifest["vectorSimplification"] == {"enabled": False}
+    assert manifest["vectorSimplification"]["enabled"] is False and "method" not in manifest["vectorSimplification"]
     assert "simplification" not in _layers(manifest)["mannings_n_regions"]
     land = next(frame for name, frame in delivered.items() if name.endswith("mannings-n-regions"))
     assert shapely.get_num_coordinates(land.geometry).sum() == shapely.get_num_coordinates(_land_cover().geometry.iloc[:2]).sum()
@@ -255,7 +255,7 @@ def test_cli_passes_simplify_options(monkeypatch, tmp_path: Path):
     runner.invoke(app, [*base, "--simplify-tolerance", "0.5"])
     runner.invoke(app, [*base, "--no-simplify"])
     runner.invoke(app, [*base, "--simplify-tolerance", "0"])
-    assert seen == [0.1, 0.5, None, None]
+    assert seen == [1.0, 0.5, None, None]
 
 
 def test_archive_simplification_is_opt_in(tmp_path: Path, monkeypatch):

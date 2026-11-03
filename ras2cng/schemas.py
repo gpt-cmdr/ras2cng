@@ -4,7 +4,7 @@ The archive layers inherit many source-specific columns from ras-commander, so t
 describe the stable discriminator/join columns and mark the remaining surface as dynamic.
 """
 
-SCHEMA_VERSION = "1.2"
+SCHEMA_VERSION = "1.3"
 
 # Columns every archive GeoParquet file carries in addition to its DataFrame
 # contract (manifest schema 2.7+). Archives from manifest schema <= 2.6 carry
@@ -59,6 +59,12 @@ DATAFRAME_SCHEMAS = {
         "columns": [
             {"name": "mesh_name", "dtype": "str", "description": "HEC-RAS 2D flow-area name."},
             {"name": "cell_id", "dtype": "int", "description": "Zero-based mesh-cell join key."},
+            {
+                "name": "is_ghost_cell",
+                "dtype": "bool",
+                "description": "False on every row, because ghost cells are excluded. Written to polygon and "
+                "point plan layers by both archive engines; absent with --results-geometry none.",
+            },
         ],
         "archive_columns": ARCHIVE_GEOPARQUET_COLUMNS,
     },

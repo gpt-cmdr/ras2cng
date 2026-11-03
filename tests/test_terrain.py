@@ -137,7 +137,8 @@ def test_export_modified_terrain_warns_and_ignores_geometry(monkeypatch, tmp_pat
     with pytest.warns(DeprecationWarning, match="argument is ignored") as caught:
         export_modified_terrain(project, output, geometry="g02")
 
-    assert caught[0].filename == __file__
+    # samefile: a lower-case drive in the working directory changes one of the two spellings.
+    assert Path(caught[0].filename).samefile(__file__)
     assert "geometry" not in native_export.call_args.kwargs
 
 
