@@ -1011,6 +1011,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Vector Tiler">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#short-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Short lines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2315,6 +2332,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Vector Tiler">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#short-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Short lines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2555,7 +2589,7 @@ self-intersect. At the default maximum zoom (17) one tile coordinate unit is abo
 0.12-0.13 ft at Texas latitudes, so 1 ft is about 8 units there: half of one CSS pixel,
 and less at every lower zoom. The polygon's area changed by -0.2% on the models measured.</p>
 <h3 id="per-zoom-simplification">Per-zoom simplification<a class="headerlink" href="#per-zoom-simplification" title="Permanent link">&para;</a></h3>
-<p>With a freestiler build that has <code>polygon_simplify</code> (the fork build 0.3.0.2, see
+<p>With a freestiler build that has <code>polygon_simplify</code> (the fork build 0.3.0.2 or later, see
 <a href="../../getting-started/installation/">Installation</a>) and Arrow input, the same polygon
 layers also get <code>polygon_simplify=0.5</code>: the tiler simplifies each ring once per zoom and
 cuts it down a tile tree, where it otherwise sweeps the whole ring once per tile in the
@@ -2649,6 +2683,35 @@ coincident. Neither ever drops features to cap tile size: thinning a uniform
 mesh renders as stripes. Tile weight is bounded by each tileset's minimum zoom
 instead (see below). The comparison behind this choice is in
 <code>feature_dev_notes/vector_tiler_evaluation_2026-10-12.md</code>.</p>
+<h3 id="short-lines">Short lines<a class="headerlink" href="#short-lines" title="Permanent link">&para;</a></h3>
+<p>A vector tile cannot hold a line of zero length, so a line whose two ends snap to one tile
+pixel has no form at that zoom. With a freestiler build that has <code>keep_short_lines</code> (the fork
+build 0.3.0.3, see <a href="../../getting-started/installation/">Installation</a>) and Arrow input,
+<code>mesh_faces</code> and <code>breaklines</code>, alone or joined to results, write such a line once per zoom as
+a one-unit segment (1/4096 of a tile) that carries its properties, in the tile holding its
+first vertex. Those layers are then complete at every zoom. At low zoom such a feature draws as
+a dot the width of the line style.</p>
+<p>Other line layers (conduits, BC and reference lines, structures) stay as they were, and a
+line that collapses is absent at that zoom: their low-zoom tiles would repeat every feature's
+properties, +18.4% of <code>geometry.pmtiles</code> on the Davis pipe network. Older freestiler builds,
+<code>RAS2CNG_FREESTILER_INPUT=geojson</code> and tippecanoe also keep the old behaviour.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RAS2CNG_KEEP_SHORT_LINES</code>, CLI <code>--keep-short-lines/--no-keep-short-lines</code></td>
+<td>on</td>
+<td><code>0</code> or <code>--no-keep-short-lines</code> turns it off</td>
+</tr>
+</tbody>
+</table>
+<p>The manifest's <code>vectorShortLines</code> records the layers that got the option, or why none did.</p>
 <h2 id="raster-tiler">Raster Tiler<a class="headerlink" href="#raster-tiler" title="Permanent link">&para;</a></h2>
 <p>Terrain and result rasters (Stored Maps, calculated layers, <code>ras2cng pmtiles</code> on
 a GeoTIFF) are colorized, warped to Web Mercator and written as PNG PMTiles by
@@ -2740,8 +2803,10 @@ GDAL chain under <code>auto</code>, because terrio processes the raster in memor
   <code>flow_maximum</code>, <code>flow_maximum_time</code>, <code>flow_units</code> and so on. Every value is kept, and a
   table where a value would be lost is refused. The archive keeps the long table.</li>
 <li><code>--vector-results</code> creates separate sources, grouped by plan. Each result is raw HDF
-  summary data joined to the matching model feature only for visual delivery. Its manifest
-  record identifies its raw HDF source and geometry join key. Results joined to sparse
+  summary data joined to the matching model feature only for visual delivery. Mesh results
+  join on <code>mesh_name</code> and the cell or face ID, because IDs restart in every 2D flow area;
+  keys that are not unique are refused rather than attributed to a feature. Its manifest
+  record identifies its raw HDF source and geometry join key (<code>rawResult.joinKeys</code>). Results joined to sparse
   features (cross sections, reference lines and points) go in <code>results.pmtiles</code> at every
   zoom; results joined to mesh cells or faces are as dense as the mesh and go in
   <code>results-detail.pmtiles</code>, which shares the detail floor. Use the published stored-map
@@ -2865,7 +2930,7 @@ tiling, overviews, and nodata/mask behavior; hosted artifacts can be required to
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 3, 2026 14:06:59 UTC">November 3, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 3, 2026 21:17:50 UTC">November 3, 2026</span>
   </span>
 
     
