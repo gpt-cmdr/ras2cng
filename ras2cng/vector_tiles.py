@@ -33,7 +33,9 @@ freestiler input (``RAS2CNG_FREESTILER_INPUT``):
     Dense mesh layers come straight from the archive GeoParquet (column
     projection and ``layer`` filter) in the model CRS and are reprojected to
     EPSG:4326 in Rust. Other layers come from their already reprojected
-    GeoDataFrames. When freestiler refuses a CRS (NAD83(HARN), NAD27, Hotine,
+    GeoDataFrames, except mesh layers joined to results, which are written to
+    disk in EPSG:4326 batch by batch and shared by their result layers
+    (``maplibre._DenseGeometry``). When freestiler refuses a CRS (NAD83(HARN), NAD27, Hotine,
     ...), layers in that CRS are reprojected in Python with pyproj and passed
     as EPSG:4326 Arrow tables instead. Property columns are shaped as the
     GeoJSON path delivered them (:func:`delivery_table`). ``arrow`` fails when

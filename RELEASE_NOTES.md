@@ -1,3 +1,22 @@
+# Unreleased
+
+## Lower memory for viewers with vector results
+
+`ras2cng maplibre --vector-results` read the whole plan file (every variable, with its geometry) through pandas once per variable, and held each mesh layer as shapely objects for the whole run. With freestiler Arrow input, a mesh layer is now written to disk in EPSG:4326 batch by batch, each variable is read with row-group and column pruning and joined on its keys, and the tiler attaches the one geometry column when it reaches the layer.
+
+**Tiles are byte-identical** to the previous output on Davis, Bald Eagle p07, UPGU3 and UPGU4, on manifest 2.6 and Python-path archives of Bald Eagle p07, and through GeoJSON input and PyPI freestiler on Davis; the viewer manifest differs only in `simplification.seconds`. tippecanoe's input files are byte-identical on Davis and Bald Eagle p07 (tippecanoe itself was not run: Docker is down on this host). The pandas join remains the fallback, with its composite-key refusals and reference-line pivot, and now reads only the variable's rows without geometry.
+
+Fresh process, median of three, peak of the process tree, base and new runs alternating on a shared host (21-95% background CPU), so read the times as approximate:
+
+| Model | Peak before | Peak now | Wall before | Wall now |
+|---|---:|---:|---:|---:|
+| UPGU4 (1,063,548 cells) | 16,283 MiB | **2,265 MiB** | 408.6 s | **235.0 s** |
+| UPGU3 (292,676 cells) | 4,064 MiB | **836 MiB** | 131.2 s | **87.1 s** |
+| Bald Eagle p07 (87,039 cells) | 1,390 MiB | **438 MiB** | 42.7 s | **15.3 s** |
+| Davis (2,716 cells) | 243 MiB | **205 MiB** | 4.7 s | 4.5 s |
+
+The peak is now freestiler's in-memory form of the largest layer (about 1.1 GB for UPGU4's 2.27 million faces).
+
 # ras2cng 0.14.0
 
 Web-map tiling of models with a huge land-cover polygon goes from minutes to seconds, vector results work on models with reference lines, and several bugs found while reviewing the open branches are fixed. Fork engine features stay capability-detected: with the PyPI builds of terrio and freestiler ras2cng keeps its Python paths.
