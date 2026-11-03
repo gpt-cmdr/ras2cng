@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import warnings
 from typing import Any, Iterable, Mapping, Sequence, Union
 
 import geopandas as gpd
@@ -1910,6 +1911,42 @@ def _reconcile_sa2d_structure_keys(
     return geometry_keys.astype("string"), resolved_keys
 
 
+def _index_join_keys(
+    index_column: str, result_columns: Iterable[str], geometry_columns: Iterable[str]
+) -> list[str]:
+    """The columns a result joins to its geometry on.
+
+    Cell and face IDs restart in every 2D flow area, so ``mesh_name`` is part of
+    the key whenever both tables have it. Joined on the ID alone, Davis's 11-cell
+    ``DS Channel`` and the first 11 cells of ``area2`` each took both meshes' values.
+    """
+
+    if index_column != "mesh_name" and "mesh_name" in set(result_columns) & set(geometry_columns):
+        return ["mesh_name", index_column]
+    return [index_column]
+
+
+def _check_unmatched(
+    result_path: Path,
+    filters: Mapping[str, Any] | None,
+    keys: Sequence[str],
+    result_rows: int,
+    geometry_rows: int,
+    joined_rows: int,
+) -> None:
+    """Warn when a key-unique join leaves a result value or a feature unpaired."""
+
+    if result_rows != joined_rows or geometry_rows != joined_rows:
+        where = f"{result_path}" + (f" {dict(filters)}" if filters else "")
+        warnings.warn(
+            f"Raw result join on {list(keys)} for {where}: {result_rows - joined_rows} of "
+            f"{result_rows} result rows have no feature and {geometry_rows - joined_rows} of "
+            f"{geometry_rows} features have no result row; neither is in the tiles.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
 def _join_raw_result(
     result_path: Path,
     geometry: gpd.GeoDataFrame,
@@ -1935,7 +1972,15 @@ def _join_raw_result(
                 f"Cannot join raw results from {result_path}: index '{index_column}' "
                 "is not present in both the results and geometry tables."
             )
-        joined = geometry.merge(attributes, on=index_column, how="inner", suffixes=("", "_result"))
+        keys = _index_join_keys(index_column, attributes.columns, geometry.columns)
+        if attributes.duplicated(subset=keys).any() or geometry.duplicated(subset=keys).any():
+            # A many-to-many merge would give a feature another element's values.
+            raise ValueError(
+                f"Cannot join raw results from {result_path}: keys {keys} are not unique "
+                "in the results or the geometry, so values cannot be attributed to features."
+            )
+        joined = geometry.merge(attributes, on=keys, how="inner", suffixes=("", "_result"))
+        _check_unmatched(result_path, filters, keys, len(attributes), len(geometry), len(joined))
     elif join_columns:
         geometry_columns = list(join_columns)
         result_columns = list(join_columns.values())
@@ -2340,9 +2385,10 @@ def _join_dense_result(
     """Join one result variable to a spilled mesh layer without copying its geometry.
 
     Delivers what ``_join_raw_result`` followed by ``_write_delivery_source``
-    delivers: the feature order and multiplicity come from the same
-    ``DataFrame.merge``, on the keys alone, and the columns keep the same names,
-    suffixes and order. What is on disk for the variable is its properties; the
+    delivers: the feature order comes from the same ``DataFrame.merge``, on the
+    keys alone (:func:`_index_join_keys`), and the columns keep the same names,
+    suffixes and order. Keys that are not unique go to that path, which refuses
+    them. What is on disk for the variable is its properties; the
     tiler's load attaches the layer's geometry column, so N variables share one
     copy of the WKB. Returns None when the file needs the pandas path; an empty
     join has a count of 0 and no layer.
@@ -2357,9 +2403,10 @@ def _join_dense_result(
             f"Cannot join raw results from {result_path}: index '{index_column}' "
             "is not present in both the results and geometry tables."
         )
+    join_keys = _index_join_keys(index_column, schema.names, geometry.columns)
     left_names = set(geometry.columns)
     final_names = {
-        name: f"{name}_result" if name in left_names and name != index_column else name
+        name: f"{name}_result" if name in left_names and name not in join_keys else name
         for name in schema.names
         if name != "geometry"
     }
@@ -2367,7 +2414,7 @@ def _join_dense_result(
     skip = {name for name, final in final_names.items() if final in _INTERNAL_COLUMNS}
     if filters and "layer" in filters:
         skip |= _all_null_columns(parquet, _layer_row_groups(parquet, filters["layer"]))
-    skip.discard(index_column)
+    skip.difference_update(join_keys)
     expressions = [
         (column, "==", value.item() if isinstance(value, np.generic) else value)
         for column, value in (filters or {}).items()
@@ -2375,44 +2422,41 @@ def _join_dense_result(
     names = _without_null_columns(
         result_path, [name for name in final_names if name not in skip], schema, expressions or None
     )
-    if names is None or index_column not in names:
+    if names is None or not set(join_keys) <= set(names):
         return None
     skip = set(schema.names) - set(names)
 
     attributes = geometry.attributes()
-    if index_column not in attributes.column_names:
+    if not set(join_keys) <= set(attributes.column_names):
         return None  # all null in the geometry: leave that join to pandas
     # pandas refuses or renames some collisions: let it decide those.
-    delivered_names = [final for name, final in final_names.items() if name != index_column]
+    delivered_names = [final for name, final in final_names.items() if name not in join_keys]
     if len(set(delivered_names)) != len(delivered_names) or set(delivered_names) & left_names:
         return None
 
     result = _read_result_table(result_path, filters, skip=skip)
-    keys = pd.DataFrame(
-        {
-            index_column: attributes.column(index_column).to_pandas(),
-            "__ras2cng_left": np.arange(attributes.num_rows, dtype=np.int64),
-        }
-    ).merge(
-        pd.DataFrame(
-            {
-                index_column: result.column(index_column).to_pandas(),
-                "__ras2cng_right": np.arange(result.num_rows, dtype=np.int64),
-            }
-        ),
-        on=index_column,
+    left_keys = pd.DataFrame({key: attributes.column(key).to_pandas() for key in join_keys})
+    right_keys = pd.DataFrame({key: result.column(key).to_pandas() for key in join_keys})
+    if left_keys.duplicated().any() or right_keys.duplicated().any():
+        return None
+    result_rows = result.num_rows
+    keys = left_keys.assign(__ras2cng_left=np.arange(attributes.num_rows, dtype=np.int64)).merge(
+        right_keys.assign(__ras2cng_right=np.arange(result.num_rows, dtype=np.int64)),
+        on=join_keys,
         how="inner",
     )
+    del left_keys, right_keys
     left = keys["__ras2cng_left"].to_numpy()
     right = keys["__ras2cng_right"].to_numpy()
     del keys
+    _check_unmatched(result_path, filters, join_keys, result_rows, attributes.num_rows, left.size)
     if not left.size:
         return None, 0, [], []
     aligned = left.size == geometry.count and bool(np.array_equal(left, np.arange(left.size)))
     if not aligned:
         attributes = attributes.take(pa.array(left))
-    result = result.drop_columns([index_column])
-    if not np.array_equal(right, np.arange(right.size)):
+    result = result.drop_columns(join_keys)
+    if right.size != result.num_rows or not np.array_equal(right, np.arange(right.size)):
         result = result.take(pa.array(right))
     joined = attributes
     for name, column in zip(result.column_names, result.columns):
@@ -2435,6 +2479,15 @@ def _join_dense_result(
 
     layer = vector_tiles.ArrowLayer(load=load, crs=vector_tiles.WGS84, kind=geometry.kind)
     return layer, int(left.size), geometry_types, bounds
+
+
+def _result_join_keys(
+    result_path: Path, index_column: str, dense: _DenseGeometry | None, geometry: gpd.GeoDataFrame | None
+) -> list[str]:
+    """The keys a variable was joined on, for the manifest."""
+
+    columns = dense.columns if dense is not None else geometry.columns
+    return _index_join_keys(index_column, pq.read_schema(result_path).names, columns)
 
 
 def _taken_extent(geometry: _DenseGeometry, rows: np.ndarray) -> tuple[list[str], list[float]]:
@@ -2987,6 +3040,7 @@ def package_maplibre_viewer(
                         }
                         if index_column:
                             raw_result["indexColumn"] = index_column
+                            raw_result["joinKeys"] = _result_join_keys(raw_path, index_column, dense, geometry)
                         if join_columns:
                             raw_result["joinColumns"] = join_columns
                         if variable_filter:

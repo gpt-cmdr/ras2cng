@@ -145,7 +145,7 @@ def _pandas_table(geometry_path: Path, plan_path: Path, kind: str, index: str, v
     frame = maplibre._to_wgs84(maplibre._read_layer(geometry_path, kind), geometry_path, CRS)
     plan = pd.read_parquet(plan_path)
     plan = plan.loc[plan["layer"] == variable].drop(columns=["geometry"])
-    joined = frame.merge(plan, on=index, how="inner", suffixes=("", "_result"))
+    joined = frame.merge(plan, on=["mesh_name", index], how="inner", suffixes=("", "_result"))
     joined = gpd.GeoDataFrame(joined, geometry="geometry", crs=frame.crs)
     return vector_tiles.frame_table(maplibre._drop_internal_columns(joined))
 
@@ -421,6 +421,7 @@ def test_join_of_a_file_per_variable_and_of_a_profile_matches_pandas(tmp_path):
     frame = maplibre._to_wgs84(maplibre._read_layer(geometry_path, "mesh_cells"), geometry_path, CRS)
     values = pd.DataFrame(
         {
+            "mesh_name": ["A", "A", "A", "A"],
             "cell_id": [1, 2, 1, 2],
             "profile": ["PF 1", "PF 1", "PF 2", "PF 2"],
             "wse": [1.0, 2.0, 3.0, 4.0],
@@ -429,11 +430,14 @@ def test_join_of_a_file_per_variable_and_of_a_profile_matches_pandas(tmp_path):
     path = tmp_path / "variable.parquet"
     values.to_parquet(path)
 
-    for filters, rows in ((None, values), ({"profile": "PF 2"}, values[values["profile"] == "PF 2"])):
+    for filters, rows in (
+        ({"profile": "PF 1"}, values[values["profile"] == "PF 1"]),
+        ({"profile": "PF 2"}, values[values["profile"] == "PF 2"]),
+    ):
         joined = maplibre._join_dense_result(path, dense, "cell_id", filters, tmp_path / "joined.arrow")
         expected = vector_tiles.frame_table(
             maplibre._drop_internal_columns(
-                gpd.GeoDataFrame(frame.merge(rows, on="cell_id", how="inner"), geometry="geometry", crs=frame.crs)
+                gpd.GeoDataFrame(frame.merge(rows, on=["mesh_name", "cell_id"], how="inner"), geometry="geometry", crs=frame.crs)
             )
         )
         table = joined[0].load()
