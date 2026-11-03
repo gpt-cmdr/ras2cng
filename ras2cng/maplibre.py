@@ -52,6 +52,12 @@ _INTERNAL_COLUMNS = {
     "bbox_ymax",
     "hilbert_index",
     "join_index",
+    # The same columns of a plan file as a result join names them: a copy of
+    # mesh_name, the variable the layer already is, and a sort key. 24-25% of the
+    # results-detail tiles on UPGU3 and UPGU4.
+    "mesh_name_result",
+    "layer_result",
+    "hilbert_index_result",
 }
 
 _WEB_MERCATOR_INITIAL_RESOLUTION = 156543.03392804097

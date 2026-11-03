@@ -192,7 +192,7 @@ def test_integer_results_stay_doubles_when_the_file_has_nulls_there(archive, tmp
     table = joined[0].load()
     assert table.schema.field("cell_last_iteration").type == pa.float64()
     # The name suffixes come from the geometry's columns, delivered or not.
-    assert {"mesh_name_result", "layer_result", "hilbert_index_result"} <= set(table.column_names)
+    assert not {"mesh_name_result", "layer_result", "hilbert_index_result"} & set(table.column_names)
     assert "bbox" not in table.column_names and "face_id_result" not in table.column_names
 
 
