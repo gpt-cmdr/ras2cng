@@ -2150,7 +2150,7 @@ def package_maplibre_viewer(
             extent["geometry_id"] = geom_id
             extent_source = f"{group_id}-model-extents"
             extent_delivery, count, geometry_types, bounds = _write_delivery_source(
-                extent, work_dir / "geometry" / f"{extent_source}.ndgeojson", arrow
+                extent, work_dir / "geometry" / f"{extent_source}.ndgeojson", arrow, kind="model_extents"
             )
             geometry_overview_sources.append((extent_source, extent_delivery))
             all_bounds.append(bounds)
@@ -2288,7 +2288,7 @@ def package_maplibre_viewer(
                     continue
                 source_layer = f"{group_id}-{_slug(kind)}"
                 delivery, count, geometry_types, bounds = _write_delivery_source(
-                    gdf, work_dir / "terrain-sources" / f"{source_layer}.ndgeojson", arrow
+                    gdf, work_dir / "terrain-sources" / f"{source_layer}.ndgeojson", arrow, kind=kind
                 )
                 geometry_overview_sources.append((source_layer, delivery))
                 all_bounds.append(bounds)
@@ -2345,7 +2345,7 @@ def package_maplibre_viewer(
                     continue
                 source_layer = f"{group_id}-{_slug(kind)}"
                 delivery, count, geometry_types, bounds = _write_delivery_source(
-                    gdf, work_dir / "terrain-modifications" / f"{source_layer}.ndgeojson", arrow
+                    gdf, work_dir / "terrain-modifications" / f"{source_layer}.ndgeojson", arrow, kind=kind
                 )
                 geometry_overview_sources.append((source_layer, delivery))
                 all_bounds.append(bounds)

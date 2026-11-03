@@ -180,6 +180,7 @@ def test_real_freestiler_gets_the_option_only_on_land_cover(monkeypatch, tmp_pat
     assert per_zoom["method"] == "freestiler polygon_simplify"
     assert any(name.endswith("mannings-n-regions") for name in per_zoom["layers"])
     assert not any("mesh" in name for name in per_zoom["layers"])
+    assert any(name.endswith("model-extents") for name in per_zoom["layers"])
     # Model extent and land cover ask for it; breaklines and the two mesh layers do not.
     assert calls.count(0.5) == len(per_zoom["layers"]) >= 1
     assert calls.count(None) >= 3
