@@ -1918,13 +1918,11 @@ def _join_raw_result(
     per feature, so that a feature carries all of its values.
     """
 
-    result = pd.read_parquet(result_path)
     if filters:
-        for column, value in filters.items():
-            if column not in result.columns:
-                raise ValueError(f"Cannot filter raw results from {result_path}: '{column}' is absent.")
-            result = result.loc[result[column] == value]
-    attributes = result.drop(columns=["geometry"], errors="ignore")
+        # A consolidated plan file holds every variable and its geometry.
+        attributes = _read_result_table(result_path, filters).to_pandas()
+    else:
+        attributes = pd.read_parquet(result_path).drop(columns=["geometry"], errors="ignore")
     if index_column:
         if index_column not in attributes.columns or index_column not in geometry.columns:
             raise ValueError(
@@ -1979,6 +1977,475 @@ def _join_raw_result(
     else:
         raise ValueError(f"Cannot join raw results from {result_path}: no join key was declared.")
     return gpd.GeoDataFrame(joined, geometry="geometry", crs=geometry.crs)
+
+
+def _pandas_metadata_is_plain(schema: pa.Schema) -> bool:
+    """Whether converting this file to pandas restores nothing from ``pandas`` metadata.
+
+    A stored index or an extension dtype (nullable integers, categoricals) changes
+    what ``to_pandas`` returns, and so what the join delivers.
+    """
+
+    raw = (schema.metadata or {}).get(b"pandas")
+    if not raw:
+        return True
+    metadata = json.loads(raw)
+    if any(isinstance(column, str) for column in metadata.get("index_columns", [])):
+        return False
+    return all(
+        str(column.get("numpy_type", "object")) == str(column.get("numpy_type", "object")).lower()
+        and column.get("pandas_type") != "categorical"
+        for column in metadata.get("columns", [])
+    )
+
+
+def _delivers_like_pandas(data_type: pa.DataType) -> bool:
+    """Column types that reach the tiler the same through Arrow as through pandas."""
+
+    return (
+        pa.types.is_integer(data_type)
+        or pa.types.is_floating(data_type)
+        or pa.types.is_boolean(data_type)
+        or pa.types.is_string(data_type)
+        or pa.types.is_large_string(data_type)
+        or pa.types.is_timestamp(data_type)
+        or pa.types.is_null(data_type)
+    )
+
+
+def _column_positions(parquet: pq.ParquetFile) -> dict[str, int]:
+    metadata = parquet.metadata
+    if not metadata.num_row_groups:
+        return {}
+    first = metadata.row_group(0)
+    return {first.column(index).path_in_schema: index for index in range(first.num_columns)}
+
+
+def _integers_with_nulls(parquet: pq.ParquetFile, names: Iterable[str]) -> list[str]:
+    """Integer columns holding a null anywhere in the file (row group statistics).
+
+    pandas reads such a column as float64, so a consolidated plan file delivers
+    a variable's integers as doubles whenever another variable's rows are null
+    there. The tiles keep that, whichever rows this read actually takes.
+    """
+
+    schema = parquet.schema_arrow
+    metadata = parquet.metadata
+    positions = _column_positions(parquet)
+    found: list[str] = []
+    for name in names:
+        if not pa.types.is_integer(schema.field(name).type):
+            continue
+        for group in range(metadata.num_row_groups):
+            statistics = metadata.row_group(group).column(positions[name]).statistics
+            if statistics is not None and statistics.has_null_count:
+                nulls = statistics.null_count
+            else:
+                nulls = parquet.read_row_group(group, columns=[name]).column(0).null_count
+            if nulls:
+                found.append(name)
+                break
+    return found
+
+
+def _integers_as_float(table: pa.Table, names: Iterable[str]) -> pa.Table:
+    """Cast integer columns to float64, as ``to_pandas`` does when they hold nulls."""
+
+    for name in names:
+        index = table.schema.get_field_index(name)
+        if index >= 0:
+            column = pc.cast(table.column(index), pa.float64(), safe=False)
+            table = table.set_column(index, pa.field(name, pa.float64()), column)
+    return table
+
+
+def _layer_row_groups(parquet: pq.ParquetFile, value: str) -> list[int]:
+    """Row groups that can hold ``layer == value``, from their statistics."""
+
+    metadata = parquet.metadata
+    position = _column_positions(parquet).get("layer")
+    groups: list[int] = []
+    for group in range(metadata.num_row_groups):
+        statistics = None if position is None else metadata.row_group(group).column(position).statistics
+        if (
+            statistics is None
+            or not statistics.has_min_max
+            or not isinstance(statistics.min, str)
+            or statistics.min <= value <= statistics.max
+        ):
+            groups.append(group)
+    return groups
+
+
+def _all_null_columns(parquet: pq.ParquetFile, groups: Sequence[int]) -> set[str]:
+    """Top-level columns with no value in these row groups, from their statistics."""
+
+    metadata = parquet.metadata
+    names = set(parquet.schema_arrow.names)
+    found: set[str] = set()
+    if not groups:
+        return found
+    for name, position in _column_positions(parquet).items():
+        if name not in names:
+            continue
+        for group in groups:
+            row_group = metadata.row_group(group)
+            statistics = row_group.column(position).statistics
+            if (
+                statistics is None
+                or not statistics.has_null_count
+                or statistics.null_count != row_group.num_rows
+            ):
+                break
+        else:
+            found.add(name)
+    return found
+
+
+def _read_result_table(
+    result_path: Path, filters: Mapping[str, Any] | None, *, skip: Iterable[str] = ()
+) -> pa.Table:
+    """The rows of one variable from a plan file, without its geometry.
+
+    Equal to ``pd.read_parquet(path)`` filtered, in what the join can see: the
+    filter is pushed down to row groups and the geometry is never decoded, but an
+    integer column with a null anywhere in the file is still float64 (see
+    :func:`_integers_with_nulls`).
+    """
+
+    parquet = pq.ParquetFile(result_path)
+    schema_names = parquet.schema_arrow.names
+    skipped = set(skip)
+    names = [name for name in schema_names if name != "geometry" and name not in skipped]
+    expressions = []
+    for column, value in (filters or {}).items():
+        if column not in schema_names:
+            raise ValueError(f"Cannot filter raw results from {result_path}: '{column}' is absent.")
+        expressions.append((column, "==", value.item() if isinstance(value, np.generic) else value))
+    table = pq.read_table(result_path, columns=names, filters=expressions or None)
+    if not _pandas_metadata_is_plain(parquet.schema_arrow):
+        return table
+    return _integers_as_float(table, _integers_with_nulls(parquet, names))
+
+
+def _without_null_columns(
+    path: Path, names: Sequence[str], schema: pa.Schema, filters: Sequence[tuple[str, str, Any]] | None
+) -> list[str] | None:
+    """``names`` without columns that are all null in these rows but could differ through pandas.
+
+    Statistics cannot tell a null list from an empty one, so such a column is
+    read. None if one of them has a value: this file needs the pandas path.
+    """
+
+    plain = [name for name in names if _delivers_like_pandas(schema.field(name).type)]
+    others = [name for name in names if name not in plain]
+    if others:
+        table = pq.read_table(path, columns=others, filters=filters)
+        if any(column.null_count != table.num_rows for column in table.columns):
+            return None
+    return plain
+
+
+@dataclass(frozen=True)
+class _DenseGeometry:
+    """A mesh layer's WGS84 delivery form on disk, shared by the results joined to it.
+
+    Result layers are one feature per element, so holding this layer as a
+    GeoDataFrame (shapely objects for every element, the whole run) and copying
+    its WKB into a spill per variable is most of what a viewer with results
+    costs. ``geometry_path`` holds the WKB and ``attributes_path`` the delivered
+    properties, in the same rows; ``columns`` are the column names of the frame
+    the layer would read as, which decide the join's name suffixes.
+    """
+
+    source: Path
+    filter_value: str
+    kind: str
+    fallback_crs: str | None
+    geometry_path: Path
+    attributes_path: Path
+    columns: tuple[str, ...]
+    count: int
+    geometry_types: tuple[str, ...]
+    bounds: tuple[float, float, float, float]
+
+    def frame(self) -> gpd.GeoDataFrame:
+        """The layer as a GeoDataFrame, for joins that need the pandas path."""
+
+        return _to_wgs84(_read_layer(self.source, self.filter_value), self.source, self.fallback_crs)
+
+    def attributes(self) -> pa.Table:
+        return _read_ipc(self.attributes_path)
+
+    def table(self) -> pa.Table:
+        return _with_geometry(self.attributes(), _read_ipc(self.geometry_path).column(0))
+
+    def layer(self) -> vector_tiles.ArrowLayer:
+        return vector_tiles.ArrowLayer(load=self.table, crs=vector_tiles.WGS84, kind=self.kind)
+
+
+def _read_ipc(path: Path) -> pa.Table:
+    with pa.OSFile(str(path), "rb") as source:
+        return pa.ipc.open_file(source).read_all()
+
+
+def _write_ipc(table: pa.Table, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with pa.OSFile(str(path), "wb") as sink, pa.ipc.new_file(sink, table.schema) as writer:
+        writer.write_table(table)
+
+
+def _with_geometry(attributes: pa.Table, geometry: pa.ChunkedArray) -> pa.Table:
+    if not attributes.num_columns:
+        return pa.table({"geometry": geometry})
+    return attributes.append_column(pa.field("geometry", pa.binary()), geometry)
+
+
+def _dense_geometry_columns(schema: pa.Schema) -> list[str] | None:
+    """The columns ``gpd.read_parquet`` returns, or None if this file needs it.
+
+    A covering bbox column is not read. Anything but plain WKB and plain pandas
+    metadata stays on the GeoDataFrame path.
+    """
+
+    metadata = schema.metadata or {}
+    if b"geo" not in metadata or not _pandas_metadata_is_plain(schema):
+        return None
+    geo = json.loads(metadata[b"geo"])
+    primary = geo.get("primary_column") or "geometry"
+    column = (geo.get("columns") or {}).get(primary)
+    if column is None or str(column.get("encoding", "WKB")).upper() != "WKB":
+        return None
+    if primary not in schema.names or not (
+        pa.types.is_binary(schema.field(primary).type) or pa.types.is_large_binary(schema.field(primary).type)
+    ):
+        return None
+    covering = ((column.get("covering") or {}).get("bbox") or {}).get("xmin")
+    return [name for name in schema.names if not covering or name != covering[0]]
+
+
+def _spill_dense_geometry(
+    source: Path,
+    filter_value: str,
+    kind: str,
+    fallback_crs: str | None,
+    directory: Path,
+    stem: str,
+    *,
+    pixel_sizes: list[np.ndarray] | None = None,
+    batch_size: int = 65_536,
+) -> _DenseGeometry | None:
+    """Write a mesh layer's delivery form to disk one batch at a time.
+
+    Equal to ``_to_wgs84(_read_layer(...))`` followed by
+    :func:`vector_tiles.frame_table`: the same null/empty filter, the same
+    GeoPandas transformation, the same property shaping, and the same feature-size
+    sample and metadata. Returns None when this file needs that path instead; a
+    layer with no geometry comes back with ``count == 0``.
+    """
+
+    parquet = pq.ParquetFile(source)
+    schema = parquet.schema_arrow
+    columns = _dense_geometry_columns(schema)
+    if columns is None or "layer" not in schema.names:
+        return None
+    geo = json.loads(schema.metadata[b"geo"])
+    geometry_column = geo.get("primary_column") or "geometry"
+    crs = (geo.get("columns") or {}).get(geometry_column, {}).get("crs", "OGC:CRS84")
+    if crs is None:
+        crs = fallback_crs
+    if crs is None:
+        raise ValueError(f"GeoParquet layer has no CRS and cannot be published: {source}")
+
+    groups = _layer_row_groups(parquet, filter_value)
+    empty = _all_null_columns(parquet, groups)
+    attributes = [
+        name
+        for name in columns
+        if name != geometry_column and name not in _INTERNAL_COLUMNS and name not in empty
+    ]
+    attributes = _without_null_columns(source, attributes, schema, [("layer", "==", filter_value)])
+    if attributes is None:
+        return None
+
+    geometry_path = directory / f"{stem}.geometry.arrow"
+    attributes_path = directory / f"{stem}.attributes.arrow"
+    directory.mkdir(parents=True, exist_ok=True)
+    kept: list[pa.Table] = []
+    count = 0
+    geometry_types: set[str] = set()
+    bounds: list[Sequence[float]] = []
+    field = pa.field("geometry", pa.binary())
+    with pa.OSFile(str(geometry_path), "wb") as sink, pa.ipc.new_file(sink, pa.schema([field])) as writer:
+        read = [geometry_column, "layer", *attributes]
+        for batch in parquet.iter_batches(batch_size=batch_size, columns=read, row_groups=groups):
+            table = pa.Table.from_batches([batch])
+            table = table.filter(pc.equal(table.column("layer"), filter_value))
+            if not table.num_rows:
+                continue
+            geometries = shapely.from_wkb(table.column(geometry_column).to_numpy(zero_copy_only=False))
+            usable = ~shapely.is_missing(geometries) & ~shapely.is_empty(geometries)
+            if not usable.any():
+                continue
+            geometries = shapely.force_2d(geometries[usable])
+            wgs84 = np.asarray(gpd.GeoSeries(geometries, crs=crs).to_crs("EPSG:4326").values)
+            if pixel_sizes is not None:
+                # Every tenth feature of the layer, across batches.
+                pixel_sizes.append(_feature_pixel_sizes(wgs84[-count % 10 :: 10]))
+            count += len(wgs84)
+            geometry_types.update(vector_tiles.geometry_type_names(wgs84))
+            bounds.append([float(value) for value in shapely.total_bounds(wgs84)])
+            writer.write_table(
+                pa.table([pa.array(shapely.to_wkb(wgs84), type=pa.binary())], schema=pa.schema([field]))
+            )
+            kept.append(table.select(attributes).filter(pa.array(usable)))
+    if not count:
+        return _DenseGeometry(
+            source, filter_value, kind, fallback_crs, geometry_path, attributes_path,
+            tuple(columns), 0, (), (0.0, 0.0, 0.0, 0.0),
+        )
+    delivered = pa.concat_tables(kept).combine_chunks()
+    del kept
+    # read_parquet reads the layer's rows, so nulls only count within them.
+    delivered = _integers_as_float(
+        delivered,
+        [
+            name
+            for name, column in zip(delivered.column_names, delivered.columns)
+            if pa.types.is_integer(column.type) and column.null_count
+        ],
+    )
+    _write_ipc(vector_tiles.delivery_table(delivered, ""), attributes_path)
+    del delivered
+    vector_tiles.release_arrow_memory()
+    return _DenseGeometry(
+        source, filter_value, kind, fallback_crs, geometry_path, attributes_path,
+        tuple(columns), count, tuple(sorted(geometry_types)), _merge_bounds(bounds),
+    )
+
+
+def _join_dense_result(
+    result_path: Path,
+    geometry: _DenseGeometry,
+    index_column: str,
+    filters: Mapping[str, Any] | None,
+    spill: Path,
+) -> tuple[vector_tiles.ArrowLayer | None, int, list[str], list[float]] | None:
+    """Join one result variable to a spilled mesh layer without copying its geometry.
+
+    Delivers what ``_join_raw_result`` followed by ``_write_delivery_source``
+    delivers: the feature order and multiplicity come from the same
+    ``DataFrame.merge``, on the keys alone, and the columns keep the same names,
+    suffixes and order. What is on disk for the variable is its properties; the
+    tiler's load attaches the layer's geometry column, so N variables share one
+    copy of the WKB. Returns None when the file needs the pandas path; an empty
+    join has a count of 0 and no layer.
+    """
+
+    parquet = pq.ParquetFile(result_path)
+    schema = parquet.schema_arrow
+    if not _pandas_metadata_is_plain(schema) or not set(filters or ()) <= set(schema.names):
+        return None
+    if index_column not in schema.names or index_column not in geometry.columns:
+        raise ValueError(
+            f"Cannot join raw results from {result_path}: index '{index_column}' "
+            "is not present in both the results and geometry tables."
+        )
+    left_names = set(geometry.columns)
+    final_names = {
+        name: f"{name}_result" if name in left_names and name != index_column else name
+        for name in schema.names
+        if name != "geometry"
+    }
+    # A column the delivery would drop under its final name is not read.
+    skip = {name for name, final in final_names.items() if final in _INTERNAL_COLUMNS}
+    if filters and "layer" in filters:
+        skip |= _all_null_columns(parquet, _layer_row_groups(parquet, filters["layer"]))
+    skip.discard(index_column)
+    expressions = [
+        (column, "==", value.item() if isinstance(value, np.generic) else value)
+        for column, value in (filters or {}).items()
+    ]
+    names = _without_null_columns(
+        result_path, [name for name in final_names if name not in skip], schema, expressions or None
+    )
+    if names is None or index_column not in names:
+        return None
+    skip = set(schema.names) - set(names)
+
+    attributes = geometry.attributes()
+    if index_column not in attributes.column_names:
+        return None  # all null in the geometry: leave that join to pandas
+    # pandas refuses or renames some collisions: let it decide those.
+    delivered_names = [final for name, final in final_names.items() if name != index_column]
+    if len(set(delivered_names)) != len(delivered_names) or set(delivered_names) & left_names:
+        return None
+
+    result = _read_result_table(result_path, filters, skip=skip)
+    keys = pd.DataFrame(
+        {
+            index_column: attributes.column(index_column).to_pandas(),
+            "__ras2cng_left": np.arange(attributes.num_rows, dtype=np.int64),
+        }
+    ).merge(
+        pd.DataFrame(
+            {
+                index_column: result.column(index_column).to_pandas(),
+                "__ras2cng_right": np.arange(result.num_rows, dtype=np.int64),
+            }
+        ),
+        on=index_column,
+        how="inner",
+    )
+    left = keys["__ras2cng_left"].to_numpy()
+    right = keys["__ras2cng_right"].to_numpy()
+    del keys
+    if not left.size:
+        return None, 0, [], []
+    aligned = left.size == geometry.count and bool(np.array_equal(left, np.arange(left.size)))
+    if not aligned:
+        attributes = attributes.take(pa.array(left))
+    result = result.drop_columns([index_column])
+    if not np.array_equal(right, np.arange(right.size)):
+        result = result.take(pa.array(right))
+    joined = attributes
+    for name, column in zip(result.column_names, result.columns):
+        joined = joined.append_column(final_names[name], column)
+    del attributes, result
+    _write_ipc(vector_tiles.delivery_table(joined, ""), spill)
+    del joined
+    vector_tiles.release_arrow_memory()
+
+    if aligned or np.bincount(left, minlength=geometry.count).all():
+        geometry_types, bounds = list(geometry.geometry_types), list(geometry.bounds)
+    else:
+        geometry_types, bounds = _taken_extent(geometry, np.unique(left))
+
+    def load() -> pa.Table:
+        column = _read_ipc(geometry.geometry_path).column(0)
+        if not aligned:
+            column = column.take(pa.array(left))
+        return _with_geometry(_read_ipc(spill), column)
+
+    layer = vector_tiles.ArrowLayer(load=load, crs=vector_tiles.WGS84, kind=geometry.kind)
+    return layer, int(left.size), geometry_types, bounds
+
+
+def _taken_extent(geometry: _DenseGeometry, rows: np.ndarray) -> tuple[list[str], list[float]]:
+    """Geometry types and bounds of some rows of a spilled layer."""
+
+    types: set[str] = set()
+    bounds: list[Sequence[float]] = []
+    start = 0
+    for chunk in _read_ipc(geometry.geometry_path).column(0).chunks:
+        stop = start + len(chunk)
+        within = rows[(rows >= start) & (rows < stop)] - start
+        if within.size:
+            features = shapely.from_wkb(chunk.take(pa.array(within)).to_numpy(zero_copy_only=False))
+            types.update(vector_tiles.geometry_type_names(features))
+            bounds.append([float(value) for value in shapely.total_bounds(features)])
+        start = stop
+    return sorted(types), list(_merge_bounds(bounds))
 
 
 def _summary_column(*parts: Any) -> str:
@@ -2107,6 +2574,7 @@ def package_maplibre_viewer(
             raise ValueError(f"MapLibre scratch directory is not a directory: {scratch_dir}")
 
     geometry_cache: dict[tuple[str, str], gpd.GeoDataFrame] = {}
+    dense_cache: dict[tuple[str, str], _DenseGeometry] = {}
     result_geometry_keys = {
         (str(plan.get("geom_id", "")).lower(), str(variable["geometry_filter"]))
         for plan in archive.get("results", [])
@@ -2187,7 +2655,24 @@ def package_maplibre_viewer(
                 layer_simplification: dict[str, Any] = {}
                 gdf: gpd.GeoDataFrame | None = None
                 delivery: DeliverySource = source_path
-                if _is_detail_geometry(kind) and not cache_geometry and arrow:
+                dense: _DenseGeometry | None = None
+                if _is_detail_geometry(kind) and cache_geometry and arrow:
+                    dense = _spill_dense_geometry(
+                        archive_geometry_path,
+                        filter_value,
+                        kind,
+                        project_crs,
+                        work_dir / "geometry",
+                        source_layer,
+                        pixel_sizes=detail_pixel_sizes,
+                    )
+                if dense is not None:
+                    if not dense.count:
+                        continue
+                    dense_cache[(geom_id, kind)] = dense
+                    delivery = dense.layer()
+                    count, geometry_types, bounds = dense.count, list(dense.geometry_types), list(dense.bounds)
+                elif _is_detail_geometry(kind) and not cache_geometry and arrow:
                     delivery, count, geometry_types, bounds = _dense_layer_arrow(
                         archive_geometry_path,
                         filter_value,
@@ -2422,7 +2907,8 @@ def package_maplibre_viewer(
                     if not variable_path or not geometry_kind or not (index_column or join_columns):
                         continue
                     geometry = geometry_cache.get((geom_id, geometry_kind))
-                    if geometry is None:
+                    dense = dense_cache.get((geom_id, geometry_kind))
+                    if geometry is None and dense is None:
                         continue
                     raw_path = archive_dir / variable_path
                     variable_name = variable.get("variable") or variable.get("filter_value") or raw_path.stem
@@ -2445,23 +2931,36 @@ def package_maplibre_viewer(
                             filters["layer"] = variable_filter
                         if profile_column:
                             filters[profile_column] = profile
-                        joined = _join_raw_result(
-                            raw_path,
-                            geometry,
-                            index_column,
-                            join_columns=join_columns,
-                            filters=filters or None,
-                        )
-                        if joined.empty:
-                            continue
                         profile_suffix = f"-{_slug(str(profile))}" if profile is not None else ""
                         source_layer = f"{result_group_id}-{_slug(variable_name)}{profile_suffix}"
-                        delivery, count, geometry_types, bounds = _write_delivery_source(
-                            joined,
-                            work_dir / "results" / f"{source_layer}.ndgeojson",
-                            arrow,
-                            kind=geometry_kind,
-                        )
+                        source_path = work_dir / "results" / f"{source_layer}.ndgeojson"
+                        fast_join = None
+                        if dense is not None and index_column:
+                            fast_join = _join_dense_result(
+                                raw_path,
+                                dense,
+                                index_column,
+                                filters or None,
+                                source_path.with_suffix(".arrow"),
+                            )
+                        if fast_join is not None:
+                            delivery, count, geometry_types, bounds = fast_join
+                            if not count:
+                                continue
+                        else:
+                            joined = _join_raw_result(
+                                raw_path,
+                                geometry if geometry is not None else dense.frame(),
+                                index_column,
+                                join_columns=join_columns,
+                                filters=filters or None,
+                            )
+                            if joined.empty:
+                                continue
+                            delivery, count, geometry_types, bounds = _write_delivery_source(
+                                joined, source_path, arrow, kind=geometry_kind
+                            )
+                            del joined
                         dense_result = _is_detail_geometry(geometry_kind)
                         (result_detail_sources if dense_result else result_sources).append(
                             (source_layer, delivery)

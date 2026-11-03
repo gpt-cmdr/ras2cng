@@ -598,6 +598,16 @@ def write_arrow_spill(
     return ArrowLayer(load=load, crs=WGS84, polygon_simplify=polygon_simplify, kind=kind)
 
 
+def release_arrow_memory() -> None:
+    """Return Arrow's freed buffers to the OS between layers.
+
+    The pool otherwise keeps them for the next allocation, so what is freed
+    after one layer still counts against the next layer's peak.
+    """
+
+    pa.default_memory_pool().release_unused()
+
+
 def _accepts(function, name: str) -> bool:
     try:
         return name in inspect.signature(function).parameters
@@ -698,6 +708,7 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
                         input=table, crs=crs, geometry_column=source.geometry_column, **options
                     )
                     del table
+                    release_arrow_memory()
                 else:
                     frame = _freestiler_frame(_load(source))
                     if not frame.empty:
