@@ -50,11 +50,11 @@ pip install "ras2cng[freestiler]"
 ```
 
 The fastest vector path (Arrow input with no GeoJSON step, and per-zoom polygon
-simplification) needs the gpt-cmdr fork build of freestiler, published as GitHub Release assets rather than on PyPI:
+simplification) and complete short lines at low zoom need the gpt-cmdr fork build of freestiler, published as GitHub Release assets rather than on PyPI:
 
 ```bash
-pip install freestiler==0.3.0.2 \
-  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.2-gpt-cmdr
+pip install freestiler==0.3.0.3 \
+  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr
 ```
 
 Likewise the direct HDF archive path, the native GeoParquet writer, the COG

@@ -102,11 +102,11 @@ freestiler = [
   # In-process vector tiler; an alternative to the tippecanoe + pmtiles CLIs.
   # Selected by RAS2CNG_VECTOR_TILER. auto prefers a build with Arrow input over
   # tippecanoe, and uses an older build only when tippecanoe is absent, e.g. on
-  # Windows.  See ras2cng/vector_tiles.py.  Arrow input, `buffer` and per-zoom
-  # polygon_simplify need the gpt-cmdr fork build 0.3.0.2 (GitHub Release assets
-  # only, not PyPI):
-  #   pip install freestiler==0.3.0.2 --find-links
-  #     https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.2-gpt-cmdr
+  # Windows.  See ras2cng/vector_tiles.py.  Arrow input, `buffer`, per-zoom
+  # polygon_simplify and keep_short_lines need the gpt-cmdr fork build 0.3.0.3
+  # (GitHub Release assets only, not PyPI):
+  #   pip install freestiler==0.3.0.3 --find-links
+  #     https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr
   # PyPI freestiler 0.3.0 still works through NDGeoJSON.
   "freestiler>=0.3.0",
 ]

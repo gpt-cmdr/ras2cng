@@ -98,3 +98,11 @@ Tile polygon tolerance 1 ft; per-zoom simplification on our freestiler fork; fix
 | T17 | ras2cng: read-only review of every unmerged branch and open PR, with a verdict for each | **done**: T17.md |
 | T18 | terrio-clb 0.5.0.2 release (assets only); fast-map `src/aoi.rs` clippy fix | **done**: release `gpt-cmdr-v0.5.0.2`; fast-map #26. See T18.md |
 | T19 | ras2cng: merge #37, 1 ft tile default, wire T16, fix bugs, include T17's ready branches, release | **done except PyPI**: #37, #19, #38 merged; GitHub Release `v0.14.0` at `fc877b16`; **0.14.0 not on PyPI** (no credential on this host; files in `G:\RustDev\work\T19\release\dist`). See T19.md |
+
+## Wave 5 (user approved 2026-11-03)
+
+| ID | Scope | Status |
+|---|---|---|
+| T20 | ras2cng: reduce UPGU4 tiles + vector results peak (16.3 GB) | **done**: #40 merged by T22, 16.3 GB to 2.3 GB. See T20.md |
+| T21 | freestiler fork: keep short lines instead of dropping them | **done**: freestiler #9 merged by T22. See T21.md |
+| T22 | merge #40 and freestiler #9; release freestiler 0.3.0.3; short lines on for faces and breaklines; drop 3 tile properties; fix the multi-mesh result join; no ras2cng release | **done**: freestiler `v0.3.0.3-gpt-cmdr`; ras2cng PR in T22.md; no ras2cng version, tag or upload. See T22.md |

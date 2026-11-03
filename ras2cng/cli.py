@@ -522,6 +522,14 @@ def maplibre_command(
     no_tile_polygon_simplify: bool = typer.Option(
         False, "--no-tile-polygon-simplify", help="Turn off only the per-zoom polygon option"
     ),
+    keep_short_lines: Optional[bool] = typer.Option(
+        None,
+        "--keep-short-lines/--no-keep-short-lines",
+        help=(
+            "Write mesh faces and breaklines that collapse to one tile pixel as one-unit segments, "
+            "with a freestiler that has keep_short_lines. Default: RAS2CNG_KEEP_SHORT_LINES, else on"
+        ),
+    ),
 ):
     """Build a MapLibre PMTiles bundle from a completed ras2cng archive.
 
@@ -548,7 +556,7 @@ def maplibre_command(
         mappings[geom_id] = Path(raw_path.strip())
 
     try:
-        with vector_tile_options(feature_ids=feature_ids), simplify_options(
+        with vector_tile_options(feature_ids=feature_ids, keep_short_lines=keep_short_lines), simplify_options(
             tolerance_ft=simplify_tolerance,
             enabled=False if no_simplify else None,
             tile_pixels=tile_polygon_simplify,

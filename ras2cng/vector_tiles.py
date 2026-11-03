@@ -66,6 +66,15 @@ simplifies the layer once per zoom and cuts it down a tile tree, which takes a
 large polygon from minutes to under a second. :mod:`ras2cng.simplify` decides
 which layers get it, and :class:`ArrowLayer` refuses it on mesh cells and faces.
 
+``keep_short_lines`` is passed for the layer kinds in
+:data:`KEEP_SHORT_LINES_KINDS` (mesh faces and breaklines, alone or joined to
+results) when the installed ``FreestileLayer`` accepts it (the fork build
+0.3.0.3). Without it a line whose two ends snap to one tile pixel is absent at
+that zoom; with it such a line is written once per zoom as a one-unit segment
+carrying its properties. ``RAS2CNG_KEEP_SHORT_LINES=0`` or
+``--no-keep-short-lines`` turns it off. Sparse layers with heavy properties stay
+off: Davis ``geometry.pmtiles`` was +18.4% with its conduits on.
+
 The clip buffer is passed explicitly as ``buffer=5`` (:data:`TILE_BUFFER`) when
 the installed freestiler accepts it: 5 pixels of a 256-pixel tile, tippecanoe's
 default. freestiler's own default (12.8 px) repeats 10-12% more mesh features
@@ -119,6 +128,9 @@ FEATURE_IDS_DEFAULT = False
 GZIP_LEVEL_ENV = "RAS2CNG_VECTOR_TILE_GZIP_LEVEL"
 DEFAULT_GZIP_LEVEL = 6
 TILE_BUFFER = 5
+KEEP_SHORT_LINES_ENV = "RAS2CNG_KEEP_SHORT_LINES"
+# The layer kinds whose collapsed lines are kept. Widening it is this one line.
+KEEP_SHORT_LINES_KINDS = frozenset({"mesh_faces", "breaklines"})
 INPUT_ENV = "RAS2CNG_FREESTILER_INPUT"
 ARROW = "arrow"
 GEOJSON = "geojson"
@@ -133,7 +145,10 @@ _FALSE = {"0", "false", "no", "off"}
 
 @contextlib.contextmanager
 def vector_tile_options(
-    *, feature_ids: Optional[bool] = None, gzip_level: Optional[int] = None
+    *,
+    feature_ids: Optional[bool] = None,
+    gzip_level: Optional[int] = None,
+    keep_short_lines: Optional[bool] = None,
 ) -> Iterator[None]:
     """Override the freestiler tile options for the enclosed calls.
 
@@ -145,6 +160,8 @@ def vector_tile_options(
         current["feature_ids"] = bool(feature_ids)
     if gzip_level is not None:
         current["gzip_level"] = _checked_gzip_level(gzip_level, "gzip_level")
+    if keep_short_lines is not None:
+        current["keep_short_lines"] = bool(keep_short_lines)
     token = _OPTIONS.set(current)
     try:
         yield
@@ -166,6 +183,20 @@ def feature_ids_enabled() -> bool:
     if raw in _FALSE:
         return False
     raise ValueError(f"{FEATURE_IDS_ENV} must be 1 or 0 (true/false); got {raw!r}")
+
+
+def keep_short_lines_enabled() -> bool:
+    """Whether collapsed lines of :data:`KEEP_SHORT_LINES_KINDS` are kept (default True)."""
+
+    override = _OPTIONS.get().get("keep_short_lines")
+    if override is not None:
+        return override
+    raw = os.environ.get(KEEP_SHORT_LINES_ENV, "").strip().lower()
+    if not raw or raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    raise ValueError(f"{KEEP_SHORT_LINES_ENV} must be 1 or 0 (true/false); got {raw!r}")
 
 
 def _checked_gzip_level(value, source: str) -> int:
@@ -257,6 +288,18 @@ def polygon_simplify_available() -> bool:
     """Whether the installed freestiler accepts per-layer ``polygon_simplify``."""
 
     return freestiler_available() and freestiler_capabilities()["polygon_simplify"]
+
+
+def keep_short_lines_available() -> bool:
+    """Whether the installed freestiler accepts per-layer ``keep_short_lines``."""
+
+    return freestiler_available() and freestiler_capabilities()["keep_short_lines"]
+
+
+def keeps_short_lines(kind: Optional[str]) -> bool:
+    """Whether a layer of this kind asks the tiler to keep its collapsed lines."""
+
+    return kind in KEEP_SHORT_LINES_KINDS and keep_short_lines_enabled()
 
 
 def arrow_input_enabled() -> bool:
@@ -627,7 +670,8 @@ def freestiler_capabilities(module=None) -> dict[str, bool]:
     stream layers with a per-layer CRS, reprojected in Rust
     (``_LayeredTiler.add_arrow_layer`` and ``FreestileLayer.crs``);
     ``polygon_simplify``: ``FreestileLayer(polygon_simplify=...)``, the per-zoom
-    polygon path.
+    polygon path; ``keep_short_lines``: ``FreestileLayer(keep_short_lines=...)``,
+    lines that collapse to one tile pixel are written instead of dropped.
     """
 
     if module is None:
@@ -644,6 +688,7 @@ def freestiler_capabilities(module=None) -> dict[str, bool]:
         "layers_buffer": layered_ok and _accepts(layered, "buffer"),
         "arrow": layered_ok and hasattr(tiler, "add_arrow_layer") and "crs" in layer_fields,
         "polygon_simplify": _accepts(getattr(module, "FreestileLayer", None), "polygon_simplify"),
+        "keep_short_lines": _accepts(getattr(module, "FreestileLayer", None), "keep_short_lines"),
     }
 
 
@@ -688,7 +733,9 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
 
     from ras2cng.cog import atomic_output
 
-    polygon_simplify = freestiler_capabilities(freestiler)["polygon_simplify"]
+    capabilities = freestiler_capabilities(freestiler)
+    polygon_simplify = capabilities["polygon_simplify"]
+    keep_short_lines = capabilities["keep_short_lines"]
     while True:
         attempt: dict[str, Any] = {"crs": None, "layer": None}
         python_reprojected: list[str] = []
@@ -706,6 +753,8 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
                     options = {}
                     if source.polygon_simplify is not None and polygon_simplify:
                         options["polygon_simplify"] = source.polygon_simplify
+                    if keep_short_lines and keeps_short_lines(source.kind):
+                        options["keep_short_lines"] = True
                     yield name, freestiler.FreestileLayer(
                         input=table, crs=crs, geometry_column=source.geometry_column, **options
                     )

@@ -216,6 +216,16 @@ Polygon simplification options, also on `maplibre-stored-vector` (see
   --no-tile-polygon-simplify     Turn off only the per-zoom option
 ```
 
+`ras2cng maplibre` only (see
+[MapLibre](../user-guide/maplibre.md#short-lines)):
+
+```text
+  --keep-short-lines / --no-keep-short-lines
+                                 Write mesh faces and breaklines that collapse to one tile
+                                 pixel as one-unit segments (default on, with a freestiler
+                                 that has keep_short_lines; RAS2CNG_KEEP_SHORT_LINES)
+```
+
 ## ras2cng audit-overviews
 
 ```text
