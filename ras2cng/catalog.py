@@ -54,6 +54,8 @@ class ManifestGeomEntry:
     size_bytes: int = 0
     geoparquet: dict = field(default_factory=dict)  # writer record (schema 2.7+)
     archive: dict = field(default_factory=dict)  # direct-path record (schema 3.0+)
+    # Opt-in polygon simplification record (ras2cng archive --simplify-tolerance)
+    simplification: dict = field(default_factory=dict)
 
     def add_layer(self, layer: ManifestLayer) -> None:
         self.layers.append(asdict(layer))
@@ -150,6 +152,8 @@ def _entry_dict(entry) -> dict:
     record = asdict(entry)
     if not record.get("archive"):
         record.pop("archive", None)
+    if "simplification" in record and not record["simplification"]:
+        record.pop("simplification")
     return record
 
 

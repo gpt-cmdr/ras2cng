@@ -68,6 +68,44 @@ records a verified CRS from packaged projection material. In that case the comma
 the archive CRS. A validated CRS can be supplied explicitly with `--crs`; an unknown CRS
 remains a hard error.
 
+## Polygon Simplification
+
+Before polygon layers are tiled, ras2cng simplifies them with Douglas-Peucker at
+**0.1 ft**, the default filter RAS Mapper applies to polygon outlines. The tolerance is
+converted to each layer's CRS units (0.1 in a US survey or international foot CRS,
+0.03048 m in a metre CRS) and applied in the model CRS, before reprojection.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `RAS2CNG_SIMPLIFY_TOLERANCE`, CLI `--simplify-tolerance FT` | 0.1 ft | Tolerance in feet; `0` or `off` turns the filter off |
+| CLI `--no-simplify` | | Tile every polygon vertex |
+| `RAS2CNG_SIMPLIFY_ENGINE` | `auto` | `terrio` (Rust `terrio.simplify_wkb`, in the CLB terrio build), `shapely` (GEOS), or `auto`: terrio when the installed build has it |
+
+What is simplified: the polygons of every layer, for example Manning's n land cover,
+2D flow area perimeters, refinement regions, storage areas, terrain modification and
+source footprint polygons, model extents and Stored Map polygons. What is never
+simplified: `mesh_cells` and `mesh_faces` (neighbouring cells share edges, which must
+stay coincident), lines and points, and layers in a geographic CRS (skipped with a
+warning).
+
+Both engines run GEOS's `DouglasPeuckerSimplifier` ring by ring and give the same
+vertices. A ring that would be left with fewer than four points keeps its vertices, so
+no polygon or hole disappears. There is no repair step, so at large tolerances a ring can
+self-intersect; at 0.1 ft none did on the models measured. At the default maximum zoom
+(17) one tile coordinate unit is about 0.12-0.13 ft at Texas latitudes, so the filter
+does not change what the map can show.
+
+The manifest records what was done: `vectorSimplification` at the top, and a
+`simplification` record (tolerance in feet and CRS units, engine, vertices in and out,
+collapsed rings kept, seconds) on each simplified layer.
+
+Measured on FEMA eBFE models whose single Manning's n land-cover polygon dominated
+tiling: UPGU3 1,062,037 vertices to 407,116 (-62%), `maplibre` geometry tiles 1,615 s
+(0.13.0) to about 600 s; UPGU4 533,600 to 247,605 (-54%). The polygons are smooth,
+over-densified outlines rather than raster staircases: larger tolerances remove more
+(UPGU3: -88.5% at 1 ft, -94% at 1 m), and tiling time falls in proportion to the
+vertices left. Models without such a polygon tile in the same time as before.
+
 ## Vector Tiler
 
 Vector PMTiles are built by one of two interchangeable backends, chosen with

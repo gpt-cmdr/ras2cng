@@ -373,8 +373,14 @@ def write_geometry(
     *,
     project_crs: Optional[str],
     engine: ArchiveEngine,
+    simplify_tolerance_ft: Optional[float] = None,
+    simplification: Optional[list] = None,
 ) -> Optional[DirectWrite]:
     """Write one geometry file directly; None when there is nothing to write.
+
+    With ``simplify_tolerance_ft``, the polygons of the layers from Python (never
+    the native mesh layers) are simplified first (:mod:`ras2cng.simplify`); the
+    per-layer records go into ``simplification``.
 
     Raises when the file must go to the Python path; the caller records why.
     """
@@ -391,6 +397,12 @@ def write_geometry(
         hdf_layers=[n for n in ALL_HDF_LAYERS if n not in NATIVE_GEOMETRY_LAYERS],
     )
     crs, crs_source = _file_crs(hdf_path, frame, project_crs)
+    if simplify_tolerance_ft and frame is not None and len(frame):
+        from ras2cng.simplify import simplify_layers
+
+        frame, records = simplify_layers(frame, tolerance_ft=simplify_tolerance_ft, fallback_crs=crs)
+        if simplification is not None:
+            simplification[:] = records
     python_layers = _python_layer_reasons(frame)
 
     native = list(NATIVE_GEOMETRY_LAYERS)
