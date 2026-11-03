@@ -230,6 +230,10 @@ GDAL chain under `auto`, because terrio processes the raster in memory.
   zoom; results joined to mesh cells or faces are as dense as the mesh and go in
   `results-detail.pmtiles`, which shares the detail floor. Use the published stored-map
   rasters for the overview zooms.
+- With a freestiler that has Arrow input, mesh results use far less memory: the mesh is
+  kept on disk and shared by its result layers. On a 1,063,548-cell model the peak goes
+  from 16,283 MiB to 2,265 MiB, with byte-identical tiles. tippecanoe, GeoJSON input and
+  older freestiler builds still join in pandas, reading only each variable's rows.
 - Steady 1D cross-section results are split into one layer per HDF profile. Each layer joins
   to its source cross section on `River`, `Reach`, and `RS`, so a profile selection does not
   create duplicate coincident features. The records remain raw HDF element values, not an

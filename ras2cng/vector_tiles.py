@@ -33,7 +33,9 @@ freestiler input (``RAS2CNG_FREESTILER_INPUT``):
     Dense mesh layers come straight from the archive GeoParquet (column
     projection and ``layer`` filter) in the model CRS and are reprojected to
     EPSG:4326 in Rust. Other layers come from their already reprojected
-    GeoDataFrames. When freestiler refuses a CRS (NAD83(HARN), NAD27, Hotine,
+    GeoDataFrames, except mesh layers joined to results, which are written to
+    disk in EPSG:4326 batch by batch and shared by their result layers
+    (``maplibre._DenseGeometry``). When freestiler refuses a CRS (NAD83(HARN), NAD27, Hotine,
     ...), layers in that CRS are reprojected in Python with pyproj and passed
     as EPSG:4326 Arrow tables instead. Property columns are shaped as the
     GeoJSON path delivered them (:func:`delivery_table`). ``arrow`` fails when
@@ -598,6 +600,16 @@ def write_arrow_spill(
     return ArrowLayer(load=load, crs=WGS84, polygon_simplify=polygon_simplify, kind=kind)
 
 
+def release_arrow_memory() -> None:
+    """Return Arrow's freed buffers to the OS between layers.
+
+    The pool otherwise keeps them for the next allocation, so what is freed
+    after one layer still counts against the next layer's peak.
+    """
+
+    pa.default_memory_pool().release_unused()
+
+
 def _accepts(function, name: str) -> bool:
     try:
         return name in inspect.signature(function).parameters
@@ -698,6 +710,7 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
                         input=table, crs=crs, geometry_column=source.geometry_column, **options
                     )
                     del table
+                    release_arrow_memory()
                 else:
                     frame = _freestiler_frame(_load(source))
                     if not frame.empty:
