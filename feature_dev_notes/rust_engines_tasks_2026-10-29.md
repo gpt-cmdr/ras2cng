@@ -97,4 +97,4 @@ Tile polygon tolerance 1 ft; per-zoom simplification on our freestiler fork; fix
 | T16 | freestiler fork: per-zoom polygon simplification; fork release 0.3.0.2 (assets only) | **done**: PRs #7, #8; release `v0.3.0.2-gpt-cmdr`. Linux wheels built by CI, not run. See T16.md |
 | T17 | ras2cng: read-only review of every unmerged branch and open PR, with a verdict for each | **done**: T17.md |
 | T18 | terrio-clb 0.5.0.2 release (assets only); fast-map `src/aoi.rs` clippy fix | **done**: release `gpt-cmdr-v0.5.0.2`; fast-map #26. See T18.md |
-| T19 | ras2cng: merge #37, 1 ft tile default, wire T16, fix bugs, include T17's ready branches, release | **done except PyPI**: #37, #19, #38 merged; GitHub Release `v0.14.0` at `fc877b16`; **0.14.0 not on PyPI** (no credential on this host; files in `G:\RustDev\work\T19elease\dist`). See T19.md |
+| T19 | ras2cng: merge #37, 1 ft tile default, wire T16, fix bugs, include T17's ready branches, release | **done except PyPI**: #37, #19, #38 merged; GitHub Release `v0.14.0` at `fc877b16`; **0.14.0 not on PyPI** (no credential on this host; files in `G:\RustDev\work\T19\release\dist`). See T19.md |
