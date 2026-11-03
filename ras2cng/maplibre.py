@@ -2968,6 +2968,13 @@ def package_maplibre_viewer(
                     geometry = geometry_cache.get((geom_id, geometry_kind))
                     dense = dense_cache.get((geom_id, geometry_kind))
                     if geometry is None and dense is None:
+                        warnings.warn(
+                            f"Plan {plan_id} result {variable.get('variable') or variable_path!r} has no "
+                            f"{geometry_kind!r} geometry to join to, so it is not in the tiles; "
+                            "it stays in the archive.",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
                         continue
                     raw_path = archive_dir / variable_path
                     variable_name = variable.get("variable") or variable.get("filter_value") or raw_path.stem
