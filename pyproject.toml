@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ras2cng"
-version = "0.14.0"
+version = "0.15.0"
 description = "CLI for exporting HEC-RAS geometry/results to cloud-native GIS formats (GeoParquet, PMTiles, DuckDB, PostGIS)"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -149,6 +149,11 @@ markers = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["ras2cng"]
+
+# The sdist is what PyPI publishes. Development notes, agent instructions and tests hold
+# workstation paths and internal task records, and are not part of the source.
+[tool.hatch.build.targets.sdist]
+exclude = ["/feature_dev_notes", "/.claude", "/.github", "/CLAUDE.md", "/AGENTS.md", "/tests", "/pytest.ini"]
 
 [tool.uv]
 dev-dependencies = [

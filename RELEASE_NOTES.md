@@ -1,8 +1,37 @@
-# Unreleased
+# ras2cng 0.15.0
+
+## Rebuild any published multi-mesh viewer
+
+**Earlier versions gave features in multi-mesh viewers values from the other 2D flow area,** because cell and face IDs restart in every area and `ras2cng maplibre --vector-results` joined on the ID alone. On Davis p02, max WSE was wrong by up to 9.43 ft. Which value a viewer showed depended on draw order.
+
+**Rebuild the tiles of any published viewer of a model with more than one 2D flow area. Archives were always correct and need no rebuild;** run `ras2cng maplibre` again on the archive you have. Single-mesh viewers are not affected by this. Details below.
+
+## 0.14.0 was never published to PyPI
+
+0.14.0 was tagged on GitHub but never uploaded to PyPI, and it has this join bug, so it will not be. **0.15.0 includes all of its changes.** If you are coming from PyPI 0.13.0, these 0.14.0 changes are new to you as well (full text in the 0.14.0 section below):
+
+- **1 ft tile filter by default.** `ras2cng maplibre` and `maplibre-stored-vector` simplify the polygons of every layer except mesh cells and faces at 1 ft before tiling; 0.13.0 did not simplify. Tile polygons can differ from RAS Mapper's outline by up to 1 ft. `--simplify-tolerance 0.1` gives RAS Mapper's filter, `--no-simplify` none.
+- **Per-zoom polygon simplification** with freestiler 0.3.0.2 or later and Arrow input: non-mesh polygons at lower zooms no longer carry every vertex. Never applied to mesh cells or faces. `--no-tile-polygon-simplify` turns it off.
+- **Ghost rows are gone from results without geometry.** `archive --results-geometry none` and `extract_results_variable_no_geometry` no longer publish placeholder ghost cells, so row counts drop (Bald Eagle p07: 89,879 to 87,039 per cell variable; every removed row held 0.0).
+- **Relative manifest paths.** Spatial-index error paths in `manifest.json` are relative to the archive, not absolute local paths.
+- **`netcdf` extra** (`netCDF4>=1.6.5`, included in `all`), which `ras2cng.rate_stack.write_rate_stack` needs.
+- **`ras2cng audit-overviews`**, which checks whether a raster's stored overviews preserve wet extent.
+- Vector results now work on models with reference lines; `build_raster_asset_catalog` skips hidden directories; `archive --simplify-tolerance` is an opt-in filter for archives.
+
+## Fork wheels are optional
+
+A plain PyPI install keeps the Python paths and gets **none of the fork speedups**. Every fork feature is detected at run time, and the multi-mesh fix and the removed properties below apply either way. These need the fork builds, which are published only as GitHub Release assets, not on PyPI:
+
+- **freestiler 0.3.0.3:** Arrow input, per-zoom polygon simplification, short lines kept, and the lower-memory result join.
+  `pip install freestiler==0.3.0.3 --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr`
+- **terrio 0.5.0.2:** direct archive path, native GeoParquet writer, COG report, streaming tiles.
+  `pip install terrio==0.5.0.2 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2`
+
+The timings in these notes (for example UPGU3 geometry tiles at 14.9 s) are with the fork builds. Without per-zoom simplification, the same run measured about 150 s with the 1 ft filter alone.
 
 ## Tile content changes
 
-**Viewers with vector results and viewers with short lines change content in three ways, and in no other.** Decoded per tile, layer and feature against the previous output on UPGU3, UPGU4, Spring, Bald Eagle p07 and Davis (0 failures): every other feature is unchanged and in the same order, and every other tileset is byte-identical.
+**Against 0.14.0, viewers with vector results and viewers with short lines change content in three ways, and in no other.** Decoded per tile, layer and feature against 0.14.0-equivalent output on UPGU3, UPGU4, Spring, Bald Eagle p07 and Davis (0 failures): every other feature is unchanged and in the same order, and every other tileset is byte-identical.
 
 1. **Three properties are gone from result tiles:** `mesh_name_result`, `layer_result`, `hilbert_index_result`. They were a copy of `mesh_name`, the variable the layer already is, and a sort key, left by the join's name suffixes. Nothing in the viewer or in the repositories under the shared workspace names them. A consumer outside those that reads one must read `mesh_name` instead, or use the layer's `rawResult.variable`.
 2. **Multi-mesh models: mesh results now attach to the right mesh** (below). Features are removed from Davis's tiles.
@@ -46,14 +75,11 @@ Fresh process, median of three, base and new alternating, peak of the process tr
 | Bald Eagle p07 | 440 -> **366** (-17%) | 78.3 -> **52.4 MB** (-33.0%) | +0.03% | identical |
 | Davis | 206 -> 202 | 3.05 -> 2.17 MB (-28.8%) | identical | identical |
 
-## Requirements
-
-- Optional fork build: freestiler 0.3.0.3, `pip install freestiler==0.3.0.3 --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr`. Not on PyPI.
-
 ## Fixes
 
 - The Arrow result join failed with `ArrowInvalid` when the result rows with no feature were the last rows of the variable.
 - A result whose geometry layer does not exist in the archive was skipped without a word; it now raises a `RuntimeWarning`. On Davis that is `one_d_structure_summary`.
+- The sdist no longer ships development notes, agent instructions, CI files or tests, which held workstation paths. Code and docs are unchanged. Run tests from a Git checkout.
 
 ## Lower memory for viewers with vector results
 
@@ -73,6 +99,8 @@ Fresh process, median of three, peak of the process tree, base and new runs alte
 The peak is now freestiler's in-memory form of the largest layer (about 1.1 GB for UPGU4's 2.27 million faces).
 
 # ras2cng 0.14.0
+
+**Tagged on GitHub, never published to PyPI.** Use 0.15.0, which includes everything below and fixes the multi-mesh join.
 
 Web-map tiling of models with a huge land-cover polygon goes from minutes to seconds, vector results work on models with reference lines, and several bugs found while reviewing the open branches are fixed. Fork engine features stay capability-detected: with the PyPI builds of terrio and freestiler ras2cng keeps its Python paths.
 
