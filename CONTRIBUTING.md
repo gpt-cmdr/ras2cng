@@ -15,23 +15,20 @@ We follow the [LLM Forward](https://clbengineering.com/llm-forward) philosophy: 
 git clone https://github.com/<your-username>/ras2cng.git
 cd ras2cng
 
-# 2. Install in editable mode with dev dependencies
-pip install -e ".[dev]"
+# 2. Install with every extra and the dev tools (creates .venv)
+uv sync --all-extras
 
-# 3. Verify tests pass
-pytest
+# 3. Verify tests pass (read the skips, not just the green)
+uv run pytest -rs
 
 # 4. Launch your preferred LLM agent and start working
 #    Claude Code, Codex, Aider, Cursor -- anything goes
 ```
 
-If you use `uv` for environment management:
+Without `uv`, pip 25.1 or later reads the same dependency groups:
 
 ```bash
-uv venv .venv
-.venv/Scripts/activate   # Windows
-source .venv/bin/activate # Linux/Mac
-uv pip install -e ".[dev]"
+pip install -e ".[all]" --group dev
 ```
 
 ## The Self-Review Contract

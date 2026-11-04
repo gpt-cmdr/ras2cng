@@ -232,7 +232,7 @@ def test_writer_uses_bbox_struct_covering_and_layer_row_groups(tmp_path: Path):
     count = duckdb.sql(
         f"SELECT count(*) FROM read_parquet('{path.as_posix()}') "
         "WHERE bbox.xmin <= 500 AND bbox.xmax >= 0"
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     assert 0 < count < len(merged)
 
 
