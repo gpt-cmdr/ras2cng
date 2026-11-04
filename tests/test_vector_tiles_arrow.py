@@ -14,6 +14,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from pyproj import CRS
 from shapely.geometry import LineString, Point, box
 
 from ras2cng import maplibre, vector_tiles
@@ -22,6 +23,11 @@ from ras2cng import maplibre, vector_tiles
 # (PROJ shifts it by about 1 m), so it exercises the Python fallback.
 HARN = "EPSG:2871"
 PA_NORTH = "EPSG:2271"  # NAD83 / Pennsylvania North (ftUS): Bald Eagle
+# Datum names the fake refuses by. The real freestiler decides on the datum too:
+# the whole CRS text is no guide, because PROJ 9.8's PROJJSON for EPSG:2271, which
+# is accepted, has a remark that names NAD83(HARN).
+HARN_DATUM = "High Accuracy Reference Network"
+WGS84_DATUM = "World Geodetic System 1984"
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +46,7 @@ def _clean_state(monkeypatch):
 
 
 def _fake_arrow_freestiler(monkeypatch, *, refuse: tuple[str, ...] = ()):
-    """A freestiler with Arrow input and buffer; refuses CRSs containing ``refuse``."""
+    """A freestiler with Arrow input and buffer; refuses CRSs whose datum name contains ``refuse``."""
 
     calls: dict = {"attempts": []}
 
@@ -64,8 +70,9 @@ def _fake_arrow_freestiler(monkeypatch, *, refuse: tuple[str, ...] = ()):
         calls["attempts"].append(attempt)
         for name, layer in pairs:
             if isinstance(layer, FreestileLayer):
-                if any(token in str(layer.crs) for token in refuse):
-                    raise ValueError(f"Error: datum NAD83(HARN) is not supported for layer '{name}'")
+                datum = CRS.from_user_input(layer.crs).geodetic_crs.datum.name
+                if any(token in datum for token in refuse):
+                    raise ValueError(f"Error: datum {datum!r} is not supported for layer '{name}'")
                 attempt["layers"].append((name, layer.crs, layer.input))
             else:
                 attempt["layers"].append((name, "frame", layer))
@@ -280,7 +287,7 @@ def test_arrow_layers_go_to_freestile_layers_with_crs_and_buffer(monkeypatch, tm
 
 
 def test_refused_crs_is_reprojected_in_python(monkeypatch, tmp_path: Path):
-    calls = _fake_arrow_freestiler(monkeypatch, refuse=("HARN",))
+    calls = _fake_arrow_freestiler(monkeypatch, refuse=(HARN_DATUM,))
     layers = {"cells": _arrow_layer(HARN), "faces": _arrow_layer(HARN), "bc": _arrow_layer(PA_NORTH)}
 
     with pytest.warns(RuntimeWarning, match="reprojected in Python"):
@@ -302,7 +309,7 @@ def test_refused_crs_is_reprojected_in_python(monkeypatch, tmp_path: Path):
 
 
 def test_errors_on_wgs84_layers_are_not_retried(monkeypatch, tmp_path: Path):
-    calls = _fake_arrow_freestiler(monkeypatch, refuse=("4326",))
+    calls = _fake_arrow_freestiler(monkeypatch, refuse=(WGS84_DATUM,))
     with pytest.raises(ValueError, match="not supported"):
         vector_tiles.run_freestiler(
             tmp_path / "out.pmtiles", {"cells": _arrow_layer("EPSG:4326")}, 13, 16
@@ -533,3 +540,17 @@ def test_real_harn_layer_falls_back_to_python(tmp_path: Path):
         applied = vector_tiles.run_freestiler(tmp_path / "harn.pmtiles", {"cells": layer}, 12, 15)
     assert applied["python_reprojected"] == ["cells"]
     assert (tmp_path / "harn.pmtiles").stat().st_size > 0
+
+
+def test_real_plain_nad83_layer_is_not_refused(tmp_path: Path):
+    """The other half of the datum rule: Bald Eagle's CRS stays in Rust, whatever its text says."""
+    _real_freestiler()
+    from shapely.affinity import translate
+
+    cells = [translate(box(0, 0, 100, 100), 2_000_000 + 100 * i, 400_000) for i in range(20)]
+    table = pa.table({"cell_id": list(range(20)), "geometry": pa.array([c.wkb for c in cells], pa.binary())})
+    layer = vector_tiles.ArrowLayer(load=lambda: table, crs=vector_tiles.crs_text(PA_NORTH))
+
+    applied = vector_tiles.run_freestiler(tmp_path / "nad83.pmtiles", {"cells": layer}, 12, 15)
+    assert applied["python_reprojected"] == []
+    assert (tmp_path / "nad83.pmtiles").stat().st_size > 0

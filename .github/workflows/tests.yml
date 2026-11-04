@@ -1,0 +1,126 @@
+name: Tests
+
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "feature_dev_notes/**"
+      - "**.md"
+  push:
+    branches: [master]
+    paths-ignore:
+      - "docs/**"
+      - "feature_dev_notes/**"
+      - "**.md"
+  schedule:
+    # Runs the fresh-install job only: catches an upstream release that breaks a new install.
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FREESTILER_SPEC: freestiler==0.3.0.3
+  FREESTILER_LINKS: https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr
+  TERRIO_SPEC: terrio==0.5.0.2
+  TERRIO_LINKS: https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2
+
+jobs:
+  locked:
+    name: Locked (${{ matrix.os }})
+    if: github.event_name != 'schedule'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --all-extras --locked
+      - run: uv run --no-sync pytest -rs --junit-xml=report.xml
+      - name: Check test counts
+        if: always()
+        run: python .github/scripts/check_test_counts.py report.xml --min-collected 800 --min-passed 720 --max-skipped 90
+
+  fork-wheels:
+    name: Locked + fork wheels (${{ matrix.os }})
+    if: github.event_name != 'schedule'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --all-extras --locked
+      - name: Install the fork wheels from their GitHub Release assets
+        run: |
+          uv pip install "$FREESTILER_SPEC" --find-links "$FREESTILER_LINKS"
+          uv pip install "$TERRIO_SPEC" --find-links "$TERRIO_LINKS"
+      - name: Confirm the fork capabilities are present
+        run: uv run --no-sync python .github/scripts/check_fork_capabilities.py
+      - run: uv run --no-sync pytest -rs --junit-xml=report.xml
+      - name: Check test counts
+        if: always()
+        run: python .github/scripts/check_test_counts.py report.xml --min-collected 800 --min-passed 760 --max-skipped 30
+
+  fresh-install:
+    # What `pip install ras2cng[all]` resolves today, without the lock. An upstream release
+    # can break this with no change in this repo, so on a PR or push it reports but does not
+    # block (continue-on-error); the daily scheduled run has no such allowance, so a break
+    # shows as a failed run.
+    name: Fresh install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ github.event_name != 'schedule' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv venv
+      - run: uv pip install -e ".[all]" --group test
+      - name: Show what resolved
+        run: uv pip list
+      - run: uv run --no-sync pytest -rs --junit-xml=report.xml
+      - name: Check test counts
+        if: always()
+        run: python .github/scripts/check_test_counts.py report.xml --min-collected 800 --min-passed 720 --max-skipped 90
