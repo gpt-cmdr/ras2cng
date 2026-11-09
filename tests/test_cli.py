@@ -215,7 +215,9 @@ def test_invalid_typed_options_return_usage_error(argv, bad_value):
     result = runner.invoke(app, argv)
 
     assert result.exit_code == 2, result.output
-    assert bad_value in result.output
+    # typer 0.29 names the option but no longer echoes the rejected value.
+    option = argv[argv.index(bad_value) - 1]
+    assert option in result.output or bad_value in result.output, result.output
 
 
 @pytest.mark.parametrize(("command", "argv"), ERROR_CASES)
