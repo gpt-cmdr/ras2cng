@@ -2748,7 +2748,7 @@ to RAS Mapper without a terrain export.</p>
 </tr>
 <tr>
 <td>Velocity (Max), slopingPretty</td>
-<td>yes when the engine advertises <code>rasmapper-with-faces-velocity-derived/1</code> (engine builds after fast-map 0.15.0 / ras-commander 0.116.0), with the <code>.rasmap</code>'s shallow-reduction and depth-weighting flags passed unchanged; with the released engines it is opt-in (<code>--fast-map-velocity</code>) and plain slopingPretty only</td>
+<td>yes when the engine advertises <code>rasmapper-with-faces-velocity-derived/1</code> (fast-map 0.16.0 / ras-commander 0.117.0, the versions ras2cng requires), with the <code>.rasmap</code>'s shallow-reduction and depth-weighting flags passed unchanged; with older engines it is opt-in (<code>--fast-map-velocity</code>) and plain slopingPretty only</td>
 <td>0 mask and 0 bit differences on bridges p05 and Davis p02 in all four option combinations (plain, shallow reduction, depth-weighted, both). The mask is the depth rendered with the same options, so the wrong flags give a different mask: an earlier 75 + 28 px difference on bridges compared a plain run with a shallow-reduction reference</td>
 </tr>
 <tr>
@@ -2758,7 +2758,7 @@ to RAS Mapper without a terrain export.</p>
 </tr>
 <tr>
 <td>Shear stress (Max)</td>
-<td>yes in plain sloping and horizontal when <code>RasFim.supports_shear_stress()</code> is true (<code>rasmapper-face-shear-max/1</code>; engine builds after 0.15.0 / 0.116.0); <code>--no-fast-map-shear</code> to opt out; not in slopingPretty or with storage areas. With the released engines: RAS Mapper</td>
+<td>yes in plain sloping and horizontal when <code>RasFim.supports_shear_stress()</code> is true (<code>rasmapper-face-shear-max/1</code>; fast-map 0.16.0 / ras-commander 0.117.0); <code>--no-fast-map-shear</code> to opt out; not in slopingPretty or with storage areas. With older engines: RAS Mapper</td>
 <td>0 mask and 0 bit differences on bridges p05 (973,902 px sloping, 973,532 px horizontal) and Davis p02 (22,041 / 20,560 px). bridges 4.7 s against RAS Mapper's 84.8 s</td>
 </tr>
 <tr>
@@ -3005,7 +3005,7 @@ The Depth/WSE rasters are unaffected; they still match RAS Mapper bit for bit.</
 </code></pre></div>
 <p><code>--fast-map-boundary-method native-serial</code> (<code>fast_map_boundary_method</code>,
 <code>RAS2CNG_FAST_MAP_BOUNDARY_METHOD</code>) asks the engine for its native-serial
-contour contract (<code>rasmapper-serial-zero-depth-contours/1</code>; fast-map 0.15.0
+contour contract (<code>rasmapper-serial-zero-depth-contours/1</code>; since fast-map 0.15.0
 and ras-commander 0.116.0). <strong>The engine and ras-commander label this method
 unqualified</strong>, and ras2cng requests it with that explicit opt-in. It is not
 the default.</p>
@@ -3088,7 +3088,7 @@ back to RAS Mapper on its own, so the rasters can still use Rust):</p>
 </tr>
 <tr>
 <td>ras-commander without <code>RasFim.map_inundation_boundaries</code></td>
-<td>Introduced in ras-commander 0.113.0; ras2cng requires 0.116.0</td>
+<td>Introduced in ras-commander 0.113.0; ras2cng requires 0.117.0</td>
 </tr>
 <tr>
 <td>Storage areas</td>
@@ -5598,7 +5598,7 @@ failed), render it through RAS Mapper instead. False raises.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 9, 2026 15:26:23 UTC">November 9, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 9, 2026 18:54:51 UTC">November 9, 2026</span>
   </span>
 
     
