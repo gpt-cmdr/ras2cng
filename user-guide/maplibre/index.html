@@ -1025,6 +1025,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#sparse-tilesets-line-simplification-deduplication-sorted-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sparse tilesets: line simplification, deduplication, sorted values
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#columns-kept-out-of-tiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Columns kept out of tiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tippecanoe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tippecanoe
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2346,6 +2379,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#sparse-tilesets-line-simplification-deduplication-sorted-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sparse tilesets: line simplification, deduplication, sorted values
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#columns-kept-out-of-tiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Columns kept out of tiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tippecanoe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tippecanoe
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2567,7 +2633,7 @@ once per zoom (below).</p>
 <tr>
 <td>CLI <code>--no-simplify</code></td>
 <td></td>
-<td>Turn off both: tile every polygon vertex at every zoom</td>
+<td>Turn off both, and the per-zoom line option: tile every vertex at every zoom</td>
 </tr>
 <tr>
 <td><code>RAS2CNG_SIMPLIFY_ENGINE</code></td>
@@ -2712,6 +2778,97 @@ properties, +18.4% of <code>geometry.pmtiles</code> on the Davis pipe network. O
 </tbody>
 </table>
 <p>The manifest's <code>vectorShortLines</code> records the layers that got the option, or why none did.</p>
+<h3 id="sparse-tilesets-line-simplification-deduplication-sorted-values">Sparse tilesets: line simplification, deduplication, sorted values<a class="headerlink" href="#sparse-tilesets-line-simplification-deduplication-sorted-values" title="Permanent link">&para;</a></h3>
+<p>With a freestiler build that has them (gpt-cmdr/freestiler <code>main</code> after 0.3.0.3; detected
+from the API, so older builds tile as before), three more options apply:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RAS2CNG_TILE_LINE_SIMPLIFY</code>, CLI <code>--tile-line-simplify PX</code></td>
+<td>1 tile pixel</td>
+<td>Per-zoom Douglas-Peucker on the <strong>lines</strong> of every layer except <code>mesh_faces</code> (and results joined to them), at every zoom. <code>0</code>, <code>off</code> or <code>--no-tile-line-simplify</code> turns it off; <code>--no-simplify</code> turns it off with the polygon filters</td>
+</tr>
+<tr>
+<td><code>RAS2CNG_VECTOR_TILE_COMPACT</code>, CLI <code>--compact-tiles/--no-compact-tiles</code></td>
+<td>on</td>
+<td><code>deduplicate</code> and <code>sort_values</code> together; <code>0</code> turns both off</td>
+</tr>
+<tr>
+<td><code>RAS2CNG_VECTOR_TILE_SORT_VALUES</code></td>
+<td><code>auto</code></td>
+<td><code>sort_values</code> alone: <code>auto</code> sorts tilesets without mesh layers, <code>1</code> every tileset, <code>0</code> none</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Line simplification</strong> replaces the tiler's default pre-simplification of lines, which
+  kept 1.2-1.6 times tippecanoe's vertices on dense breaklines. Endpoints are kept, a line
+  that would collapse keeps its vertices, and <code>keep_short_lines</code> still applies, so no
+  feature is lost: every breakline is present at every zoom. The worst distance from an
+  input vertex to the drawn line is 1.6 tile pixels (about 0.1 CSS pixel), against 5.0
+  before. It is <strong>never applied to <code>mesh_faces</code></strong>: a face's vertices are the cells'
+  vertices.</li>
+<li><strong><code>deduplicate</code></strong> stores identical tiles once, as <code>pmtiles convert</code> does for
+  tippecanoe's output. Every tile is still addressed and decompresses to the same bytes.</li>
+<li><strong><code>sort_values</code></strong> writes each layer's value table sorted and ahead of its features,
+  which compresses better where values repeat; tiles decode to the same content. It is
+  left off for tilesets with mesh layers, where it measured 3-6% larger. It changes the
+  archive bytes, so turn it off for a byte comparison with an older archive.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th><code>geometry.pmtiles</code></th>
+<th style="text-align: right;">tippecanoe 2.82.0 (ras2cng's flags, with <code>--drop-rate=1</code>)</th>
+<th style="text-align: right;">freestiler 0.3.0.3</th>
+<th style="text-align: right;">freestiler <code>main</code> (#11), ras2cng defaults</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bald Eagle p07</td>
+<td style="text-align: right;">972,440</td>
+<td style="text-align: right;">1,300,546 (+33.7%)</td>
+<td style="text-align: right;"><strong>966,399 (-0.6%)</strong></td>
+</tr>
+<tr>
+<td>Davis (without <code>Terrain_Profiles</code>)</td>
+<td style="text-align: right;">350,842</td>
+<td style="text-align: right;">360,134 (+2.6%)</td>
+<td style="text-align: right;"><strong>343,964 (-2.0%)</strong></td>
+</tr>
+<tr>
+<td>UPGU3</td>
+<td style="text-align: right;">7,048,586</td>
+<td style="text-align: right;">9,369,259</td>
+<td style="text-align: right;"><strong>7,248,146 (+2.8%)</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Mesh tilesets are unchanged by these options (<code>deduplicate</code> finds no duplicate mesh tile).
+<code>results.pmtiles</code> is 0.2-3.4% smaller, almost all of it from <code>sort_values</code>.</p>
+<p>The manifest records them: <code>vectorSimplification.lines</code> (enabled, <code>tilePixels</code>, layers, or
+the reason it did not run), a per-layer <code>simplification.tileLinePixels</code>, and
+<code>vectorArchive</code> (<code>deduplicate</code>, <code>sortValues</code>, <code>sortValuesScope</code>, <code>archiveOnlyColumns</code>).</p>
+<h3 id="columns-kept-out-of-tiles">Columns kept out of tiles<a class="headerlink" href="#columns-kept-out-of-tiles" title="Permanent link">&para;</a></h3>
+<p><code>Terrain_Profiles</code>, the station/elevation list ras-commander attaches to every pipe
+conduit, stays in the archive GeoParquet (<code>WHERE layer = 'pipe_conduits'</code>) and is not
+delivered in tiles. It was delivered as the text of a NumPy array, repeated in every tile
+a conduit crosses at every zoom: 70% of the Davis <code>geometry.pmtiles</code> (1,129,401 bytes with
+it, 343,964 without). Compact JSON was measured and is not small either (1,028,364 bytes;
+769,016 at two decimals).</p>
+<h3 id="tippecanoe">tippecanoe<a class="headerlink" href="#tippecanoe" title="Permanent link">&para;</a></h3>
+<p>The tippecanoe path now passes <code>--drop-rate=1</code>. Tippecanoe's default rate thins point
+layers below the maximum zoom whatever the size limits say: the Davis pipe network lost
+2,243 of its node points over z0-z16 (1 of 133 left at z0). Tilesets with point layers
+built with tippecanoe by an earlier version are incomplete at low zoom; rebuild them.</p>
 <h2 id="raster-tiler">Raster Tiler<a class="headerlink" href="#raster-tiler" title="Permanent link">&para;</a></h2>
 <p>Terrain and result rasters (Stored Maps, calculated layers, <code>ras2cng pmtiles</code> on
 a GeoTIFF) are colorized, warped to Web Mercator and written as PNG PMTiles by
@@ -2930,7 +3087,7 @@ tiling, overviews, and nodata/mask behavior; hosted artifacts can be required to
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 3, 2026 21:17:50 UTC">November 3, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 9, 2026 15:26:23 UTC">November 9, 2026</span>
   </span>
 
     
