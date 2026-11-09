@@ -86,6 +86,12 @@ DEFAULT_TILE_TOLERANCE_FT = 1.0
 TILE_POLYGON_SIMPLIFY_ENV = "RAS2CNG_TILE_POLYGON_SIMPLIFY"
 DEFAULT_TILE_POLYGON_SIMPLIFY_PX = 0.5
 MAX_TILE_POLYGON_SIMPLIFY_PX = 64.0
+# The tiler's per-zoom Douglas-Peucker tolerance for *lines*, in tile pixels
+# (freestiler ``line_simplify``, fork build after 0.3.0.3). 1.0 is tippecanoe's
+# tolerance: on UPGU3 ``geometry.pmtiles`` 0.5 still left the file 9% larger.
+# Never mesh faces (:data:`NEVER_SIMPLIFY`); see :func:`tile_line_pixels`.
+TILE_LINE_SIMPLIFY_ENV = "RAS2CNG_TILE_LINE_SIMPLIFY"
+DEFAULT_TILE_LINE_SIMPLIFY_PX = 1.0
 METHOD = "douglas-peucker"
 FOOT_M = 0.3048
 NEVER_SIMPLIFY = frozenset({"mesh_cells", "mesh_faces"})
@@ -104,13 +110,17 @@ def simplify_options(
     enabled: Optional[bool] = None,
     tile_pixels: Optional[float] = None,
     tile_pixels_enabled: Optional[bool] = None,
+    tile_line_pixels: Optional[float] = None,
+    tile_line_pixels_enabled: Optional[bool] = None,
 ) -> Iterator[None]:
     """Override the web-map simplification for the enclosed calls.
 
-    ``enabled=False`` turns off both filters; ``tolerance_ft`` sets the first-pass
+    ``enabled=False`` turns off every filter; ``tolerance_ft`` sets the first-pass
     tolerance in feet (``0`` turns only that off). ``tile_pixels`` sets the
-    tiler's per-zoom tolerance and ``tile_pixels_enabled=False`` turns only that
-    off. ``None`` leaves each to the environment or default.
+    tiler's per-zoom polygon tolerance and ``tile_pixels_enabled=False`` turns
+    only that off; ``tile_line_pixels`` / ``tile_line_pixels_enabled`` do the
+    same for the per-zoom line tolerance. ``None`` leaves each to the
+    environment or default.
     """
 
     current = dict(_OPTIONS.get())
@@ -122,6 +132,12 @@ def simplify_options(
         current["tile_pixels"] = _checked_tile_pixels(tile_pixels, "tile polygon simplify")
     if tile_pixels_enabled is not None:
         current["tile_pixels_enabled"] = bool(tile_pixels_enabled)
+    if tile_line_pixels is not None:
+        current["tile_line_pixels"] = _checked_tile_pixels(
+            tile_line_pixels, "tile line simplify"
+        )
+    if tile_line_pixels_enabled is not None:
+        current["tile_line_pixels_enabled"] = bool(tile_line_pixels_enabled)
     token = _OPTIONS.set(current)
     try:
         yield
@@ -194,6 +210,33 @@ def tile_polygon_pixels(kind: Optional[str]) -> Optional[float]:
     if not kind or kind in NEVER_SIMPLIFY:
         return None
     return tile_pixels_setting()
+
+
+def tile_line_pixels_setting() -> Optional[float]:
+    """The requested per-zoom line tolerance in tile pixels, or None when off."""
+
+    options = _OPTIONS.get()
+    if options.get("enabled") is False or options.get("tile_line_pixels_enabled") is False:
+        return None
+    if "tile_line_pixels" in options:
+        return options["tile_line_pixels"]
+    raw = os.environ.get(TILE_LINE_SIMPLIFY_ENV, "").strip()
+    if not raw:
+        return DEFAULT_TILE_LINE_SIMPLIFY_PX
+    return _checked_tile_pixels(raw, TILE_LINE_SIMPLIFY_ENV)
+
+
+def tile_line_pixels(kind: Optional[str]) -> Optional[float]:
+    """The per-zoom line tolerance for one layer; always None for mesh layers.
+
+    A mesh face's interior vertices are shared with the cell polygons on either
+    side, so simplifying faces would pull them off the cells. A layer of
+    unknown kind gets None too.
+    """
+
+    if not kind or kind in NEVER_SIMPLIFY:
+        return None
+    return tile_line_pixels_setting()
 
 
 def terrio_simplify() -> Any:

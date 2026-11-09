@@ -42,7 +42,17 @@ from ras2cng.viewer_manifest import apply_manifest_v2
 LOGGER = logging.getLogger(__name__)
 
 
+# Columns that stay in the archive GeoParquet and are not delivered in vector
+# tiles. ``Terrain_Profiles`` is a station/elevation list on every pipe conduit
+# (``layer = 'pipe_conduits'``): as the numpy text it used to be delivered as
+# it was 70% of Davis ``geometry.pmtiles`` (1,129,401 bytes with it, 343,964
+# without), because every tile a conduit crosses repeats it at every zoom.
+# Compact JSON was measured and is not small either (1,028,364 bytes at full
+# float32 precision, 769,016 at two decimals), so it is kept out of tiles.
+ARCHIVE_ONLY_COLUMNS = frozenset({"Terrain_Profiles"})
+
 _INTERNAL_COLUMNS = {
+    *ARCHIVE_ONLY_COLUMNS,
     "layer",
     # GeoParquet bbox covering: the 1.1 struct (manifest schema 2.7+) and the
     # flat columns of older archives.
@@ -552,7 +562,9 @@ def _write_delivery_source(
     input, an Arrow IPC spill file beside it (``.arrow``) that is read back
     only when the tiler reaches the layer. ``kind`` names the layer the features
     come from: with it, a polygon layer gets the tiler's per-zoom simplification
-    (:func:`ras2cng.simplify.tile_polygon_pixels`; never mesh cells or faces).
+    (:func:`ras2cng.simplify.tile_polygon_pixels`; never mesh cells or faces),
+    and a line layer the per-zoom line tolerance
+    (:func:`ras2cng.simplify.tile_line_pixels`; never mesh faces).
     """
 
     if not arrow:
@@ -562,11 +574,17 @@ def _write_delivery_source(
     pixels = None
     if vector_tiles.polygon_simplify_available() and cleaned.geom_type.isin(("Polygon", "MultiPolygon")).any():
         pixels = simplify.tile_polygon_pixels(kind)
+    line_pixels = None
+    if vector_tiles.line_simplify_available() and cleaned.geom_type.isin(
+        ("LineString", "MultiLineString")
+    ).any():
+        line_pixels = simplify.tile_line_pixels(kind)
     layer = vector_tiles.write_arrow_spill(
         vector_tiles.frame_table(cleaned),
         path.with_suffix(".arrow"),
         polygon_simplify=pixels,
         kind=kind,
+        line_simplify=line_pixels,
     )
     return layer, len(cleaned), sorted(set(cleaned.geom_type.dropna())), _bounds(cleaned)
 
@@ -796,6 +814,10 @@ def _run_tippecanoe(
             # those edges diverge and open visible slivers between cells at low
             # zoom.
             "--no-simplification-of-shared-nodes",
+            # Tippecanoe's default drop rate (2.5) thins point layers below the
+            # maximum zoom whatever the limits above say: Davis lost 2,243 of
+            # its pipe-node points over z0-z16 (1 of 133 left at z0).
+            "--drop-rate=1",
             f"--minimum-zoom={min_zoom}",
             f"--maximum-zoom={max_zoom}",
             "--output",
@@ -1556,6 +1578,8 @@ def package_maplibre_stored_vector(
     }
     if isinstance(delivery, vector_tiles.ArrowLayer) and delivery.polygon_simplify is not None:
         stored_simplification["tilePolygonSimplifyPx"] = delivery.polygon_simplify
+    if isinstance(delivery, vector_tiles.ArrowLayer) and delivery.line_simplify is not None:
+        stored_simplification["tileLinePixels"] = delivery.line_simplify
     if stored_simplification:
         layer["simplification"] = stored_simplification
     tileset = {
@@ -2243,7 +2267,24 @@ class _DenseGeometry:
         return _with_geometry(self.attributes(), _read_ipc(self.geometry_path).column(0))
 
     def layer(self) -> vector_tiles.ArrowLayer:
-        return vector_tiles.ArrowLayer(load=self.table, crs=vector_tiles.WGS84, kind=self.kind)
+        return vector_tiles.ArrowLayer(
+            load=self.table, crs=vector_tiles.WGS84, kind=self.kind,
+            line_simplify=_joined_line_pixels(self.kind, self.geometry_types),
+        )
+
+
+def _joined_line_pixels(kind: str | None, geometry_types: Sequence[str]) -> float | None:
+    """The per-zoom line tolerance for a layer joined to results, or None.
+
+    None for mesh cells and faces (:func:`ras2cng.simplify.tile_line_pixels`),
+    for layers without lines, and when the tiler has no ``line_simplify``.
+    """
+
+    if not vector_tiles.line_simplify_available():
+        return None
+    if not any(name in ("LineString", "MultiLineString") for name in geometry_types):
+        return None
+    return simplify.tile_line_pixels(kind)
 
 
 def _read_ipc(path: Path) -> pa.Table:
@@ -2488,7 +2529,10 @@ def _join_dense_result(
             column = column.take(pa.array(left))
         return _with_geometry(_read_ipc(spill), column)
 
-    layer = vector_tiles.ArrowLayer(load=load, crs=vector_tiles.WGS84, kind=geometry.kind)
+    layer = vector_tiles.ArrowLayer(
+        load=load, crs=vector_tiles.WGS84, kind=geometry.kind,
+        line_simplify=_joined_line_pixels(geometry.kind, geometry_types),
+    )
     return layer, int(left.size), geometry_types, bounds
 
 
@@ -3175,6 +3219,7 @@ def package_maplibre_viewer(
                 *result_detail_sources,
             ]
         ),
+        "vectorArchive": _vector_archive_summary(),
         "tilesets": geometry_tilesets,
         "groups": groups,
         "notes": (
@@ -3286,6 +3331,49 @@ def _vector_simplification_summary(
             "scope": "polygons of every layer except mesh_cells and mesh_faces; lines and points unchanged",
         }
     summary["perZoom"] = _per_zoom_summary(sources)
+    summary["lines"] = _line_simplify_summary(sources)
+    return summary
+
+
+def _line_simplify_summary(sources: Sequence[tuple[str, DeliverySource]]) -> dict[str, Any]:
+    """What the tiler's per-zoom ``line_simplify`` did, or why it did not run."""
+
+    used = {
+        name: source.line_simplify
+        for name, source in sources
+        if isinstance(source, vector_tiles.ArrowLayer) and source.line_simplify is not None
+    }
+    if used:
+        return {
+            "enabled": True,
+            "method": "freestiler line_simplify (Douglas-Peucker per zoom)",
+            "tilePixels": next(iter(used.values())),
+            "scope": "lines of every layer except mesh_cells and mesh_faces",
+            "layers": list(used),
+        }
+    if simplify.tile_line_pixels_setting() is None:
+        reason = "turned off"
+    elif not vector_tiles.line_simplify_available():
+        reason = "the installed freestiler has no line_simplify, or none is installed"
+    elif not any(isinstance(source, vector_tiles.ArrowLayer) for _, source in sources):
+        reason = "the layers did not go to freestiler as Arrow"
+    else:
+        reason = "no line layer outside mesh_faces"
+    return {"enabled": False, "reason": reason}
+
+
+def _vector_archive_summary() -> dict[str, Any]:
+    """The viewer manifest's ``vectorArchive``: lossless archive options and
+    the columns kept out of tiles."""
+
+    if vector_tiles.vector_tiler_backend() == vector_tiles.FREESTILER:
+        summary = vector_tiles.compaction_summary()
+    else:
+        summary = {
+            "deduplicate": False, "sortValues": False,
+            "reason": "tippecanoe tileset (pmtiles convert deduplicates its tiles)",
+        }
+    summary["archiveOnlyColumns"] = sorted(ARCHIVE_ONLY_COLUMNS)
     return summary
 
 
