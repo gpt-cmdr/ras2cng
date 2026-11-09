@@ -103,6 +103,7 @@ class FakeEngine:
         self.silently_omit = set()
         self.raise_on_write = None
         self.misreport_rows = 0
+        self.omitted = None  # a list: an engine with terrio-clb #17 reports ``omitted``
 
     def hecras_archive_layers(self, path, *, geometry=True, results=True, variables=None, **kwargs):
         layers = []
@@ -172,6 +173,7 @@ class FakeEngine:
             "row_groups": info["row_groups"],
             "layer_rows": layer_rows,
             "skipped": self._skipped(variables or [], layers or []),
+            **({} if self.omitted is None else {"omitted": list(self.omitted)}),
             "crs_wkt": None,
             "seconds": 0.0,
         }
@@ -348,6 +350,30 @@ def test_geometry_direct_with_python_layers_and_record(engine, tmp_path):
     table = pq.read_table(tmp_path / "out" / "Fake.g01.parquet")
     assert set(table["layer"].to_pylist()) == set(rows)
     assert table.num_rows == sum(rows.values())
+
+
+def test_omitted_rows_are_recorded_when_the_engine_reports_them(engine, tmp_path):
+    """terrio-clb #17: a row left out of a layer the engine wrote is never silent."""
+    ras, project_dir = _project(tmp_path)
+    manifest = _archive(tmp_path, ras, project_dir)
+    assert "omitted" not in manifest.geometry[0]["archive"], "older engines: the record as it was"
+
+    row = {"layer": "mesh_faces", "source_row": 6010, "point_count": 1,
+           "reason": "a line needs at least two points"}
+    engine.omitted = [row]
+    (tmp_path / "second").mkdir()
+    ras, project_dir = _project(tmp_path / "second")
+    manifest = _archive(tmp_path / "second", ras, project_dir)
+    assert manifest.geometry[0]["archive"]["omitted"] == [row]
+    assert manifest.geometry[0]["archive"]["path"] == "direct"
+    loaded = Manifest.load(tmp_path / "second" / "out" / "manifest.json")
+    assert loaded.geometry[0]["archive"]["omitted"] == [row]
+
+    engine.omitted = []
+    (tmp_path / "third").mkdir()
+    ras, project_dir = _project(tmp_path / "third")
+    manifest = _archive(tmp_path / "third", ras, project_dir)
+    assert manifest.geometry[0]["archive"]["omitted"] == [], "reported, and none"
 
 
 def test_crs_falls_back_to_the_project_when_no_frame_or_file_has_one(engine, tmp_path):
@@ -627,7 +653,16 @@ def test_real_davis_equals_the_python_path(tmp_path):
     assert python.schema_version == "2.7" and native.schema_version == "3.0"
     assert native.geometry[0]["archive"]["path"] == "direct"
     assert native.results[0]["archive"]["path"] == "direct"
-    assert native.results[0]["archive"]["python_layers"] == {"cell_last_iteration": "refused"}
+    # Davis stores no Location on Cell Last Iteration. An engine with fast-hdf
+    # #71 reads it by name and width; an older one refuses it and Python fills
+    # it. Either way the file must equal the Python path's, types included.
+    assert native.results[0]["archive"]["python_layers"] in (
+        {}, {"cell_last_iteration": "refused"},
+    )
+    assert "cell_last_iteration" in (
+        native.results[0]["archive"]["native_layers"]
+        + list(native.results[0]["archive"]["python_layers"])
+    )
 
     for name in ("DavisStormSystem.g02.parquet", "DavisStormSystem.p02.parquet"):
         a, b = _layers(tmp_path / "python" / name), _layers(tmp_path / "direct" / name)
@@ -686,7 +721,13 @@ def test_real_float_widths_refuse_cleanly_and_the_file_falls_back(tmp_path):
 @real_engine
 @real_project
 def test_real_old_format_refusals_stay_on_python_or_get_filled():
-    """Spring_BLE p02 stores no Location: the engine returns refusals, it does not raise."""
+    """Spring_BLE p02 stores no Location: the engine returns refusals, it does not raise.
+
+    Before fast-hdf #71 every summary is refused. With it the summaries are
+    qualified by name and width and read; what both engines and h5py still
+    refuse (``Cell Cumulative Iter Lookup``, ``Starting Differences *``) comes
+    back in ``skipped``.
+    """
     import terrio._terrio as engine_module
 
     plan = CORPUS / "spring_ble" / "Spring_BLE.p02.hdf"
@@ -695,8 +736,13 @@ def test_real_old_format_refusals_stay_on_python_or_get_filled():
     found = engine_module.hecras_archive_layers(
         str(plan), geometry=False, summary_geometry=False, time_days=False, ghost_cell_points=False
     )
-    assert not found["layers"]
     assert found["skipped"]
+    read = {str(layer["variable"]) for layer in found["layers"]}
+    refused = {str(item.get("variable")) for item in found["skipped"]}
+    assert not read & refused
+    if read:  # fast-hdf #71
+        assert {"Maximum Water Surface", "Maximum Face Velocity"} <= read
+        assert not any(name.startswith("Starting Differences") for name in read)
 
 
 @real_engine

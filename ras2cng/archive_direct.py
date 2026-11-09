@@ -11,10 +11,18 @@ decides, per file, what comes from where, and records it:
 - **Python, through ``extra_layers``:** every other geometry layer and every
   ``*_text`` layer. The native catalog omits ``river_reaches``, the joined
   ``structures`` and ``cross_sections`` columns and ``centerlines`` ``length``;
-  it has no text layers; it stores some columns as float32/uint64 where the
-  Python frames hold float64/int64; and it refuses a whole breakline family over
-  one bad row where ras-commander skips that row. These layers read in about
-  0.1 s per file, so nothing is gained by risking them.
+  it has no text layers; and it stores some columns as float32/uint64 where the
+  Python frames hold float64/int64. (Before terrio-clb #17 it also refused a
+  whole breakline family over one row with fewer than two points; it now
+  leaves that row out and reports it in ``omitted``, as ras-commander skips
+  it.) These layers read in about 0.1 s per file, so nothing is gained by
+  risking them.
+- **Omitted rows** (``omitted``; terrio-clb #17): rows the engine left out of
+  a layer it did write, each with ``layer``, ``source_row``, ``point_count``
+  and ``reason``. They are copied into the file's manifest ``archive`` record
+  so a row missing from a native layer is never silent. ras2cng asks the
+  engine only for the mesh layers and the summary variables, so the list is
+  empty unless a later engine reports rows for those.
 - **Refused by the engine** (``skipped``; refusals are returned, not raised):
   filled from Python through ``extra_layers``. What Python cannot read either is
   absent from a Python-path archive too, and is recorded as unfilled.
@@ -332,6 +340,13 @@ def _result(
     crs_source: str,
     started: float,
 ) -> DirectWrite:
+    # Rows the engine left out of a layer it wrote (terrio-clb #17). The key is
+    # recorded only when the engine reports it, so older builds write the same
+    # record as before.
+    omitted = (
+        {"omitted": [dict(item) for item in report.get("omitted") or []]}
+        if "omitted" in report else {}
+    )
     layers = summarize_layers(output)
     written = {layer["layer"]: layer["rows"] for layer in layers}
     expected = dict(report.get("layer_rows") or {})
@@ -359,6 +374,7 @@ def _result(
             "native_layers": list(native),
             "python_layers": python_layers,
             "refused": refused,
+            **omitted,
             "crs_source": crs_source,
             "seconds": round(time.perf_counter() - started, 3),
         },
