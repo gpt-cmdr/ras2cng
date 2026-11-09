@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -215,9 +216,11 @@ def test_invalid_typed_options_return_usage_error(argv, bad_value):
     result = runner.invoke(app, argv)
 
     assert result.exit_code == 2, result.output
-    # typer 0.29 names the option but no longer echoes the rejected value.
+    # typer 0.29 names the option but no longer echoes the rejected value, and
+    # rich may colour the option's parts separately (it does on CI).
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     option = argv[argv.index(bad_value) - 1]
-    assert option in result.output or bad_value in result.output, result.output
+    assert option in output or bad_value in output, output
 
 
 @pytest.mark.parametrize(("command", "argv"), ERROR_CASES)
