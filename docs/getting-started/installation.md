@@ -87,6 +87,6 @@ For raster PMTiles, `gdal_translate` (part of GDAL) is also required.
 ## Requirements
 
 - Python >= 3.10
-- [ras-commander](https://github.com/gpt-cmdr/ras-commander) 0.113.0 or newer (with its `full` extra: ras-commander-fast-hdf 0.3.0 and ras-commander-fast-map 0.12.0) — installed automatically as a dependency
+- [ras-commander](https://github.com/gpt-cmdr/ras-commander) 0.116.0 or newer (with its `full` extra: ras-commander-fast-hdf 0.3.0 and ras-commander-fast-map 0.15.0) — installed automatically as a dependency
 - Core: pandas, geopandas, pyarrow, typer, rich
 - Optional: duckdb, sqlalchemy, geoalchemy2, psycopg2-binary, rasterio

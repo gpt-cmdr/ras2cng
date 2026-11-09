@@ -1,5 +1,103 @@
 # Unreleased
 
+## Fix: `ras2cng map --wgs84` did not reproject
+
+**`--wgs84` (`reproject_wgs84=True`) has returned rasters in the model CRS**, with a
+"rasterio not available for reprojection" warning: the function imported a rasterio name from
+the wrong module and caught the `ImportError`. The only test mocked the function. It now
+reprojects, and a raster that cannot be reprojected is an error instead of a pass-through.
+**Rasters published with `--wgs84` from an earlier version are in the model CRS: check them and
+re-run.** With the CLB terrio build the reprojection runs in terrio (Bald Eagle Terrain50: 7.8 s
+against 30.3 s; same grid, equal masks, values equal to rasterio's to float rounding); otherwise
+in rasterio. `RAS2CNG_REPROJECT_ENGINE=auto|terrio|rasterio`.
+
+## Fix: the tippecanoe path thinned point layers
+
+`ras2cng maplibre` and `ras2cng pmtiles` now pass `--drop-rate=1` to tippecanoe. Its default
+rate drops points below the maximum zoom whatever the size limits say: the Davis pipe network
+lost 2,243 node points over z0-z16. **Rebuild tippecanoe-built tilesets that have point
+layers.** freestiler tilesets were always complete.
+
+## Engines
+
+- **Requires ras-commander 0.116.0** (`ras-commander[full]>=0.116.0`; was 0.113.0), which
+  brings ras-commander-fast-map 0.15.0 and keeps ras-commander-fast-hdf 0.3.0. No ras2cng
+  behaviour changes with the released engines except what is listed below.
+- **Engine features merged but not yet released** are used when present and detected from the
+  engine, never from a version number. With the released engines each keeps its previous
+  behaviour:
+
+  | Needs | Then |
+  |---|---|
+  | fast-map after 0.15.0 (#30) and ras-commander after 0.116.0 (#819) | slopingPretty Max velocity, D x V, D x V² and Froude are mapped in Rust by default, with the `.rasmap`'s shallow-reduction and depth-weighting flags passed unchanged |
+  | fast-map after 0.15.0 (#31) and ras-commander after 0.116.0 (#820) | Max shear stress is mapped in Rust by default in plain sloping and horizontal |
+  | a terrio build linking fast-hdf with #71 | 2D summaries of older plan files (no stored `Location`) take the direct archive path |
+  | terrio-clb after 0.5.0.3 (#17) | rows the engine leaves out of a layer are recorded in the manifest (`archive.omitted`) |
+  | freestiler after 0.3.0.3 (#11) | `deduplicate`, `sort_values` and per-zoom line simplification for vector tiles |
+
+## Mapping
+
+- **Max shear stress in Rust** (`Shear Stress (Max).tif`, `fast_map_shear_manifest.json`), as its
+  own engine call like velocity, in plain sloping and horizontal. Against RAS Mapper 7.0.1
+  through `ras2cng map`: 0 mask and 0 bit differences on Bald Eagle bridges p05 (973,902 px
+  sloping, 973,532 px horizontal) and Davis p02 (22,041 / 20,560 px). bridges: 4.7 s against RAS
+  Mapper's 84.8 s. slopingPretty and storage-area plans stay on RAS Mapper.
+  `--no-fast-map-shear` (`fast_map_shear=False`) keeps it on RAS Mapper.
+- **slopingPretty velocity and derived Max in Rust by default** when the engine advertises it:
+  0 mask and 0 bit differences on bridges p05 and Davis p02 for plain, shallow reduction,
+  depth-weighted and both (48 product comparisons). The earlier 75 + 28 px difference on bridges
+  came from comparing a plain run with a reference made with shallow reduction on.
+- **Davis-like terrains in slopingPretty no longer go wholly to RAS Mapper.** When the engine
+  refuses the CRS identity of the RAS Mapper terrain export, fast-map now maps on the export's
+  CRS-canonical copy (the same pixels with EPSG GeoTIFF keys); `MapResult.fast_map_terrain`
+  records `export-canonical`.
+- **Inundation boundaries: `--fast-map-boundary-method native-serial`** (opt-in;
+  `fast_map_boundary_method`, `RAS2CNG_FAST_MAP_BOUNDARY_METHOD`). The default stays the
+  deterministic contour method, which is close to, not identical with, RAS Mapper's polygons.
+  The native-serial method is labelled unqualified by the engine; it is exact against RAS
+  Mapper's **serial** boundary export on the fixtures named in ras-commander's mapping guide and
+  nowhere else. Through `ras2cng map` against RAS Mapper 7.0.1: Davis p02, bridges p05 (two
+  terrain sources) and Bald Eagle p07 (two sources, a storage area) each have equal geometry
+  and equal unrounded coordinates. It accepts multi-source terrains and, with
+  `--fast-map-storage-areas`, storage areas, which the deterministic method refuses.
+- The reasons the cheaper terrains were passed over are now printed also when every terrain
+  candidate is refused.
+
+## Vector tiles (with the freestiler build after 0.3.0.3)
+
+- **Per-zoom line simplification** (`line_simplify=1.0` tile pixels) on the lines of every layer
+  except mesh faces; **`deduplicate`** on every tileset; **`sort_values`** on tilesets without
+  mesh layers (it made mesh tilesets 3-6% larger). All lossless or within 1.6 tile pixels, and
+  no feature is dropped: every breakline is still at every zoom.
+  `geometry.pmtiles` against tippecanoe: Bald Eagle p07 966,399 vs 972,440 bytes (-0.6%), Davis
+  343,964 vs 350,842 (-2.0%), UPGU3 7,248,146 vs 7,048,586 (+2.8%).
+  New: `--tile-line-simplify PX`, `--no-tile-line-simplify`, `--compact-tiles/--no-compact-tiles`,
+  `RAS2CNG_TILE_LINE_SIMPLIFY`, `RAS2CNG_VECTOR_TILE_COMPACT`, `RAS2CNG_VECTOR_TILE_SORT_VALUES`;
+  manifest `vectorSimplification.lines`, `vectorArchive`, per-layer `simplification.tileLinePixels`.
+  `sort_values` changes archive bytes (tiles decode the same).
+- **`Terrain_Profiles` is no longer delivered in tiles** (every backend). The property was the
+  text of a NumPy array on every pipe conduit and 70% of the Davis `geometry.pmtiles`
+  (1,129,401 to 343,964 bytes). It stays in the archive GeoParquet. A consumer that reads it
+  from tiles must read the archive instead.
+
+## Archive
+
+- Older plan files on the direct path (with a terrio build that links fast-hdf #71): every
+  layer, row and non-null column still equals the Python path. `archive --results`, median of
+  three: Spring 20.4 s / 2,257 MB to 13.7 s / 1,367 MB; Spring_BLE 25.4 s / 3,354 MB to 13.3 s /
+  1,441 MB. `Cell Last Iteration` on 7.x plans is read by the engine with the same type as the
+  Python path.
+- Manifest `archive.omitted` (when the engine reports it).
+
+## Terrain
+
+- `RAS2CNG_TERRAIN_MERGE_ENGINE=terrio` (opt-in, off by default) merges terrain sources with one
+  whole-output terrio warp. It is bit-identical to GDAL's whole-output warp and **changes
+  today's output by up to 4.4 ft**, because today's blockwise merge is the one that differs
+  from GDAL. The terrain provenance records `merge_engine`.
+
+## Earlier in this cycle
+
 - **terrio fork build 0.5.0.3** replaces 0.5.0.2 as the recommended CLB terrio build:
   `pip install terrio==0.5.0.3 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3`.
   GeoTIFF/COG ZSTD and LERC_ZSTD still use the zstd C library (COGs byte-identical to 0.5.0.2's);

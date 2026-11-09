@@ -157,10 +157,11 @@ to RAS Mapper without a terrain export.
 | WSE, Depth with storage areas | **opt-in** (`--fast-map-storage-areas`; slower than RAS Mapper today), as RAS Mapper level pools, when the engine advertises `storage-area-level-pool/1` | identical on Bald Eagle p07 and p04 in every render mode (466,912 / 461,639 storage-area px); p07 Max sloping through `ras2cng map`: 0 mask and 0 bit differences on 1,345,691 px |
 | Arrival time, percent time inundated | yes (`--no-fast-map-whole-simulation` to opt out) | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft, horizontal and plain sloping; with a storage area, p07 (1,333,183 px) |
 | Duration | yes, when the engine advertises RAS Mapper's recession rule (`rasmapper-backward-window-recession/1`); not with storage areas | identical on Davis p02 and bridges p05 at 0.5 ft |
-| Velocity (Max) | yes in plain sloping and horizontal when the engine advertises `velocity_depth`; slopingPretty opt-in (`--fast-map-velocity`); `--no-fast-map-velocity` to opt out; not with storage areas | bridges p05: 0 value and 0 mask differences in sloping (973,902 px) and horizontal (973,532 px). slopingPretty: identical values on every common pixel, but its mask follows the slopingPretty depth, which differs on bridges Max (75 + 28 px). Older engines: opt-in, plain sloping only |
-| D × V, D × V², Froude (Max) | yes in plain sloping and horizontal (`--no-fast-map-derived` to opt out); not with storage areas or slopingPretty | per-time product, pixelwise Max over every output time, as RAS Mapper computes it: 0 / 0 on bridges p05 over 433 times (973,956 px sloping); Davis within 2 ulp on ≤ 5 px |
-| Shear stress | no | not implemented in the engine |
-| Inundation boundary | yes (see below); not with storage areas | deterministic contours, not vector parity |
+| Velocity (Max) | yes in plain sloping and horizontal when the engine advertises `velocity_depth`; `--no-fast-map-velocity` to opt out; not with storage areas | bridges p05: 0 value and 0 mask differences in sloping (973,902 px) and horizontal (973,532 px). Older engines: opt-in, plain sloping only |
+| Velocity (Max), slopingPretty | yes when the engine advertises `rasmapper-with-faces-velocity-derived/1` (engine builds after fast-map 0.15.0 / ras-commander 0.116.0), with the `.rasmap`'s shallow-reduction and depth-weighting flags passed unchanged; with the released engines it is opt-in (`--fast-map-velocity`) and plain slopingPretty only | 0 mask and 0 bit differences on bridges p05 and Davis p02 in all four option combinations (plain, shallow reduction, depth-weighted, both). The mask is the depth rendered with the same options, so the wrong flags give a different mask: an earlier 75 + 28 px difference on bridges compared a plain run with a shallow-reduction reference |
+| D × V, D × V², Froude (Max) | yes in plain sloping and horizontal (`--no-fast-map-derived` to opt out), and in slopingPretty under the same engine record as velocity; not with storage areas | per-time product, pixelwise Max over every output time, as RAS Mapper computes it: 0 / 0 on bridges p05 over 433 times (973,956 px sloping); Davis within 2 ulp on ≤ 5 px. slopingPretty: 0 / 0 on bridges p05 and Davis p02, four option combinations |
+| Shear stress (Max) | yes in plain sloping and horizontal when `RasFim.supports_shear_stress()` is true (`rasmapper-face-shear-max/1`; engine builds after 0.15.0 / 0.116.0); `--no-fast-map-shear` to opt out; not in slopingPretty or with storage areas. With the released engines: RAS Mapper | 0 mask and 0 bit differences on bridges p05 (973,902 px sloping, 973,532 px horizontal) and Davis p02 (22,041 / 20,560 px). bridges 4.7 s against RAS Mapper's 84.8 s |
+| Inundation boundary | yes (see below): deterministic contours by default, the native-serial contract on request | deterministic: close to, not identical with, RAS Mapper's polygons. native-serial: exact against RAS Mapper's serial boundary export on named fixtures only; the engine labels it unqualified |
 
 A plan is sent to RAS Mapper instead when:
 
@@ -241,10 +242,14 @@ storage areas, timings). Arrival time is in hours since the simulation start.
 `MapResult.fast_map_skipped` why a map type went to RAS Mapper under the
 fast-map engine (for example storage areas without the opt-in), and
 `MapResult.fast_map_terrain` which terrain fast-map used (`source`,
-`source-canonical`, `effective`, `export` or `supplied`). Velocity is its own
-engine call, so a velocity refusal never costs WSE/Depth, and WSE/Depth keep
-the native GeoTIFF writer; in horizontal mode it is rendered plain sloping
-and clipped with the horizontal depth, as RAS Mapper does. `--min-depth`, `--wgs84` and
+`source-canonical`, `effective`, `export`, `export-canonical` or `supplied`;
+`export-canonical` is the RAS Mapper export's CRS-canonical copy, the same
+pixels with EPSG GeoTIFF keys, used only after the engine refuses the
+export's CRS identity). Velocity and shear stress are each their own
+engine call, so a refusal of either never costs WSE/Depth, and WSE/Depth keep
+the native GeoTIFF writer; in horizontal mode they are rendered plain sloping
+and clipped with the horizontal depth, as RAS Mapper does. Shear stress is
+written as `Shear Stress (Max).tif` with `fast_map_shear_manifest.json`. `--min-depth`, `--wgs84` and
 `--cog` apply unchanged. Other options: `--fast-map-threads` (default CPUs − 1)
 and `--fast-map-memory-mib` (planned working memory; default a quarter of
 RAM, 1–16 GiB).
@@ -301,7 +306,7 @@ ras2cng map /path/to/project /output/maps --engine fast-map --inundation-boundar
     --no-fast-map-boundary
 ```
 
-**It is a different method, not a copy of RAS Mapper's polygons.** The Rust
+**The default is a different method, not a copy of RAS Mapper's polygons.** The Rust
 engine traces deterministic zero-depth contours
 (`deterministic-zero-depth-contours/1`): the same inputs always give
 byte-identical GeoJSON, on Windows and Linux and at any worker count. RAS
@@ -311,16 +316,60 @@ contour had 66 holes and 47,426 vertices, against RAS Mapper's 65 and 47,396.
 Almost all of the 7,423 ft² difference was one hole that RAS Mapper filled.
 The Depth/WSE rasters are unaffected; they still match RAS Mapper bit for bit.
 
-**Extra scope for boundaries**, on top of the pure-2D rules above (each falls
+### The native-serial method (opt-in)
+
+```bash
+ras2cng map /path/to/project /output/maps --inundation-boundary \
+    --fast-map-boundary-method native-serial
+```
+
+`--fast-map-boundary-method native-serial` (`fast_map_boundary_method`,
+`RAS2CNG_FAST_MAP_BOUNDARY_METHOD`) asks the engine for its native-serial
+contour contract (`rasmapper-serial-zero-depth-contours/1`; fast-map 0.15.0
+and ras-commander 0.116.0). **The engine and ras-commander label this method
+unqualified**, and ras2cng requests it with that explicit opt-in. It is not
+the default.
+
+What has been checked, and all that should be claimed: on Windows x64, in
+plain sloping, with original terrain layouts, the engine's boundary has the
+same valid geometry and the same unrounded coordinates (ring start, direction
+and part order aside) as the boundary RAS Mapper exports with its **serial**
+polygon loop, on the fixtures in ras-commander's
+[mapping guide](https://rascommander.info/ras/native-mapping-engine/#compare-native-polygons):
+Baxter (three steady profiles), Davis (Max and one saved time, 7.0.1), Bald
+Eagle (Max and one saved time, two terrain sources and a storage area) and
+Reese (mixed-model Max). Run through `ras2cng map` against RAS Mapper 7.0.1 on
+project copies:
+
+| Plan | Polygons / holes / vertices | Against RAS Mapper's serial export | Rust, end to end | RAS Mapper |
+|---|---|---|---|---|
+| Davis p02 Max | 274 / 65 / 47,272 | geometry and coordinates equal | 4.0 s | 44.6 s (serial) |
+| Bald Eagle bridges p05 Max (two terrain sources) | 194 / 344 / 108,189 | geometry and coordinates equal | 8.9 s | 8.5 s (ordinary), 12.4 s (serial) |
+| Bald Eagle p07 Max (two sources, one storage area; `--fast-map-storage-areas`) | 117 / 214 / 104,486 | geometry and coordinates equal | 17.2 s | 8.0 s (ordinary), 10.8 s (serial) |
+
+RAS Mapper's ordinary export is not serial, and its polygons have differed
+between identical exports. On bridges p05 and p07 the ordinary export happened
+to equal the serial one; that is an observation on two plans, not a claim that
+the method reproduces every RAS Mapper shapefile. Other models, other
+profiles, modified terrains and other platforms are not covered.
+
+Scope in ras2cng: the Max profile, plain sloping, unmodified terrains. A
+terrain with several source TIFFs is accepted (ras2cng passes the first one in
+the terrain HDF's priority order; the engine checks it and refuses a wrong
+one). Storage areas are included only with `--fast-map-storage-areas`.
+Anything else falls back to RAS Mapper. The boundary manifest records
+`ras2cng.boundary_method`.
+
+**Extra scope for deterministic boundaries**, on top of the pure-2D rules above (each falls
 back to RAS Mapper on its own, so the rasters can still use Rust):
 
 | Condition | Why |
 |---|---|
-| Terrain with more than one source TIFF | The method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them |
+| Terrain with more than one source TIFF | The deterministic method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them. `--fast-map-boundary-method native-serial` takes every source |
 | Terrain modifications | Refused by ras2cng before the engine runs (`terrain_modifications`): modified terrains always go to RAS Mapper |
 | `slopingPretty` render mode | Contours support horizontal and plain sloping only |
-| ras-commander without `RasFim.map_inundation_boundaries` | Needs ras-commander 0.113.0 |
-| Storage areas | The contour method draws 2D cells only; the level pool would be missing |
+| ras-commander without `RasFim.map_inundation_boundaries` | Introduced in ras-commander 0.113.0; ras2cng requires 0.116.0 |
+| Storage areas | The deterministic method draws 2D cells only; the level pool would be missing. The native-serial method includes them when storage areas are opted in |
 | A terrain CRS the engine and rasterio read differently (Davis), without `--fast-map-terrain-crs-hash` | The engine cannot name an EPSG code for it; ras2cng never guesses the identity (see below) |
 
 **User-supplied terrain CRS.** When the engine cannot name the terrain's EPSG
@@ -354,7 +403,15 @@ boundary.
 ## Post-Processing Options
 
 - **Minimum depth threshold** (`--min-depth`): Set pixels below a depth threshold to NoData
-- **WGS84 reprojection** (`--wgs84`): Reproject output rasters to EPSG:4326 using rasterio
+- **WGS84 reprojection** (`--wgs84`): Reproject output rasters to EPSG:4326
+  (`<name>_wgs84.tif`), with terrio when the installed build has the streaming
+  warp (the CLB terrio build) and otherwise with rasterio; the grid is the same
+  and values agree to float rounding (`RAS2CNG_REPROJECT_ENGINE` =
+  `auto`/`terrio`/`rasterio`). A raster that cannot be reprojected is an error.
+  **Before 0.16 this option did nothing**: a wrong import was caught and the
+  rasters were returned in the model CRS with a "rasterio not available"
+  warning. Rasters published with `--wgs84` from an earlier version are in the
+  model CRS; check their CRS and re-run.
 - **Cloud Optimized GeoTIFF** (`--cog`): Convert output to COG using `gdal_translate`
 
 ## API Reference
