@@ -1,3 +1,17 @@
+# Unreleased
+
+- **terrio fork build 0.5.0.3** replaces 0.5.0.2 as the recommended CLB terrio build:
+  `pip install terrio==0.5.0.3 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3`.
+  GeoTIFF/COG ZSTD and LERC_ZSTD still use the zstd C library (COGs byte-identical to 0.5.0.2's);
+  GeoParquet, Zarr and EPT Zstandard are pure Rust. Archive GeoParquet written by the native writer
+  has the same rows, order, schema, row groups and metadata as before; on Bald Eagle p07 the files
+  are 0.15-1.63% larger (0.36% for the whole archive).
+  No ras2cng code change is needed; 0.5.0.2 keeps working.
+- Viewer manifests: a terrain modification's `provenance.sourceHdf` is the file name only, also
+  when a Windows-written archive is packaged on Linux (it was the whole Windows path there).
+- CI: a pull-request test workflow (locked dependencies, locked plus the fork wheels, and a fresh
+  unlocked install, on Ubuntu and Windows).
+
 # ras2cng 0.15.0
 
 ## Rebuild any published multi-mesh viewer
