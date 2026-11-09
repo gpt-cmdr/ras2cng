@@ -32,13 +32,16 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  # 0.113.0 installs the Rust HDF engine (ras-commander-fast-hdf >=0.3.0) by
-  # default on Windows x64, Linux x64 and macOS arm64, and [full] adds the
-  # fast-map engine (ras-commander-fast-map >=0.12.0,<0.13) on Windows x64 and
+  # 0.116.0 installs the Rust HDF engine (ras-commander-fast-hdf >=0.3.0,<0.4)
+  # by default on Windows x64, Linux x64 and macOS arm64, and [full] adds the
+  # fast-map engine (ras-commander-fast-map >=0.15.0,<0.16) on Windows x64 and
   # Linux x64: storage-area level pools, effective terrain, velocity, Max
-  # derived products, duration, Rust inundation boundaries, and
+  # derived products, duration, Rust inundation boundaries (deterministic, and
+  # the opt-in native-serial contract), and
   # HdfLandCover.export_final_mannings_raster for `ras2cng mannings`.
-  "ras-commander[full]>=0.113.0",
+  # slopingPretty velocity/derived Max and Max shear stress need engine builds
+  # after 0.15.0 / 0.116.0 and are capability-detected.
+  "ras-commander[full]>=0.116.0",
   "typer>=0.9.0",
   "rich>=13.0.0",
   "pandas>=2.0.0",
@@ -51,12 +54,12 @@ dependencies = [
 fast-hdf = [
   # The Rust HDF engine is already a default dependency on supported
   # platforms; this extra requests it explicitly (e.g. for a source build).
-  "ras-commander[fast-hdf]>=0.113.0",
+  "ras-commander[fast-hdf]>=0.116.0",
 ]
 fast-map = [
   # Rust 2D WSE/Depth mapping for `ras2cng map --engine fast-map`. Already
   # installed by ras-commander[full] on Windows x64 and Linux x64.
-  "ras-commander[fast-map]>=0.113.0",
+  "ras-commander[fast-map]>=0.116.0",
 ]
 duckdb = [
   "duckdb>=1.0.0",
