@@ -44,6 +44,22 @@ TIF files are associated with a terrain by matching the file stem against the te
 
 Steps 5-6 require RasProcess.exe (Windows or Wine). Steps 1-4 are pure Python (rasterio).
 
+### Merge engine (opt-in)
+
+Step 4 warps each 512-pixel destination block separately with rasterio. Setting
+`RAS2CNG_TERRAIN_MERGE_ENGINE=terrio` does one whole-output warp of every source
+with terrio instead (it needs the CLB terrio build; without it, or when the
+sources do not share one CRS, the merge stays on rasterio and the reason is
+recorded). `auto` and `rasterio` keep the default.
+
+**The switch changes the values.** terrio's mosaic is bit-identical to GDAL's
+own whole-output warp, and the blockwise output is not: on the Bald Eagle
+terrain (two sources, 40 ft target) 18.5 M of 49.7 M pixels differ between the
+two, by up to 4.44 ft (274 pixels by more than 1 ft), with identical valid
+masks. terrio took 4.9 s against 20.9 s, with a 453 MiB peak against 829 MiB.
+It is off by default so that existing outputs do not change. The engine used
+is written to the terrain provenance file as `merge_engine`.
+
 ## Native Registered-Terrain Export
 
 `export_modified_terrain()` is the production path for a single,

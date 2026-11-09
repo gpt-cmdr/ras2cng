@@ -216,6 +216,18 @@ Polygon simplification options, also on `maplibre-stored-vector` (see
   --no-tile-polygon-simplify     Turn off only the per-zoom option
 ```
 
+`ras2cng maplibre` only, with a freestiler that has the options (see
+[MapLibre](../user-guide/maplibre.md#sparse-tilesets-line-simplification-deduplication-sorted-values)):
+
+```text
+  --tile-line-simplify FLOAT     Per-zoom line tolerance in tile pixels (default 1; 0 = off);
+                                 never mesh faces
+  --no-tile-line-simplify        Turn off only the per-zoom line option
+  --compact-tiles / --no-compact-tiles
+                                 Store identical tiles once and sort each layer's values
+                                 (lossless; default on; RAS2CNG_VECTOR_TILE_COMPACT)
+```
+
 `ras2cng maplibre` only (see
 [MapLibre](../user-guide/maplibre.md#short-lines)):
 
@@ -393,6 +405,22 @@ Options:
                                 Minimum physical-memory reserve in MiB [default: 8192]
   --map-gdal-cache-mb INTEGER   Optional GDAL cache cap per map helper in MiB [default: 64]
 ```
+
+fast-map options added in 0.16 (the full list is in `ras2cng map --help`; see
+[Mapping](mapping.md)):
+
+```text
+  --fast-map-shear / --no-fast-map-shear
+                                Map Max --shear-stress in Rust when the engine has it
+                                (plain sloping and horizontal)  [default: on]
+  --fast-map-boundary-method TEXT
+                                deterministic (default) or native-serial (opt-in; the
+                                engine labels it unqualified)
+                                [env: RAS2CNG_FAST_MAP_BOUNDARY_METHOD]
+```
+
+`--wgs84` reprojects for real since 0.16 (it returned the model CRS before); see
+[Post-Processing Options](mapping.md#post-processing-options).
 
 Notes on whole-simulation types: `--arrival-time`, `--duration`, and
 `--percent-inundated` are computed over the entire simulation (the `--profile`

@@ -165,6 +165,11 @@ def test_stock_freestiler_without_new_api(monkeypatch, tmp_path):
     assert vector_tiles.freestiler_capabilities(sys.modules["freestiler"]) == {
         "layers": False, "gzip": False, "layers_gzip": False,
         "buffer": False, "layers_buffer": False, "arrow": False, "polygon_simplify": False, "keep_short_lines": False,
+        "line_simplify": False,
+        "deduplicate": False,
+        "layers_deduplicate": False,
+        "sort_values": False,
+        "layers_sort_values": False,
     }
 
 

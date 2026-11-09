@@ -62,8 +62,9 @@ class MapResult:
     engines: dict[str, str] = field(default_factory=dict)
     # For fast-map products, the terrain the engine mapped on: "supplied"
     # (--fast-map-terrain), "source" (the priority-1 terrain source TIFF, no
-    # export), "source-canonical" (its CRS-canonical copy) or "export" (the
-    # RAS Mapper terrain export).
+    # export), "source-canonical" (its CRS-canonical copy), "effective" (RAS
+    # Mapper's effective terrain rebuilt in Rust), "export" (the RAS Mapper
+    # terrain export) or "export-canonical" (the export's CRS-canonical copy).
     fast_map_terrain: dict[str, str] = field(default_factory=dict)
     # For fast-map products, the engine's ``fim-invalid-cells/1`` record
     # (ras-commander 0.110.2+): the policy, the count and every cell whose
@@ -184,6 +185,8 @@ def generate_result_maps(
     fast_map_effective_terrain: bool = True,
     fast_map_storage_areas: Optional[bool] = None,
     fast_map_terrain_crs_fnv1a64: Optional[str] = None,
+    fast_map_shear: bool = True,
+    fast_map_boundary_method: Optional[str] = None,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -234,14 +237,14 @@ def generate_result_maps(
         map_engine: ``"fast-map"`` (default) maps, on pure 2D models, the
             products the Rust ``ras-commander-fast-map`` engine is qualified
             for against RAS Mapper stored maps (Max WSE/Depth, velocity, D x V,
-            D x V², Froude, arrival time, percent inundated, duration, each as
-            far as the installed engine advertises it; storage areas as level
-            pools) and the inundation boundary through deterministic contours
-            (much faster than RAS Mapper's export; close to, not identical
-            with, its polygons). It is built for FIM library creation, not
-            every model type: 1D elements, shear stress, other profiles and
-            unqualified render modes fall back to RAS Mapper per product
-            group. ``"rasmapper"`` renders every map type
+            D x V², Froude, shear stress, arrival time, percent inundated,
+            duration, each as far as the installed engine advertises it;
+            storage areas as level pools) and the inundation boundary through
+            deterministic contours (much faster than RAS Mapper's export;
+            close to, not identical with, its polygons). It is built for FIM
+            library creation, not every model type: 1D elements, other
+            profiles and unqualified render modes fall back to RAS Mapper per
+            product group. ``"rasmapper"`` renders every map type
             through RAS Mapper. None reads ``RAS2CNG_MAP_ENGINE``, else
             ``fast_map.DEFAULT_MAP_ENGINE``. The render mode comes from the
             project's ``.rasmap`` unless ``render_mode`` is given. See
@@ -274,13 +277,32 @@ def generate_result_maps(
         fast_map_velocity: ``None`` (default): map Max velocity in Rust in
             plain sloping and horizontal mode when the engine has the
             fast-map #20 velocity rules (0 value / 0 mask differences on
-            bridges p05). ``True`` also maps slopingPretty velocity (opt-in:
-            its mask follows the slopingPretty depth, which differs from RAS
-            Mapper's on bridges Max) and plain sloping on older engines.
-            ``False`` leaves velocity to RAS Mapper.
+            bridges p05), and in slopingPretty, with the ``.rasmap``'s
+            shallow-reduction and depth-weighting flags passed unchanged,
+            when the engine advertises
+            ``rasmapper-with-faces-velocity-derived/1`` (0 / 0 on bridges p05
+            and Davis p02 in all four option combinations). ``True`` also
+            maps plain slopingPretty velocity on an engine without that
+            record, and plain sloping on older engines. ``False`` leaves
+            velocity to RAS Mapper.
         fast_map_derived: With fast-map, map Max D x V, D x V² and Froude in
             Rust (one time-series pass, ``reduce_max/1``) in plain sloping and
-            horizontal mode. False leaves them to RAS Mapper.
+            horizontal mode, and in slopingPretty under the same engine record
+            as velocity. False leaves them to RAS Mapper.
+        fast_map_shear: With fast-map, map Max shear stress in Rust
+            (``Shear Stress (Max).tif``) in plain sloping and horizontal mode
+            when ``RasFim.supports_shear_stress()`` is true
+            (``rasmapper-face-shear-max/1``; 0 mask / 0 bit differences on
+            bridges p05 and Davis p02). slopingPretty and storage-area plans
+            stay on RAS Mapper. False leaves shear stress to RAS Mapper.
+        fast_map_boundary_method: ``"deterministic"`` (default) or
+            ``"native-serial"`` (opt-in; None reads
+            ``RAS2CNG_FAST_MAP_BOUNDARY_METHOD``). native-serial requests the
+            engine's ``rasmapper-serial-zero-depth-contours/1`` contract:
+            plain sloping, every original terrain source, storage areas when
+            opted in. The engine labels it unqualified; see
+            :func:`ras2cng.fast_map.map_boundary` for exactly what has been
+            checked against RAS Mapper's serial boundary export.
         fast_map_effective_terrain: Before exporting the terrain through RAS
             Mapper, try RAS Mapper's effective terrain rebuilt in Rust
             (fast-map #19; unmodified terrains only). False skips it.
@@ -329,6 +351,7 @@ def generate_result_maps(
     fast_map_terrain_crs_fnv1a64 = _fast_map.normalize_crs_fnv1a64(
         fast_map_terrain_crs_fnv1a64
     )
+    fast_map_boundary_method = _fast_map.resolve_boundary_method(fast_map_boundary_method)
 
     project_path = Path(project_path)
     # Absolute: RAS Mapper resolves a relative folder against the project, so
@@ -350,6 +373,8 @@ def generate_result_maps(
             rust_products.append("velocity")
         if fast_map_derived:
             rust_products.append("D x V/Froude (Max)")
+        if fast_map_shear:
+            rust_products.append("shear stress (Max)")
         if fast_map_whole_simulation:
             rust_products.append("arrival time/percent inundated/duration")
         if fast_map_boundary:
@@ -539,11 +564,16 @@ def generate_result_maps(
                 def _on_terrain(label, run):
                     """Run on the cheapest terrain the engine accepts; record it."""
                     notes_before = len(terrain_resolver.notes)
-                    produced, kind = _fast_map.with_terrain(
-                        terrain_resolver, plan_hdf, run, use_source=fast_map_source_terrain,
-                    )
-                    for note in terrain_resolver.notes[notes_before:]:
-                        console.print(f"    fast-map {label}: {note}")
+                    try:
+                        produced, kind = _fast_map.with_terrain(
+                            terrain_resolver, plan_hdf, run, use_source=fast_map_source_terrain,
+                        )
+                    finally:
+                        # Also when every candidate was refused: the last
+                        # refusal alone does not say why the cheaper terrains
+                        # were passed over.
+                        for note in terrain_resolver.notes[notes_before:]:
+                            console.print(f"    fast-map {label}: {note}")
                     for map_type in produced:
                         map_result.fast_map_terrain[map_type] = kind
                     return produced
@@ -574,11 +604,13 @@ def generate_result_maps(
                 if not max_profile and any(
                     t in requested_types
                     for t in (*_fast_map.FAST_MAP_RASTER_TYPES, "velocity",
-                              *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_BOUNDARY)
+                              *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_SHEAR,
+                              _fast_map.FAST_MAP_BOUNDARY)
                 ):
                     _skip("per-profile maps", profile_reason, strict=True, types=(
                         *_fast_map.FAST_MAP_RASTER_TYPES, "velocity",
-                        *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_BOUNDARY,
+                        *_fast_map.FAST_MAP_DERIVED_TYPES, _fast_map.FAST_MAP_SHEAR,
+                        _fast_map.FAST_MAP_BOUNDARY,
                     ))
                 if max_profile and any(
                     t in _fast_map.FAST_MAP_RASTER_TYPES for t in requested_types
@@ -650,6 +682,28 @@ def generate_result_maps(
                                 invalid_cells=fast_map_invalid_cells,
                             ),
                         ), types=derived_types))
+                if max_profile and _fast_map.FAST_MAP_SHEAR in requested_types:
+                    shear_depth, reason = _fast_map.shear_plan(fast_render, fast_map_shear)
+                    if reason is not None:
+                        _skip("shear stress", reason, types=(_fast_map.FAST_MAP_SHEAR,))
+                    else:
+                        fast_results.update(_fast_group("shear stress", lambda: _on_terrain(
+                            "shear stress",
+                            lambda tif, hdf, kind: _fast_map.map_shear(
+                                plan_hdf,
+                                tif,
+                                plan_output,
+                                render=fast_render,
+                                shear_depth=shear_depth,
+                                profile=profile,
+                                threads=fast_map_threads,
+                                timeout=timeout,
+                                max_working_mib=fast_map_memory_mib,
+                                terrain_hdf=hdf,
+                                terrain_kind=kind,
+                                invalid_cells=fast_map_invalid_cells,
+                            ),
+                        ), types=(_fast_map.FAST_MAP_SHEAR,)))
                 whole_types, whole_notes = _fast_map.whole_simulation_types(
                     requested_types, fast_render
                 )
@@ -678,11 +732,14 @@ def generate_result_maps(
                     and _fast_map.FAST_MAP_BOUNDARY in requested_types
                 ):
                     def _boundary():
-                        tif, terrain_hdf = terrain_resolver.boundary_terrain(plan_hdf)
+                        tif, terrain_hdf = terrain_resolver.boundary_terrain(
+                            plan_hdf, fast_map_boundary_method
+                        )
                         return _fast_map.map_boundary(
                             plan_hdf, tif, terrain_hdf, plan_output,
                             profile=profile,
                             render=fast_render,
+                            method=fast_map_boundary_method,
                             terrain_crs_fnv1a64=fast_map_terrain_crs_fnv1a64,
                             threads=fast_map_threads,
                             timeout=timeout,
@@ -1276,51 +1333,31 @@ def _apply_depth_threshold(tif_paths: list[Path], min_depth: float) -> list[Path
 
 
 def _reproject_tifs(tif_paths: list[Path], target_crs: str) -> list[Path]:
-    """Reproject TIFF files to target CRS using rasterio.
+    """Reproject TIFF files to ``target_crs`` (``--reproject-wgs84``).
 
-    Outputs are written alongside originals with _wgs84 suffix.
+    Outputs are written alongside the originals with a ``_wgs84`` suffix,
+    through :func:`ras2cng.warp.reproject_path`: terrio when the installed
+    build has the streaming warp, else rasterio (``RAS2CNG_REPROJECT_ENGINE``).
+
+    A raster that cannot be reprojected raises. Before 0.16 this function
+    imported ``calculate_default_transform`` from the wrong rasterio module,
+    caught the ``ImportError`` and returned the rasters in the model CRS, so
+    ``--reproject-wgs84`` delivered nothing; a silent pass-through is exactly
+    what must not come back.
     """
-    try:
-        import rasterio
-        from rasterio.crs import CRS
-        from rasterio.transform import calculate_default_transform
-        from rasterio.warp import reproject, Resampling
-    except ImportError:
-        console.print("[yellow]Warning:[/yellow] rasterio not available for reprojection")
-        return tif_paths
+    from ras2cng.warp import reproject_path
 
     reprojected = []
-    dst_crs = CRS.from_string(target_crs)
-
     for tif in tif_paths:
+        tif = Path(tif)
         out_path = tif.parent / f"{tif.stem}_wgs84{tif.suffix}"
         try:
-            with rasterio.open(tif) as src:
-                transform, width, height = calculate_default_transform(
-                    src.crs, dst_crs, src.width, src.height, *src.bounds
-                )
-                kwargs = src.meta.copy()
-                kwargs.update({
-                    "crs": dst_crs,
-                    "transform": transform,
-                    "width": width,
-                    "height": height,
-                })
-                with rasterio.open(out_path, "w", **kwargs) as dst:
-                    for i in range(1, src.count + 1):
-                        reproject(
-                            source=rasterio.band(src, i),
-                            destination=rasterio.band(dst, i),
-                            src_transform=src.transform,
-                            src_crs=src.crs,
-                            dst_transform=transform,
-                            dst_crs=dst_crs,
-                            resampling=Resampling.bilinear,
-                        )
-            reprojected.append(out_path)
-        except Exception:
-            reprojected.append(tif)
-
+            reproject_path(tif, out_path, target_crs)
+        except Exception as error:
+            raise RuntimeError(
+                f"reprojection of {tif.name} to {target_crs} failed: {error}"
+            ) from error
+        reprojected.append(out_path)
     return reprojected
 
 

@@ -82,7 +82,7 @@ once per zoom (below).
 | `RAS2CNG_SIMPLIFY_TOLERANCE`, CLI `--simplify-tolerance FT` | 1 ft | Tolerance in feet; `0` or `off` turns this filter off |
 | `RAS2CNG_TILE_POLYGON_SIMPLIFY`, CLI `--tile-polygon-simplify PX` | 0.5 tile pixels | The tiler's per-zoom tolerance, above 0 and at most 64, in 1/4096 of a tile; `0` or `off` turns it off |
 | CLI `--no-tile-polygon-simplify` | | Turn off only the per-zoom option |
-| CLI `--no-simplify` | | Turn off both: tile every polygon vertex at every zoom |
+| CLI `--no-simplify` | | Turn off both, and the per-zoom line option: tile every vertex at every zoom |
 | `RAS2CNG_SIMPLIFY_ENGINE` | `auto` | `terrio` (Rust `terrio.simplify_wkb`, in the CLB terrio build), `shapely` (GEOS), or `auto`: terrio when the installed build has it |
 
 What is simplified: the polygons of every layer, for example Manning's n land cover,
@@ -185,6 +185,60 @@ properties, +18.4% of `geometry.pmtiles` on the Davis pipe network. Older freest
 | `RAS2CNG_KEEP_SHORT_LINES`, CLI `--keep-short-lines/--no-keep-short-lines` | on | `0` or `--no-keep-short-lines` turns it off |
 
 The manifest's `vectorShortLines` records the layers that got the option, or why none did.
+
+### Sparse tilesets: line simplification, deduplication, sorted values
+
+With a freestiler build that has them (gpt-cmdr/freestiler `main` after 0.3.0.3; detected
+from the API, so older builds tile as before), three more options apply:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `RAS2CNG_TILE_LINE_SIMPLIFY`, CLI `--tile-line-simplify PX` | 1 tile pixel | Per-zoom Douglas-Peucker on the **lines** of every layer except `mesh_faces` (and results joined to them), at every zoom. `0`, `off` or `--no-tile-line-simplify` turns it off; `--no-simplify` turns it off with the polygon filters |
+| `RAS2CNG_VECTOR_TILE_COMPACT`, CLI `--compact-tiles/--no-compact-tiles` | on | `deduplicate` and `sort_values` together; `0` turns both off |
+| `RAS2CNG_VECTOR_TILE_SORT_VALUES` | `auto` | `sort_values` alone: `auto` sorts tilesets without mesh layers, `1` every tileset, `0` none |
+
+- **Line simplification** replaces the tiler's default pre-simplification of lines, which
+  kept 1.2-1.6 times tippecanoe's vertices on dense breaklines. Endpoints are kept, a line
+  that would collapse keeps its vertices, and `keep_short_lines` still applies, so no
+  feature is lost: every breakline is present at every zoom. The worst distance from an
+  input vertex to the drawn line is 1.6 tile pixels (about 0.1 CSS pixel), against 5.0
+  before. It is **never applied to `mesh_faces`**: a face's vertices are the cells'
+  vertices.
+- **`deduplicate`** stores identical tiles once, as `pmtiles convert` does for
+  tippecanoe's output. Every tile is still addressed and decompresses to the same bytes.
+- **`sort_values`** writes each layer's value table sorted and ahead of its features,
+  which compresses better where values repeat; tiles decode to the same content. It is
+  left off for tilesets with mesh layers, where it measured 3-6% larger. It changes the
+  archive bytes, so turn it off for a byte comparison with an older archive.
+
+| `geometry.pmtiles` | tippecanoe 2.82.0 (ras2cng's flags, with `--drop-rate=1`) | freestiler 0.3.0.3 | freestiler `main` (#11), ras2cng defaults |
+|---|---:|---:|---:|
+| Bald Eagle p07 | 972,440 | 1,300,546 (+33.7%) | **966,399 (-0.6%)** |
+| Davis (without `Terrain_Profiles`) | 350,842 | 360,134 (+2.6%) | **343,964 (-2.0%)** |
+| UPGU3 | 7,048,586 | 9,369,259 | **7,248,146 (+2.8%)** |
+
+Mesh tilesets are unchanged by these options (`deduplicate` finds no duplicate mesh tile).
+`results.pmtiles` is 0.2-3.4% smaller, almost all of it from `sort_values`.
+
+The manifest records them: `vectorSimplification.lines` (enabled, `tilePixels`, layers, or
+the reason it did not run), a per-layer `simplification.tileLinePixels`, and
+`vectorArchive` (`deduplicate`, `sortValues`, `sortValuesScope`, `archiveOnlyColumns`).
+
+### Columns kept out of tiles
+
+`Terrain_Profiles`, the station/elevation list ras-commander attaches to every pipe
+conduit, stays in the archive GeoParquet (`WHERE layer = 'pipe_conduits'`) and is not
+delivered in tiles. It was delivered as the text of a NumPy array, repeated in every tile
+a conduit crosses at every zoom: 70% of the Davis `geometry.pmtiles` (1,129,401 bytes with
+it, 343,964 without). Compact JSON was measured and is not small either (1,028,364 bytes;
+769,016 at two decimals).
+
+### tippecanoe
+
+The tippecanoe path now passes `--drop-rate=1`. Tippecanoe's default rate thins point
+layers below the maximum zoom whatever the size limits say: the Davis pipe network lost
+2,243 of its node points over z0-z16 (1 of 133 left at z0). Tilesets with point layers
+built with tippecanoe by an earlier version are incomplete at low zoom; rebuild them.
 
 ## Raster Tiler
 

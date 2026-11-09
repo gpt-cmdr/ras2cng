@@ -105,6 +105,11 @@ def test_capabilities_detect_arrow_and_buffer(monkeypatch):
         "arrow": True,
         "polygon_simplify": False,
         "keep_short_lines": False,
+        "line_simplify": False,
+        "deduplicate": False,
+        "layers_deduplicate": False,
+        "sort_values": False,
+        "layers_sort_values": False,
     }
 
 

@@ -1114,7 +1114,9 @@ def test_tippecanoe_never_drops_features(monkeypatch, tmp_path: Path) -> None:
     assert "--no-tile-size-limit" in command and "--no-feature-limit" in command
     # --drop-densest-as-needed renders a thinned mesh as stripes, and
     # --drop-fraction-as-needed crashes tippecanoe on mixed dense layers.
-    assert not [flag for flag in command if flag.startswith("--drop-")]
+    # --drop-rate=1 turns tippecanoe's point thinning off (its default rate
+    # is 2.5); every other --drop-* flag removes features.
+    assert [flag for flag in command if flag.startswith("--drop-")] == ["--drop-rate=1"]
     assert "--extend-zooms-if-still-dropping" not in command
 
 

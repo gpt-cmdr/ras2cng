@@ -231,12 +231,16 @@ def consolidate_terrain_files(
 
     console.print(f"[bold]Terrain consolidation:[/bold] {len(sources)} TIFF(s)")
     merged_tif = output_dir / f"{terrain_name}_merged.tif"
+    merge_engine, merge_fallback = select_terrain_merge_engine(sources)
+    if merge_fallback:
+        console.print(f"  [yellow]Note:[/yellow] terrain merge uses rasterio: {merge_fallback}")
     _merge_tifs(
         sources,
         merged_tif,
         target_resolution=decision.target_resolution,
+        engine=merge_engine,
     )
-    console.print(f"  Merged -> {merged_tif.name}")
+    console.print(f"  Merged -> {merged_tif.name} ({merge_engine})")
 
     provenance = {
         "schema": "ras2cng.terrain-consolidation/v1",
@@ -244,6 +248,11 @@ def consolidate_terrain_files(
         "output_name": terrain_name,
         "source_priority": "first-valid-value-wins",
         "resampling": "bilinear",
+        # "rasterio": one GDAL warp per 512-px destination block (the default).
+        # "terrio": one whole-output warp, bit-identical to GDAL's own
+        # whole-output painter warp; opt-in (RAS2CNG_TERRAIN_MERGE_ENGINE).
+        "merge_engine": merge_engine,
+        "merge_engine_fallback_reason": merge_fallback,
         "resolution": asdict(decision),
         "sources": source_inventory,
         "output": merged_tif.name,
@@ -939,12 +948,100 @@ def _get_raster_info(tif_files: list[Path]) -> dict:
     return {}
 
 
+_TERRIO_MERGE_KWARGS = (
+    "dst", "t_srs", "te", "tr", "resampling", "overview", "dstnodata", "ot",
+    "compress", "tile_size", "bigtiff",
+)
+
+
+def select_terrain_merge_engine(
+    tif_files: list[Path], engine: Optional[str] = None
+) -> tuple[str, Optional[str]]:
+    """``(engine, fallback_reason)`` for :func:`_merge_tifs`.
+
+    ``RAS2CNG_TERRAIN_MERGE_ENGINE`` = ``auto`` | ``terrio`` | ``rasterio``.
+    ``auto`` is **rasterio** (:data:`ras2cng.warp.TERRAIN_MERGE_AUTO`): the
+    terrio mosaic is bit-identical to GDAL's own whole-output warp, but that is
+    not today's output. The rasterio path warps each 512-px destination block
+    separately, and on Bald Eagle (dtm_20ft + baldeagledem at 40 ft) 18.5 M of
+    49.7 M pixels differ from the whole-output warp, by up to 4.44 ft (274 over
+    1 ft), with equal masks. So terrio is opt-in until the user decides the
+    default. ``terrio`` falls back to rasterio, with the reason returned and
+    recorded in the terrain provenance, when the installed terrio has no
+    streaming warp or the sources do not share one CRS.
+    """
+    from ras2cng import raster_tiles, warp
+
+    choice = warp.resolve_terrain_merge_engine(engine)
+    if choice != warp.TERRIO:
+        return warp.RASTERIO, None
+    if not warp.terrio_warp_supported():
+        return warp.RASTERIO, (
+            "the installed terrio has no streaming path-to-path warp (CLB terrio build)"
+        )
+    import terrio
+
+    if not raster_tiles._signature_has(terrio.warp, *_TERRIO_MERGE_KWARGS):
+        return warp.RASTERIO, "the installed terrio warp lacks the mosaic options"
+    import rasterio
+
+    crs = None
+    for path in tif_files:
+        if not Path(path).is_file():
+            continue
+        with rasterio.open(path) as dataset:
+            if dataset.crs is None:
+                return warp.RASTERIO, f"{Path(path).name} has no CRS"
+            if crs is None:
+                crs = dataset.crs
+            elif not (dataset.crs == crs or _crs_equivalent(dataset.crs, crs)):
+                return warp.RASTERIO, "the terrain sources do not share one CRS"
+    return warp.TERRIO, None
+
+
+def _merge_tifs_terrio(
+    valid_tifs: list[Path],
+    output_tif: Path,
+    *,
+    ref_crs,
+    bounds: tuple[float, float, float, float],
+    resolution: float,
+    block_size: int,
+) -> None:
+    """One whole-output terrio warp of every source (the gdalwarp painter order)."""
+    import terrio
+
+    from ras2cng import warp
+
+    result = terrio.warp(
+        # Painter order: later sources are drawn over earlier ones, so the
+        # first (highest-priority) source goes last.
+        [str(path) for path in reversed(valid_tifs)],
+        dst=str(output_tif),
+        t_srs=ref_crs.to_wkt(),
+        te=bounds,
+        tr=(resolution, resolution),
+        resampling="bilinear",
+        # Never read source overviews: at a coarser target the terrio default
+        # (gdalwarp -ovr AUTO) reads them, worth up to 151 ft on Bald Eagle.
+        overview="NONE",
+        dstnodata=float("nan"),
+        ot="float32",
+        compress="DEFLATE",
+        tile_size=block_size,
+        bigtiff=True,
+        **warp.memory_kwargs(),
+    )
+    del result
+
+
 def _merge_tifs(
     tif_files: list[Path],
     output_tif: Path,
     *,
     target_resolution: Optional[float] = None,
     block_size: int = 512,
+    engine: Optional[str] = None,
 ) -> Path:
     """Merge terrain in bounded windows with first-valid-value priority.
 
@@ -952,6 +1049,10 @@ def _merge_tifs(
     in memory before downsampling. This implementation creates the target grid
     first, then reprojects one destination block at a time. Peak memory is
     therefore controlled by ``block_size`` rather than total terrain extent.
+
+    ``engine="terrio"`` (see :func:`select_terrain_merge_engine`; ``None`` and
+    ``"rasterio"`` keep the path above) writes the same grid with one terrio
+    warp of all sources instead. It is strict: a terrio failure raises.
     """
 
     import numpy as np
@@ -991,6 +1092,25 @@ def _merge_tifs(
         transform = Affine(resolution, 0.0, left, 0.0, -resolution, top)
 
         output_tif.parent.mkdir(parents=True, exist_ok=True)
+        if engine == "terrio":
+            valid_tifs = [Path(dataset.name) for dataset in datasets]
+            for dataset in datasets:
+                dataset.close()
+            datasets = []
+            _merge_tifs_terrio(
+                valid_tifs, output_tif, ref_crs=ref_crs,
+                bounds=(left, bottom, right, top), resolution=resolution,
+                block_size=block_size,
+            )
+            from ras2cng.cog import overview_factors as _overview_factors
+
+            with rasterio.open(output_tif, "r+") as destination:
+                destination.update_tags(ras2cng_terrain_merge_engine="terrio")
+                factors = _overview_factors(destination.width, destination.height)
+                if factors:
+                    destination.build_overviews(factors, Resampling.average)
+                    destination.update_tags(ns="rio_overview", resampling="average")
+            return output_tif
         profile = datasets[0].profile.copy()
         profile.update(
             driver="GTiff",
@@ -1130,44 +1250,15 @@ def _crs_equivalent(crs1, crs2) -> bool:
 def _reproject_to_match(src_dataset, target_crs, work_dir: Path) -> Path:
     """Reproject an open rasterio dataset to a target CRS.
 
-    Returns path to a temporary reprojected TIFF in work_dir.
+    Returns path to a temporary reprojected TIFF in work_dir. The work is
+    :func:`ras2cng.warp.reproject_path` on the dataset's file (terrio when the
+    installed build has the streaming warp, else rasterio).
     """
-    import rasterio
-    from rasterio.crs import CRS
-    from rasterio.warp import calculate_default_transform, reproject, Resampling
+    from ras2cng.warp import reproject_path
 
     work_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = work_dir / f"_reproj_{src_dataset.name.split('/')[-1].split(chr(92))[-1]}"
-
-    dst_crs = CRS(target_crs.to_wkt()) if not isinstance(target_crs, CRS) else target_crs
-
-    transform, width, height = calculate_default_transform(
-        src_dataset.crs, dst_crs,
-        src_dataset.width, src_dataset.height,
-        *src_dataset.bounds,
-    )
-
-    out_meta = src_dataset.meta.copy()
-    out_meta.update({
-        "driver": "GTiff",
-        "crs": dst_crs,
-        "transform": transform,
-        "width": width,
-        "height": height,
-    })
-
-    with rasterio.open(tmp_path, "w", **out_meta) as dst:
-        for i in range(1, src_dataset.count + 1):
-            reproject(
-                source=rasterio.band(src_dataset, i),
-                destination=rasterio.band(dst, i),
-                src_transform=src_dataset.transform,
-                src_crs=src_dataset.crs,
-                dst_transform=transform,
-                dst_crs=dst_crs,
-                resampling=Resampling.bilinear,
-            )
-
+    reproject_path(Path(src_dataset.name), tmp_path, target_crs)
     return tmp_path
 
 

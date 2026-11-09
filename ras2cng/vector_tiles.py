@@ -75,6 +75,38 @@ carrying its properties. ``RAS2CNG_KEEP_SHORT_LINES=0`` or
 ``--no-keep-short-lines`` turns it off. Sparse layers with heavy properties stay
 off: Davis ``geometry.pmtiles`` was +18.4% with its conduits on.
 
+``ArrowLayer.line_simplify`` (tile pixels) is passed per layer when the
+installed ``FreestileLayer`` accepts it (gpt-cmdr/freestiler #11, after
+0.3.0.3): per-zoom Douglas-Peucker on that layer's lines, in place of the
+tiler's default pre-simplification, which keeps 1.2-1.6 times tippecanoe's
+vertices on dense breaklines. Endpoints are kept, a line that would collapse
+keeps its vertices, and ``keep_short_lines`` still applies. :class:`ArrowLayer`
+refuses it on mesh cells and faces.
+
+``deduplicate`` and ``sort_values`` (:func:`compact_enabled`,
+``RAS2CNG_VECTOR_TILE_COMPACT``, default on) are passed when the installed
+build accepts them (the same fork build). Both are lossless.
+
+``deduplicate`` goes on every freestiler tileset. It stores identical tile
+payloads once, as ``pmtiles convert`` does for tippecanoe's output; every tile
+is still addressed and decompresses to the same bytes. It is the whole of the
+old gap to tippecanoe on Bald Eagle ``geometry.pmtiles`` (1,300,546 to 968,717
+bytes) and changes nothing on mesh tilesets, which have no duplicate tiles.
+
+``sort_values`` writes each MVT layer's keys and values before its features,
+values sorted by their encoded bytes; a tile decodes to the same content. It
+goes **only on tilesets without mesh layers** (:func:`sort_values_for`;
+``RAS2CNG_VECTOR_TILE_SORT_VALUES`` = ``auto`` | ``1`` | ``0``). On sparse
+layers it helps (``geometry.pmtiles`` -0.2 to -4.3%, ``results.pmtiles`` -0.2
+to -3.4%). On mesh layers nearly every value is unique and the unsorted table
+follows feature order, which gzip exploits: sorted, ``geometry-detail.pmtiles``
+measured +6.4% on Bald Eagle p07, +3.3% on Davis and +3.1% on UPGU3, and
+``results-detail.pmtiles`` +4.6%, -1.8% and -0.1%
+(``feature_dev_notes/rust_engines/T32.md``). **``sort_values`` changes the
+archive bytes**, so a byte comparison with an archive written without it must
+turn it off (``RAS2CNG_VECTOR_TILE_COMPACT=0``,
+``RAS2CNG_VECTOR_TILE_SORT_VALUES=0`` or ``vector_tile_options(compact=False)``).
+
 The clip buffer is passed explicitly as ``buffer=5`` (:data:`TILE_BUFFER`) when
 the installed freestiler accepts it: 5 pixels of a 256-pixel tile, tippecanoe's
 default. freestiler's own default (12.8 px) repeats 10-12% more mesh features
@@ -131,6 +163,12 @@ TILE_BUFFER = 5
 KEEP_SHORT_LINES_ENV = "RAS2CNG_KEEP_SHORT_LINES"
 # The layer kinds whose collapsed lines are kept. Widening it is this one line.
 KEEP_SHORT_LINES_KINDS = frozenset({"mesh_faces", "breaklines"})
+# Lossless archive compaction (freestiler deduplicate + sort_values): on by
+# default; "0" turns both off, e.g. for a byte comparison with older archives.
+COMPACT_ENV = "RAS2CNG_VECTOR_TILE_COMPACT"
+# sort_values alone: "auto" (default) sorts only tilesets known to hold no
+# mesh layer, "1" every tileset, "0" none. See sort_values_for().
+SORT_VALUES_ENV = "RAS2CNG_VECTOR_TILE_SORT_VALUES"
 INPUT_ENV = "RAS2CNG_FREESTILER_INPUT"
 ARROW = "arrow"
 GEOJSON = "geojson"
@@ -149,10 +187,12 @@ def vector_tile_options(
     feature_ids: Optional[bool] = None,
     gzip_level: Optional[int] = None,
     keep_short_lines: Optional[bool] = None,
+    compact: Optional[bool] = None,
 ) -> Iterator[None]:
     """Override the freestiler tile options for the enclosed calls.
 
     ``None`` leaves a setting to its environment variable or default.
+    ``compact`` is ``deduplicate`` and ``sort_values`` together.
     """
 
     current = dict(_OPTIONS.get())
@@ -162,6 +202,8 @@ def vector_tile_options(
         current["gzip_level"] = _checked_gzip_level(gzip_level, "gzip_level")
     if keep_short_lines is not None:
         current["keep_short_lines"] = bool(keep_short_lines)
+    if compact is not None:
+        current["compact"] = bool(compact)
     token = _OPTIONS.set(current)
     try:
         yield
@@ -197,6 +239,55 @@ def keep_short_lines_enabled() -> bool:
     if raw in _FALSE:
         return False
     raise ValueError(f"{KEEP_SHORT_LINES_ENV} must be 1 or 0 (true/false); got {raw!r}")
+
+
+def compact_enabled() -> bool:
+    """Whether freestiler archives are deduplicated and value-sorted (default True)."""
+
+    override = _OPTIONS.get().get("compact")
+    if override is not None:
+        return override
+    raw = os.environ.get(COMPACT_ENV, "").strip().lower()
+    if not raw or raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    raise ValueError(f"{COMPACT_ENV} must be 1 or 0 (true/false); got {raw!r}")
+
+
+def sort_values_setting() -> Optional[bool]:
+    """``True``/``False`` for every tileset, or ``None`` for the per-tileset rule."""
+
+    raw = os.environ.get(SORT_VALUES_ENV, "").strip().lower()
+    if not raw or raw == "auto":
+        return None
+    if raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    raise ValueError(f"{SORT_VALUES_ENV} must be auto, 1 or 0; got {raw!r}")
+
+
+def sort_values_for(layers: Mapping[str, "LayerSource"]) -> bool:
+    """Whether ``sort_values`` helps this tileset.
+
+    It moves each layer's value table ahead of its features, sorted by encoded
+    bytes. That compresses better where values repeat (sparse engineering
+    layers: -0.2 to -1.6% on ``geometry.pmtiles``). On a mesh layer nearly
+    every value is unique and the unsorted table follows feature order, which
+    gzip exploits; sorting it measured larger (see the module notes). So the
+    default sorts only a tileset in which every layer is an Arrow layer of a
+    known kind other than mesh cells or faces. ``RAS2CNG_VECTOR_TILE_SORT_VALUES``
+    forces it on or off.
+    """
+
+    forced = sort_values_setting()
+    if forced is not None:
+        return forced
+    return bool(layers) and all(
+        isinstance(source, ArrowLayer) and source.kind and source.kind not in NEVER_SIMPLIFY
+        for source in layers.values()
+    )
 
 
 def _checked_gzip_level(value, source: str) -> int:
@@ -296,6 +387,39 @@ def keep_short_lines_available() -> bool:
     return freestiler_available() and freestiler_capabilities()["keep_short_lines"]
 
 
+def line_simplify_available() -> bool:
+    """Whether the installed freestiler accepts per-layer ``line_simplify``."""
+
+    return freestiler_available() and freestiler_capabilities()["line_simplify"]
+
+
+def compaction_summary() -> dict[str, Any]:
+    """What ``deduplicate`` / ``sort_values`` do for a freestiler tileset here.
+
+    ``{"deduplicate": bool, "sortValues": bool}``, with a ``reason`` when
+    neither applies. For the viewer manifest's ``vectorArchive`` record; the
+    viewer's tilesets go through ``freestile_layers``.
+    """
+
+    if not compact_enabled():
+        return {"deduplicate": False, "sortValues": False, "reason": "turned off"}
+    if not freestiler_available():
+        return {"deduplicate": False, "sortValues": False, "reason": "freestiler is not installed"}
+    capabilities = freestiler_capabilities()
+    forced = sort_values_setting()
+    summary: dict[str, Any] = {
+        "deduplicate": bool(capabilities["layers_deduplicate"]),
+        "sortValues": bool(capabilities["layers_sort_values"]) and forced is not False,
+    }
+    if summary["sortValues"]:
+        summary["sortValuesScope"] = (
+            "every tileset" if forced else "tilesets without mesh_cells or mesh_faces layers"
+        )
+    if not (summary["deduplicate"] or summary["sortValues"]):
+        summary["reason"] = "the installed freestiler has no deduplicate / sort_values"
+    return summary
+
+
 def keeps_short_lines(kind: Optional[str]) -> bool:
     """Whether a layer of this kind asks the tiler to keep its collapsed lines."""
 
@@ -386,7 +510,9 @@ class ArrowLayer:
     pyproj accepts); ``EPSG:4326`` means it is already reprojected.
     ``polygon_simplify`` is the tiler's per-zoom tolerance in tile pixels and
     ``kind`` the layer it was chosen for; mesh cells and faces refuse it, because
-    their shared edges would stop being coincident.
+    their shared edges would stop being coincident. ``line_simplify`` is the
+    per-zoom line tolerance, refused on the same kinds: a face's vertices are
+    the cells' vertices.
     """
 
     load: Callable[[], pa.Table]
@@ -394,10 +520,13 @@ class ArrowLayer:
     geometry_column: str = "geometry"
     polygon_simplify: Optional[float] = None
     kind: Optional[str] = None
+    line_simplify: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.polygon_simplify is not None and (not self.kind or self.kind in NEVER_SIMPLIFY):
             raise ValueError(f"polygon_simplify cannot be set on layer kind {self.kind!r}")
+        if self.line_simplify is not None and (not self.kind or self.kind in NEVER_SIMPLIFY):
+            raise ValueError(f"line_simplify cannot be set on layer kind {self.kind!r}")
 
 
 def crs_text(crs: Any) -> str:
@@ -629,6 +758,7 @@ def write_arrow_spill(
     *,
     polygon_simplify: Optional[float] = None,
     kind: Optional[str] = None,
+    line_simplify: Optional[float] = None,
 ) -> ArrowLayer:
     """Spill a WGS84 delivery table to an Arrow IPC file; load it back lazily."""
 
@@ -640,7 +770,10 @@ def write_arrow_spill(
         with pa.OSFile(str(path), "rb") as source:
             return pa.ipc.open_file(source).read_all()
 
-    return ArrowLayer(load=load, crs=WGS84, polygon_simplify=polygon_simplify, kind=kind)
+    return ArrowLayer(
+        load=load, crs=WGS84, polygon_simplify=polygon_simplify, kind=kind,
+        line_simplify=line_simplify,
+    )
 
 
 def release_arrow_memory() -> None:
@@ -671,7 +804,11 @@ def freestiler_capabilities(module=None) -> dict[str, bool]:
     (``_LayeredTiler.add_arrow_layer`` and ``FreestileLayer.crs``);
     ``polygon_simplify``: ``FreestileLayer(polygon_simplify=...)``, the per-zoom
     polygon path; ``keep_short_lines``: ``FreestileLayer(keep_short_lines=...)``,
-    lines that collapse to one tile pixel are written instead of dropped.
+    lines that collapse to one tile pixel are written instead of dropped;
+    ``line_simplify``: ``FreestileLayer(line_simplify=...)``, per-zoom
+    Douglas-Peucker on lines; ``deduplicate`` / ``layers_deduplicate`` and
+    ``sort_values`` / ``layers_sort_values``: the lossless archive options on
+    ``freestile`` / ``freestile_layers`` (gpt-cmdr/freestiler #11).
     """
 
     if module is None:
@@ -689,7 +826,34 @@ def freestiler_capabilities(module=None) -> dict[str, bool]:
         "arrow": layered_ok and hasattr(tiler, "add_arrow_layer") and "crs" in layer_fields,
         "polygon_simplify": _accepts(getattr(module, "FreestileLayer", None), "polygon_simplify"),
         "keep_short_lines": _accepts(getattr(module, "FreestileLayer", None), "keep_short_lines"),
+        "line_simplify": _accepts(getattr(module, "FreestileLayer", None), "line_simplify"),
+        "deduplicate": _accepts(module.freestile, "deduplicate"),
+        "layers_deduplicate": layered_ok and _accepts(layered, "deduplicate"),
+        "sort_values": _accepts(module.freestile, "sort_values"),
+        "layers_sort_values": layered_ok and _accepts(layered, "sort_values"),
     }
+
+
+def _apply_compaction(
+    capabilities: dict, kwargs: dict, applied: dict, *, layered: bool,
+    layers: Mapping[str, "LayerSource"],
+) -> None:
+    """Add ``deduplicate`` / ``sort_values`` when enabled and accepted.
+
+    ``deduplicate`` goes on every tileset; ``sort_values`` only where
+    :func:`sort_values_for` says it helps.
+    """
+
+    if not compact_enabled():
+        return
+    prefix = "layers_" if layered else ""
+    if capabilities[prefix + "deduplicate"]:
+        kwargs["deduplicate"] = applied["deduplicate"] = True
+    if capabilities[prefix + "sort_values"]:
+        sort = sort_values_for(layers)
+        applied["sort_values"] = sort
+        if sort:
+            kwargs["sort_values"] = True
 
 
 _WARNED: set[str] = set()
@@ -736,6 +900,7 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
     capabilities = freestiler_capabilities(freestiler)
     polygon_simplify = capabilities["polygon_simplify"]
     keep_short_lines = capabilities["keep_short_lines"]
+    line_simplify = capabilities["line_simplify"]
     while True:
         attempt: dict[str, Any] = {"crs": None, "layer": None}
         python_reprojected: list[str] = []
@@ -755,6 +920,11 @@ def _run_freestiler_arrow(freestiler, output: Path, layers: Mapping[str, LayerSo
                         options["polygon_simplify"] = source.polygon_simplify
                     if keep_short_lines and keeps_short_lines(source.kind):
                         options["keep_short_lines"] = True
+                    if (
+                        line_simplify and source.line_simplify is not None
+                        and source.kind not in NEVER_SIMPLIFY
+                    ):
+                        options["line_simplify"] = source.line_simplify
                     yield name, freestiler.FreestileLayer(
                         input=table, crs=crs, geometry_column=source.geometry_column, **options
                     )
@@ -801,7 +971,8 @@ def run_freestiler(
     Every feature is kept at every zoom (no ``drop_rate``); the output is
     staged beside ``output`` and replaced atomically. Returns the options
     actually applied (``generate_ids``, ``gzip_level``, ``layered``, plus
-    ``buffer`` and ``input`` when the installed freestiler has them).
+    ``buffer``, ``input``, ``deduplicate`` and ``sort_values`` when the
+    installed freestiler has them).
     """
 
     require_freestiler()
@@ -832,6 +1003,7 @@ def run_freestiler(
             kwargs["gzip_level"] = applied["gzip_level"] = level
         if capabilities["layers_buffer"]:
             kwargs["buffer"] = applied["buffer"] = TILE_BUFFER
+        _apply_compaction(capabilities, kwargs, applied, layered=True, layers=layers)
         _run_freestiler_arrow(freestiler, output, layers, kwargs, applied)
         return applied
 
@@ -848,6 +1020,7 @@ def run_freestiler(
             )
         if capabilities["layers_buffer"]:
             kwargs["buffer"] = applied["buffer"] = TILE_BUFFER
+        _apply_compaction(capabilities, kwargs, applied, layered=True, layers=layers)
 
         def prepared():
             for name, source in layers.items():
@@ -873,6 +1046,7 @@ def run_freestiler(
         kwargs["gzip_level"] = applied["gzip_level"] = level
     if capabilities["buffer"]:
         kwargs["buffer"] = applied["buffer"] = TILE_BUFFER
+    _apply_compaction(capabilities, kwargs, applied, layered=False, layers=layers)
     with atomic_output(output, suffix=".pmtiles") as staged:
         freestiler.freestile(frames, str(staged), **kwargs)
     return applied

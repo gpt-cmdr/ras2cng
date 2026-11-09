@@ -110,7 +110,7 @@ are **byte-identical** to the in-memory path (pinned by
 so `RAS2CNG_TERRIO_MAX_PIXELS` only applies to older terrio releases.
 `RAS2CNG_TERRIO_MAX_MEMORY_MIB` bounds the dem and warp strips. When it is
 unset, terrio uses its defaults of 256 and 64 MiB. A smaller warp chunk can
-change a few pixels by 1 DN, as `gdalwarp -wm` does.
+change a few pixels, including edge pixels switching between visible and transparent, as `gdalwarp -wm` does.
 
 Bald Eagle Terrain50 (15,777 × 12,599, z14, hillshaded), peak working set in a
 fresh process:

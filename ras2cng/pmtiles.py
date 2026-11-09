@@ -283,6 +283,9 @@ def generate_vector_pmtiles(
                 # Adjacent RAS mesh cells share edges; simplified independently
                 # those edges diverge and open slivers between cells at low zoom.
                 "--no-simplification-of-shared-nodes",
+                # The default drop rate (2.5) thins point layers below the
+                # maximum zoom; vector tiles never drop features.
+                "--drop-rate=1",
             ]
 
             if min_zoom is not None:
