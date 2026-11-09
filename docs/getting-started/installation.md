@@ -50,24 +50,29 @@ pip install "ras2cng[freestiler]"
 ```
 
 The fastest vector path (Arrow input with no GeoJSON step, and per-zoom polygon
-simplification) and complete short lines at low zoom need the gpt-cmdr fork build of freestiler, published as GitHub Release assets rather than on PyPI:
+simplification), complete short lines at low zoom, and the sparse-tileset options
+(`deduplicate`, `sort_values`, per-zoom line simplification) need the gpt-cmdr fork build of freestiler, published as GitHub Release assets rather than on PyPI:
 
 ```bash
-pip install freestiler==0.3.0.3 \
-  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr
+pip install freestiler==0.3.0.4 \
+  --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.4-gpt-cmdr
 ```
 
 Likewise the direct HDF archive path, the native GeoParquet writer, the COG
 report and the Rust polygon filter need the CLB build of terrio (terrio-clb), also published as
-GitHub Release assets rather than on PyPI:
+GitHub Release assets rather than on PyPI. 0.5.0.4 is built against
+ras-commander-fast-hdf 0.5.0, so older plan files whose 2D summaries store no
+`Location` also take the direct archive path:
 
 ```bash
-pip install terrio==0.5.0.3 \
-  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3
+pip install terrio==0.5.0.4 \
+  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.4
 ```
 
 Both are optional and detected at run time; with the PyPI builds ras2cng keeps
-its Python paths.
+its Python paths. In a uv project, install them after `uv sync` and run with
+`uv run --no-sync`: a later `uv sync`, even with `--inexact`, reinstalls the
+locked PyPI builds.
 
 Otherwise, vector tiles use two external CLI tools (not available via pip):
 
@@ -87,6 +92,6 @@ For raster PMTiles, `gdal_translate` (part of GDAL) is also required.
 ## Requirements
 
 - Python >= 3.10
-- [ras-commander](https://github.com/gpt-cmdr/ras-commander) 0.116.0 or newer (with its `full` extra: ras-commander-fast-hdf 0.3.0 and ras-commander-fast-map 0.15.0) — installed automatically as a dependency
+- [ras-commander](https://github.com/gpt-cmdr/ras-commander) 0.117.0 or newer (with its `full` extra: ras-commander-fast-hdf 0.5.0 and ras-commander-fast-map 0.16.0) — installed automatically as a dependency
 - Core: pandas, geopandas, pyarrow, typer, rich
 - Optional: duckdb, sqlalchemy, geoalchemy2, psycopg2-binary, rasterio
