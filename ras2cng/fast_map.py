@@ -55,26 +55,49 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   mapped by default in plain sloping and in horizontal (clipped with the
   horizontal depth, as RAS Mapper does): 0 value and 0 mask differences on
   bridges p05 Max in both (973,902 / 973,532 px). The earlier ~2,000 px mask
-  difference was a reference artifact. slopingPretty velocity is opt-in
-  (``fast_map_velocity=True``): values are identical on every common pixel,
-  but the mask follows fast-map's slopingPretty depth, which differs from
-  RAS Mapper's on bridges Max (75 + 28 px). On older engines velocity is
-  opt-in and plain sloping only.
+  difference was a reference artifact. **slopingPretty** velocity is a
+  default too when the engine advertises ``velocity_with_faces``
+  (:data:`WITH_FACES_METHOD`, fast-map #30) and ras-commander passes the
+  options through (#819): the project's ``.rasmap`` flags (shallow reduction,
+  depth-weighted faces) are passed unchanged, because RAS Mapper clips
+  velocity with the depth rendered with the same options. 0 mask and 0 bit
+  differences on bridges p05 and Davis p02 in all four option combinations.
+  The earlier bridges slopingPretty difference (75 + 28 px) compared a plain
+  run with a reference made with shallow reduction on. Without that record
+  slopingPretty velocity stays opt-in (``fast_map_velocity=True``) and plain
+  only. On older engines velocity is opt-in and plain sloping only.
 * **D x V, D x V², Froude, Max** (fast-map #20 ``reduce_max/1``,
   ``RasFim.map_derived_max``). RAS Mapper's Max of these is the per-time
   product's pixelwise maximum over every output time, not Max d x Max v; the
   engine reduces all times in one pass. 0 differences on bridges p05 over 433
   times (sloping and horizontal); Davis within 2 ulp on <= 5 px. Plain
-  sloping and horizontal by default (``fast_map_derived``); slopingPretty and
-  shear stress stay on RAS Mapper.
+  sloping and horizontal by default (``fast_map_derived``), and slopingPretty
+  under the same ``velocity_with_faces`` record as velocity (0 / 0 on bridges
+  p05 and Davis p02, four option combinations); otherwise slopingPretty stays
+  on RAS Mapper.
+* **Shear stress, Max** (fast-map #31 ``rasmapper-face-shear-max/1``,
+  ras-commander #820 ``RasFim.supports_shear_stress``; :func:`shear_plan`,
+  :func:`map_shear`). Its own engine call, like velocity, in plain sloping
+  and horizontal (clipped by the horizontal depth): 0 mask and 0 bit
+  differences against RAS Mapper 7.0.1 on bridges p05 (973,902 / 973,532 px)
+  and Davis p02 (22,041 / 20,560 px). slopingPretty and storage-area plans
+  stay on RAS Mapper, as does every engine without the method.
 * **Inundation boundary, Max profile** (``RasFim.map_inundation_boundaries``,
   ras-commander #755, superseding #709; fast-map #5). Not with storage areas. RAS Mapper's boundary export is
   very slow; on Davis the Rust batch took 3.5 s against 85 s for two native
-  calls. It is a different, deterministic method
+  calls. The default is a different, deterministic method
   (``deterministic-zero-depth-contours/1``), not vector parity: polygons
   differ slightly from RAS Mapper's, whose own polygons vary between
   identical exports. Horizontal and plain sloping only, and it needs the
   original **single-source, unmodified** terrain TIFF plus its terrain HDF.
+  ``fast_map_boundary_method="native-serial"`` (opt-in, fast-map 0.15 /
+  ras-commander 0.116; :data:`NATIVE_BOUNDARY_METHOD`) selects the engine's
+  native-serial contract instead: plain sloping, original terrain sources
+  (more than one is accepted), and storage areas when they are opted in. The
+  engine and ras-commander still label it unqualified; ras-commander's
+  mapping guide reports exact geometry and unrounded coordinates against RAS
+  Mapper's **serial** boundary export on named fixtures only (Windows x64).
+  See :func:`map_boundary`.
   ``fast_map_boundary=False`` keeps boundaries on RAS Mapper. When the engine
   cannot name the terrain's EPSG code and reads its WKT differently from
   rasterio (Davis), it refuses unless the caller pins the engine's WKT hash:
@@ -163,6 +186,16 @@ FAST_MAP_DERIVED_LABELS = {
 }
 FAST_MAP_DERIVED_RENDER_MODES = ("horizontal", "sloping")
 DERIVED_MAX_METHOD = "reduce_max/1"
+# slopingPretty velocity and derived Max (fast-map #30, ras-commander #819):
+# the engine's sloping record names this method in ``velocity_with_faces`` and
+# lists the slopingPretty options it is qualified with in
+# ``velocity_with_faces_options``. See with_faces_options().
+WITH_FACES_METHOD = "rasmapper-with-faces-velocity-derived/1"
+SLOPING_PRETTY_OPTIONS = ("reduce_shallow_to_horizontal", "use_depth_weighted_faces")
+# Max shear stress (fast-map #31, ras-commander #820): see shear_plan().
+FAST_MAP_SHEAR = "shear_stress"
+SHEAR_STRESS_METHOD = "rasmapper-face-shear-max/1"
+FAST_MAP_SHEAR_RENDER_MODES = ("horizontal", "sloping")
 # Output times rendered concurrently in the Max derived pass. On bridges p05
 # (433 times, 7 threads) 1 took 213 s / 1,448 MiB and 3 took 147 s / 2,592 MiB
 # (RAS Mapper: 206 s / 2,316 MiB), with identical output. The engine still
@@ -181,6 +214,10 @@ TERRAIN_SOURCE = "source"
 TERRAIN_SOURCE_CANONICAL = "source-canonical"
 TERRAIN_EFFECTIVE = "effective"
 TERRAIN_EXPORT = "export"
+# The export's CRS-canonical copy (same pixels, EPSG GeoTIFF keys), tried only
+# after the engine refuses the export's CRS identity (Davis, where the source
+# terrain is refused outside plain sloping).
+TERRAIN_EXPORT_CANONICAL = "export-canonical"
 FAST_MAP_RENDER_MODES = ("horizontal", "sloping", "slopingPretty")
 # Deterministic contours support horizontal and plain cell-corner sloping only.
 FAST_MAP_BOUNDARY_RENDER_MODES = ("horizontal", "sloping")
@@ -188,6 +225,18 @@ FAST_MAP_MANIFEST = "fast_map_manifest.json"
 FAST_MAP_VELOCITY_MANIFEST = "fast_map_velocity_manifest.json"
 FAST_MAP_DERIVED_MANIFEST = "fast_map_derived_manifest.json"
 FAST_MAP_BOUNDARY_MANIFEST = "fast_map_boundary_manifest.json"
+FAST_MAP_SHEAR_MANIFEST = "fast_map_shear_manifest.json"
+# Boundary methods. ``deterministic`` is the default contour method;
+# ``native-serial`` is the engine's opt-in native-serial contract (fast-map
+# 0.15, ras-commander 0.116), which the engine itself labels unqualified.
+BOUNDARY_DETERMINISTIC = "deterministic"
+BOUNDARY_NATIVE_SERIAL = "native-serial"
+BOUNDARY_METHODS = (BOUNDARY_DETERMINISTIC, BOUNDARY_NATIVE_SERIAL)
+BOUNDARY_METHOD_ENV = "RAS2CNG_FAST_MAP_BOUNDARY_METHOD"
+DETERMINISTIC_BOUNDARY_METHOD = "deterministic-zero-depth-contours/1"
+NATIVE_BOUNDARY_METHOD = "rasmapper-serial-zero-depth-contours/1"
+# The native-serial checks in ras-commander's mapping guide use plain sloping.
+FAST_MAP_NATIVE_BOUNDARY_RENDER_MODES = ("sloping",)
 
 _COMPLETE_STATUSES = {"complete", "no_flooded_pixels"}
 
@@ -505,6 +554,103 @@ def velocity_render_modes() -> tuple[str, ...]:
 def velocity_default_on() -> bool:
     """Velocity is mapped unasked only on engines with the #20 velocity rules."""
     return "horizontal" in velocity_render_modes()
+
+
+def with_faces_options() -> Optional[tuple[str, ...]]:
+    """slopingPretty options velocity and derived Max are qualified with.
+
+    ``None`` unless the engine's sloping record advertises
+    ``velocity_with_faces`` = :data:`WITH_FACES_METHOD` (fast-map #30) **and**
+    the installed ras-commander passes the options through
+    (``RasFim.map_derived_max`` takes them, ras-commander #819). Then the
+    names in ``velocity_with_faces_options``; ``()`` would mean plain
+    slopingPretty only.
+    """
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return None
+    if not _has_kwargs(
+        getattr(RasFim, "map_derived_max", None), *SLOPING_PRETTY_OPTIONS
+    ):
+        return None
+    record = engine_method("sloping")
+    if record.get("velocity_with_faces") != WITH_FACES_METHOD:
+        return None
+    return tuple(str(name) for name in record.get("velocity_with_faces_options") or ())
+
+
+def _pretty_options(render: dict[str, Any]) -> tuple[str, ...]:
+    """The slopingPretty options the project's ``.rasmap`` turns on."""
+    if render.get("mode") != "slopingPretty":
+        return ()
+    return tuple(name for name in SLOPING_PRETTY_OPTIONS if render.get(name))
+
+
+def sloping_pretty_products_reason(render: dict[str, Any]) -> Optional[str]:
+    """``None`` when slopingPretty velocity / derived Max are qualified here.
+
+    Otherwise why not: the engine has no :data:`WITH_FACES_METHOD` record (or
+    ras-commander cannot pass the options), or the project uses an option the
+    record does not list.
+    """
+    qualified = with_faces_options()
+    if qualified is None:
+        return (
+            f"the installed fast-map / ras-commander do not advertise {WITH_FACES_METHOD}"
+        )
+    missing = [name for name in _pretty_options(render) if name not in qualified]
+    if missing:
+        return f"the engine does not qualify slopingPretty with {', '.join(missing)}"
+    return None
+
+
+def shear_supported() -> bool:
+    """True when RasFim + engine map RAS Mapper's Max shear stress (fast-map #31)."""
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    check = getattr(RasFim, "supports_shear_stress", None)
+    if not callable(check) or not _has_kwargs(
+        RasFim.map_sloping_profiles, "shear_stress", "shear_depth"
+    ):
+        return False
+    try:
+        return check() is True
+    except Exception:
+        return False
+
+
+def resolve_boundary_method(value: Optional[str] = None) -> str:
+    """``deterministic`` or ``native-serial``; ``None`` reads the env var."""
+    raw = value if value is not None else os.environ.get(BOUNDARY_METHOD_ENV, "")
+    text = str(raw).strip().lower().replace("_", "-") or BOUNDARY_DETERMINISTIC
+    if text not in BOUNDARY_METHODS:
+        raise ValueError(
+            f"fast-map boundary method must be one of {', '.join(BOUNDARY_METHODS)}; "
+            f"got {raw!r}"
+        )
+    return text
+
+
+def native_boundary_supported() -> bool:
+    """True when RasFim + engine have the native-serial boundary contract.
+
+    Needs ``method`` and ``allow_unqualified`` on
+    ``RasFim.map_inundation_boundaries`` (ras-commander 0.116) and an engine
+    whose ``native_boundary`` record is :data:`NATIVE_BOUNDARY_METHOD`
+    (fast-map 0.15).
+    """
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return False
+    if not _has_kwargs(
+        getattr(RasFim, "map_inundation_boundaries", None), "method", "allow_unqualified"
+    ):
+        return False
+    return engine_method("native_boundary").get("method_id") == NATIVE_BOUNDARY_METHOD
 
 
 def derived_max_supported() -> bool:
@@ -858,9 +1004,11 @@ class TerrainResolver:
         copy (the engine refuses some original CRS definitions, e.g. Davis).
         The copy is only tried after a CRS refusal (``last_refusal``). Then
         the native effective terrain when the engine builds it and the
-        terrain has no modifications, and last the RAS Mapper export. Each
-        later candidate is only built when the caller asks for it, i.e. after
-        the previous one was refused.
+        terrain has no modifications, and last the RAS Mapper export, with
+        its own CRS-canonical copy after a CRS refusal (the same pixels with
+        EPSG GeoTIFF keys; ``RasFim.canonicalize_terrain_crs`` verifies every
+        pixel bit). Each later candidate is only built when the caller asks
+        for it, i.e. after the previous one was refused.
         """
         if self.terrain_path is not None:
             yield TERRAIN_SUPPLIED, self.for_plan(plan_hdf), None
@@ -869,7 +1017,7 @@ class TerrainResolver:
             # Policy (user decision 2026-10-30): Rust terrain operations only
             # for unmodified terrains. A modified terrain is built by RAS
             # Mapper's export, whatever the installed engine advertises.
-            yield TERRAIN_EXPORT, self.for_plan(plan_hdf), None
+            yield from self._export_candidates(plan_hdf)
             return
         if use_source and source_terrain_supported():
             source = self._source(plan_hdf)
@@ -886,7 +1034,17 @@ class TerrainResolver:
             effective = self._effective(plan_hdf)
             if effective is not None:
                 yield TERRAIN_EFFECTIVE, effective, None
-        yield TERRAIN_EXPORT, self.for_plan(plan_hdf), None
+        yield from self._export_candidates(plan_hdf)
+
+    def _export_candidates(self, plan_hdf: Path):
+        """The RAS Mapper export, then its CRS-canonical copy after a CRS refusal."""
+        export = self.for_plan(plan_hdf)
+        self.last_refusal = None
+        yield TERRAIN_EXPORT, export, None
+        if "crs" in (self.last_refusal or "").lower():
+            canonical = self._canonical(export)
+            if canonical is not None:
+                yield TERRAIN_EXPORT_CANONICAL, canonical, None
 
     def modifications(self, plan_hdf: Path) -> list[str]:
         """The plan terrain's modifications (cached), ``[]`` when unmodified.
@@ -1004,13 +1162,18 @@ class TerrainResolver:
                 self._sources[key] = None
         return self._sources[key]
 
-    def boundary_terrain(self, plan_hdf: Path) -> tuple[Path, Path]:
-        """Return the original single-source ``(terrain TIFF, terrain HDF)``.
+    def boundary_terrain(
+        self, plan_hdf: Path, method: str = BOUNDARY_DETERMINISTIC
+    ) -> tuple[Path, Path]:
+        """Return the original ``(terrain TIFF, terrain HDF)`` for boundaries.
 
         Boundaries need the registered terrain's own masks, perimeters and
-        stitch TIN, so the flattened raster export cannot be used. A terrain
-        with more than one source TIFF is refused; fast-map also refuses
-        terrain modifications.
+        stitch TIN, so the flattened raster export cannot be used. The
+        deterministic method refuses a terrain with more than one source
+        TIFF. The native-serial method takes every original source and is
+        given the first one in the terrain HDF's priority order
+        (:func:`native_primary_source`); the engine checks that choice and
+        refuses a wrong one. Terrain modifications are refused for both.
         """
         from ras2cng.terrain import _discover_tifs_for_hdf, discover_terrains
 
@@ -1040,12 +1203,61 @@ class TerrainResolver:
                 "Rust boundaries are only used on unmodified terrains"
             )
         tifs = _discover_tifs_for_hdf(Path(hdf))
+        if method == BOUNDARY_NATIVE_SERIAL and len(tifs) > 1:
+            return native_primary_source(Path(hdf)), Path(hdf)
         if len(tifs) != 1:
             raise FastMapUnavailable(
                 f"Rust inundation boundaries need a single-source terrain; "
                 f"{Path(hdf).name} has {len(tifs)} source TIFF(s)"
+                + (
+                    "" if method == BOUNDARY_NATIVE_SERIAL or not tifs else
+                    " (--fast-map-boundary-method native-serial takes every source)"
+                )
             )
         return tifs[0], Path(hdf)
+
+
+def native_primary_source(terrain_hdf: Path) -> Path:
+    """The first original source TIFF of a terrain HDF, by stored priority.
+
+    Sources with a complete set of stored ``Priority`` values are taken in
+    ascending order; otherwise the HDF's own order is kept. The engine
+    verifies the choice against the terrain HDF and refuses a mismatch, so a
+    wrong answer here cannot produce a boundary. Raises
+    :class:`FastMapUnavailable` when the sources cannot be read.
+    """
+    import h5py
+
+    terrain_hdf = Path(terrain_hdf)
+    records: list[tuple[int, str]] = []
+    try:
+        with h5py.File(terrain_hdf, "r") as hdf:
+            group = hdf.get("Terrain")
+            if not isinstance(group, h5py.Group):
+                raise KeyError("no Terrain group")
+            for name in group:
+                source = group[name]
+                if not isinstance(source, h5py.Group):
+                    continue
+                filename = source.attrs.get("File")
+                if filename is None:
+                    continue
+                if isinstance(filename, bytes):
+                    filename = filename.decode("utf-8", errors="replace")
+                priority = source.attrs.get("Priority", -1)
+                records.append((int(priority), Path(str(filename).replace("\\", "/")).name))
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise FastMapUnavailable(
+            f"could not read the terrain sources of {terrain_hdf.name}: {exc}"
+        ) from exc
+    if not records:
+        raise FastMapUnavailable(f"{terrain_hdf.name} names no source TIFFs")
+    if all(priority != -1 for priority, _ in records):
+        records.sort(key=lambda record: record[0])
+    primary = terrain_hdf.parent / records[0][1]
+    if not primary.is_file():
+        raise FastMapUnavailable(f"terrain source TIFF not found: {primary}")
+    return primary
 
 
 def with_terrain(
@@ -1270,9 +1482,11 @@ def velocity_plan(
     Returns ``(velocity_depth, None)`` to map it (``"rendered"`` or
     ``"horizontal"``), or ``(None, reason)`` to leave it to RAS Mapper.
     ``requested``: ``None`` = the default policy (sloping and horizontal on
-    engines with the fast-map #20 velocity rules), ``True`` = also
-    slopingPretty / older engines where supported, ``False`` = never. Checked
-    before any terrain work, so a policy refusal never triggers an export.
+    engines with the fast-map #20 velocity rules, and slopingPretty with the
+    project's options on engines advertising :data:`WITH_FACES_METHOD`),
+    ``True`` = also plain slopingPretty / older engines where supported,
+    ``False`` = never. Checked before any terrain work, so a policy refusal
+    never triggers an export.
     """
     if requested is False:
         return None, "disabled (--no-fast-map-velocity)"
@@ -1282,18 +1496,21 @@ def velocity_plan(
     modes = velocity_render_modes()
     if mode not in modes:
         return None, f"the installed fast-map does not map velocity in {mode!r} mode"
-    if requested is None:
-        if mode not in FAST_MAP_VELOCITY_DEFAULT_MODES:
+    if mode == "slopingPretty":
+        reason = sloping_pretty_products_reason(render)
+        if reason is None:
+            # Qualified with exactly these options: a default.
+            return "rendered", None
+        if _pretty_options(render):
+            return None, f"slopingPretty velocity with the project's options: {reason}"
+        if requested is None:
             return None, (
-                f"{mode} velocity is opt-in (--fast-map-velocity): its mask follows the "
-                "slopingPretty depth, which differs from RAS Mapper's on bridges p05 Max"
+                f"slopingPretty velocity is opt-in on this installation "
+                f"(--fast-map-velocity): {reason}"
             )
-        if not velocity_default_on():
-            return None, "velocity is opt-in on this fast-map (--fast-map-velocity)"
-    if mode == "slopingPretty" and (
-        render.get("reduce_shallow_to_horizontal") or render.get("use_depth_weighted_faces")
-    ):
-        return None, "velocity is qualified for plain slopingPretty only"
+        return "rendered", None
+    if requested is None and not velocity_default_on():
+        return None, "velocity is opt-in on this fast-map (--fast-map-velocity)"
     return ("horizontal" if mode == "horizontal" else "rendered"), None
 
 
@@ -1318,9 +1535,12 @@ def map_velocity(
     RAS Mapper's velocity values do not depend on the render mode; it clips
     them with the active mode's depth. Sloping modes render with that mode;
     horizontal renders plain sloping with ``velocity_depth="horizontal"``
-    (the horizontal cell-constant depth clips it). WSE/Depth from this call
-    are discarded: they come from :func:`map_plan`, so a velocity refusal
-    never costs them. Decide with :func:`velocity_plan` first.
+    (the horizontal cell-constant depth clips it). In slopingPretty the
+    project's shallow-reduction and depth-weighting flags are passed
+    unchanged, because that depth is the mask; :func:`velocity_plan` only
+    returns a plan for options the engine is qualified with. WSE/Depth from
+    this call are discarded: they come from :func:`map_plan`, so a velocity
+    refusal never costs them. Decide with :func:`velocity_plan` first.
     """
     if profile != "Max":
         raise FastMapUnavailable(
@@ -1338,6 +1558,7 @@ def map_velocity(
         raise FastMapUnavailable("velocity is not qualified with storage-area surfaces")
     horizontal = velocity_depth == "horizontal"
     mode = "sloping" if horizontal else render["mode"]
+    pretty = mode == "slopingPretty"
     extra: dict[str, Any] = {}
     if velocity_depth != "rendered" or _has_kwargs(RasFim.map_sloping_profiles, "velocity_depth"):
         extra["velocity_depth"] = velocity_depth
@@ -1350,8 +1571,12 @@ def map_velocity(
                 plan_hdf, terrain_tif, work,
                 profiles={"Max": "Max"},
                 render_mode=mode,
-                reduce_shallow_to_horizontal=False,
-                use_depth_weighted_faces=False,
+                reduce_shallow_to_horizontal=bool(
+                    pretty and render.get("reduce_shallow_to_horizontal")
+                ),
+                use_depth_weighted_faces=bool(
+                    pretty and render.get("use_depth_weighted_faces")
+                ),
                 velocity=True,
                 **({"terrain_hdf": terrain_hdf} if terrain_hdf is not None else {}),
                 **extra,
@@ -1393,6 +1618,8 @@ def map_velocity(
             "render": render,
             "velocity_depth": velocity_depth,
             "engine_render_mode": mode,
+            "sloping_pretty_options": list(_pretty_options(render)) if pretty else None,
+            "with_faces_method": WITH_FACES_METHOD if pretty and with_faces_options() is not None else None,
             "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
             "products": {FAST_MAP_VELOCITY: [str(target)]},
         }
@@ -1410,15 +1637,20 @@ def derived_plan(render: dict[str, Any], enabled: bool = True) -> Optional[str]:
         return "disabled (--no-fast-map-derived)"
     if render.get("storage_areas"):
         return "D x V / Froude need velocity, which is not qualified with storage areas"
-    if render["mode"] not in FAST_MAP_DERIVED_RENDER_MODES:
-        return (
-            f"Max D x V / Froude are qualified in horizontal and plain sloping, "
-            f"not {render['mode']!r}"
-        )
     if not derived_max_supported():
         return (
             "the installed fast-map has no Max derived products "
             f"({DERIVED_MAX_METHOD}, RasFim.map_derived_max)"
+        )
+    if render["mode"] == "slopingPretty":
+        reason = sloping_pretty_products_reason(render)
+        if reason is not None:
+            return f"Max D x V / Froude in slopingPretty: {reason}"
+        return None
+    if render["mode"] not in FAST_MAP_DERIVED_RENDER_MODES:
+        return (
+            f"Max D x V / Froude are qualified in horizontal, plain sloping and "
+            f"slopingPretty, not {render['mode']!r}"
         )
     return None
 
@@ -1465,6 +1697,17 @@ def map_derived(
     if _check_scope(RasFim, plan_hdf, _render_storage_areas(render)):
         raise FastMapUnavailable("D x V / Froude are not qualified with storage-area surfaces")
     velocity_depth = "horizontal" if render["mode"] == "horizontal" else "rendered"
+    pretty = render["mode"] == "slopingPretty"
+    # slopingPretty: the project's options are the mask (see map_velocity).
+    pretty_kwargs: dict[str, Any] = {}
+    if pretty:
+        if not _has_kwargs(RasFim.map_derived_max, *SLOPING_PRETTY_OPTIONS):
+            raise FastMapUnavailable(
+                "the installed RasFim.map_derived_max does not take slopingPretty options"
+            )
+        pretty_kwargs = {
+            name: bool(render.get(name)) for name in SLOPING_PRETTY_OPTIONS
+        }
     budget = default_working_mib() if max_working_mib is None else int(max_working_mib)
     work = Path(tempfile.mkdtemp(prefix=".fast-map-derived-", dir=output_dir))
     try:
@@ -1472,8 +1715,9 @@ def map_derived(
             frame = RasFim.map_derived_max(
                 plan_hdf, terrain_tif, work,
                 products=tuple(FAST_MAP_DERIVED_TYPES[t] for t in requested),
-                render_mode="sloping",
+                render_mode="slopingPretty" if pretty else "sloping",
                 velocity_depth=velocity_depth,
+                **pretty_kwargs,
                 threads=default_threads() if threads is None else int(threads),
                 max_working_mib=budget,
                 timeout=timeout,
@@ -1513,6 +1757,9 @@ def map_derived(
             "terrain_kind": terrain_kind,
             "render": render,
             "velocity_depth": velocity_depth,
+            "engine_render_mode": "slopingPretty" if pretty else "sloping",
+            "sloping_pretty_options": list(_pretty_options(render)) if pretty else None,
+            "with_faces_method": WITH_FACES_METHOD if pretty else None,
             "max_derived": frame.attrs.get("max_derived"),
             "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
             "invalid_cells": record,
@@ -1525,6 +1772,152 @@ def map_derived(
             },
         }
         (output_dir / FAST_MAP_DERIVED_MANIFEST).write_text(
+            json.dumps(details, indent=2, default=str), encoding="utf-8"
+        )
+        return result
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def shear_plan(
+    render: dict[str, Any], enabled: bool = True
+) -> tuple[Optional[str], Optional[str]]:
+    """Decide whether fast-map maps Max shear stress for this plan.
+
+    Returns ``(shear_depth, None)`` to map it (``"rendered"`` in plain
+    sloping, ``"horizontal"`` in horizontal mode), or ``(None, reason)`` to
+    leave it to RAS Mapper. Checked before any terrain work.
+    """
+    if not enabled:
+        return None, "disabled (--no-fast-map-shear)"
+    if render.get("storage_areas"):
+        return None, "shear stress is not qualified with storage-area surfaces"
+    mode = render["mode"]
+    if mode not in FAST_MAP_SHEAR_RENDER_MODES:
+        return None, (
+            f"Max shear stress is qualified in horizontal and plain sloping, not {mode!r}"
+        )
+    if not shear_supported():
+        return None, (
+            f"the installed fast-map has no Max shear stress ({SHEAR_STRESS_METHOD}, "
+            "RasFim.supports_shear_stress)"
+        )
+    depth = "horizontal" if mode == "horizontal" else "rendered"
+    if depth not in (engine_method("sloping").get("shear_stress_depth") or ()):
+        return None, f"the installed fast-map does not clip shear stress by the {depth} depth"
+    return depth, None
+
+
+def map_shear(
+    plan_hdf: Path,
+    terrain_tif: Path,
+    output_dir: Path,
+    *,
+    render: dict[str, Any],
+    shear_depth: str = "rendered",
+    profile: str = "Max",
+    threads: Optional[int] = None,
+    writer_threads: int = 2,
+    timeout: Optional[float] = None,
+    max_working_mib: Optional[int] = None,
+    terrain_hdf: Optional[Path] = None,
+    terrain_kind: Optional[str] = None,
+    invalid_cells: Optional[str] = None,
+) -> FastMapProducts:
+    """Map one plan's Max shear stress with the Rust engine.
+
+    Writes ``Shear Stress (Max).tif``, as RAS Mapper names it, and
+    ``fast_map_shear_manifest.json``. RAS Mapper's Max shear stress is a face
+    quantity: each face keeps its largest shear over every stored output
+    time, and those face values are interpolated like plain sloping whatever
+    the render mode; the active mode's Max depth is the mask. So both modes
+    render plain sloping here, and horizontal clips with
+    ``shear_depth="horizontal"``. Qualified against RAS Mapper 7.0.1 stored
+    maps on bridges p05 and Davis p02 in both modes (0 mask and 0 bit
+    differences). It is its own engine call because the engine refuses shear
+    together with native GeoTIFF delivery, and so that a shear refusal never
+    costs WSE/Depth, whose rasters from this call are discarded. Decide with
+    :func:`shear_plan` first.
+    """
+    if profile != "Max":
+        raise FastMapUnavailable(
+            f"fast-map maps the Max profile only through ras2cng (got {profile!r})"
+        )
+    try:
+        from ras_commander import RasFim
+        from ras_commander.fim.errors import FimUnsupportedError
+    except ImportError as exc:
+        raise FastMapUnavailable(f"ras-commander has no RasFim: {exc}") from exc
+    if not shear_supported():
+        raise FastMapUnavailable(
+            f"the installed fast-map has no Max shear stress ({SHEAR_STRESS_METHOD})"
+        )
+    plan_hdf = Path(plan_hdf)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if _check_scope(RasFim, plan_hdf, _render_storage_areas(render)):
+        raise FastMapUnavailable("shear stress is not qualified with storage-area surfaces")
+    work = Path(tempfile.mkdtemp(prefix=".fast-map-shear-", dir=output_dir))
+    try:
+        try:
+            manifest = RasFim.map_sloping_profiles(
+                plan_hdf, terrain_tif, work,
+                profiles={"Max": "Max"},
+                render_mode="sloping",
+                reduce_shallow_to_horizontal=False,
+                use_depth_weighted_faces=False,
+                shear_stress=True,
+                shear_depth=shear_depth,
+                # The engine refuses shear with native GeoTIFF delivery.
+                product_writer="rasterio",
+                **({"terrain_hdf": terrain_hdf} if terrain_hdf is not None else {}),
+                **_invalid_cells_kwargs(RasFim.map_sloping_profiles, invalid_cells),
+                max_working_mib=(
+                    default_working_mib() if max_working_mib is None else int(max_working_mib)
+                ),
+                threads=default_threads() if threads is None else int(threads),
+                writer_threads=writer_threads,
+                timeout=timeout,
+                write_floodplain=False,
+            )
+        except FimUnsupportedError as exc:
+            raise FastMapUnavailable(str(exc)) from exc
+        record = _invalid_cells_record(manifest)
+        row = manifest.iloc[0]
+        if row["status"] not in _COMPLETE_STATUSES:
+            raise RuntimeError(f"fast-map shear stress {row['status']}: {row.get('error')}")
+        source = row.get("shear_stress_tif")
+        if not source or not Path(source).is_file():
+            raise RuntimeError("fast-map reported no shear stress product")
+        target = output_dir / f"Shear Stress ({profile}).tif"
+        os.replace(source, target)
+        result = FastMapProducts({FAST_MAP_SHEAR: [target]})
+        result.invalid_cells = record
+        result.product_writer = "rasterio"
+        engine_manifest = work / "fim_manifest.json"
+        details = (
+            json.loads(engine_manifest.read_text(encoding="utf-8"))
+            if engine_manifest.is_file() else {}
+        )
+        if record is not None:
+            details.setdefault("invalid_cells", record)
+        details["ras2cng"] = {
+            "method": (
+                f"fast-map Max shear stress ({SHEAR_STRESS_METHOD}), qualified against "
+                "RAS Mapper stored maps"
+            ),
+            "plan_hdf": str(plan_hdf),
+            "terrain": str(terrain_tif),
+            "terrain_hdf": str(terrain_hdf) if terrain_hdf is not None else None,
+            "terrain_kind": terrain_kind,
+            "render": render,
+            "shear_depth": shear_depth,
+            "engine_render_mode": "sloping",
+            "shear_stress": getattr(manifest, "attrs", {}).get("shear_stress"),
+            "invalid_cells_policy": normalize_invalid_cells(invalid_cells),
+            "products": {FAST_MAP_SHEAR: [str(target)]},
+        }
+        (output_dir / FAST_MAP_SHEAR_MANIFEST).write_text(
             json.dumps(details, indent=2, default=str), encoding="utf-8"
         )
         return result
@@ -1719,6 +2112,7 @@ def map_boundary(
     max_working_mib: Optional[int] = None,
     invalid_cells: Optional[str] = None,
     terrain_crs_fnv1a64: Optional[str] = None,
+    method: Optional[str] = None,
 ) -> FastMapProducts:
     """Map one plan's Max inundation boundary with the Rust engine.
 
@@ -1728,6 +2122,29 @@ def map_boundary(
     for anything outside the boundary method's scope. ``invalid_cells`` is
     passed and recorded when the installed boundary API takes it.
 
+    ``method`` (``None`` reads ``RAS2CNG_FAST_MAP_BOUNDARY_METHOD``):
+
+    * ``"deterministic"`` (default): ``deterministic-zero-depth-contours/1``.
+      Byte-identical across runs, platforms and worker counts; close to, not
+      identical with, RAS Mapper's polygons. Horizontal or plain sloping,
+      single-source terrain, no storage areas.
+    * ``"native-serial"`` (opt-in): the engine's
+      ``rasmapper-serial-zero-depth-contours/1`` contract, requested with
+      ``allow_unqualified=True`` because the engine and ras-commander keep it
+      labelled unqualified. Plain sloping only here; ``terrain_tif`` is the
+      first original terrain source and every source is used. Storage areas
+      are included when the caller opted in to them. What ras-commander's
+      mapping guide reports for it, and all that may be claimed: exact valid
+      geometry and unrounded coordinates (ring start, direction and part
+      order aside) against RAS Mapper 6.6 / 7.0.1 boundaries exported with
+      RAS Mapper's serial polygon loop, on Windows x64, on the named fixtures
+      (Baxter steady profiles, Davis Max and one saved time on 7.0.1, Bald
+      Eagle Max and one saved time with two terrain sources and storage,
+      Reese mixed-model Max). RAS Mapper's default export is not serial and
+      its polygons vary between identical runs, so equality with an ordinary
+      RAS Mapper shapefile is not claimed, nor is any other model, profile,
+      platform or a modified terrain.
+
     ``terrain_crs_fnv1a64`` is the engine's WKT hash of ``terrain_tif``,
     supplied and verified by the user (see :func:`terrain_crs_hint`). The
     engine accepts it only when it cannot name an EPSG code itself and the
@@ -1736,9 +2153,16 @@ def map_boundary(
     whose message gives the hash the engine reports.
     """
     terrain_crs_fnv1a64 = normalize_crs_fnv1a64(terrain_crs_fnv1a64)
+    method = resolve_boundary_method(method)
+    native = method == BOUNDARY_NATIVE_SERIAL
     if profile != "Max":
         raise FastMapUnavailable(
             f"fast-map maps the Max profile only through ras2cng (got {profile!r})"
+        )
+    if native and render["mode"] not in FAST_MAP_NATIVE_BOUNDARY_RENDER_MODES:
+        raise FastMapUnavailable(
+            "native-serial inundation boundaries are checked for plain sloping only, "
+            f"not {render['mode']!r}"
         )
     if render["mode"] not in FAST_MAP_BOUNDARY_RENDER_MODES:
         raise FastMapUnavailable(
@@ -1759,11 +2183,21 @@ def map_boundary(
     plan_hdf = Path(plan_hdf)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    if _check_scope(RasFim, plan_hdf, _render_storage_areas(render)):
+    if native and not native_boundary_supported():
+        raise FastMapUnavailable(
+            "native-serial inundation boundaries need ras-commander>=0.116 and "
+            f"ras-commander-fast-map>=0.15 ({NATIVE_BOUNDARY_METHOD})"
+        )
+    storage_areas = _check_scope(RasFim, plan_hdf, _render_storage_areas(render))
+    if storage_areas and not native:
         # The contour method draws 2D cells only; a level pool would be missing.
         raise FastMapUnavailable(
-            "Rust inundation boundaries do not include storage-area surfaces"
+            "deterministic Rust inundation boundaries do not include storage-area "
+            "surfaces (--fast-map-boundary-method native-serial does)"
         )
+    method_kwargs: dict[str, Any] = (
+        {"method": "native_serial", "allow_unqualified": True} if native else {}
+    )
     budget = default_working_mib() if max_working_mib is None else int(max_working_mib)
     crs_kwargs: dict[str, Any] = {}
     if terrain_crs_fnv1a64 is not None:
@@ -1788,6 +2222,7 @@ def map_boundary(
                 timeout=timeout,
                 **_invalid_cells_kwargs(RasFim.map_inundation_boundaries, invalid_cells),
                 **crs_kwargs,
+                **method_kwargs,
             )
         except FimUnsupportedError as exc:
             message = str(exc)
@@ -1825,7 +2260,15 @@ def map_boundary(
             "terrain": str(terrain_tif),
             "terrain_hdf": str(terrain_hdf),
             "interpolation": render["mode"],
-            "method": "deterministic-zero-depth-contours/1 (not RAS Mapper vector parity)",
+            "boundary_method": method,
+            "storage_areas": storage_areas,
+            "method": (
+                f"{NATIVE_BOUNDARY_METHOD} (opt-in; labelled unqualified by the engine; "
+                "exact against RAS Mapper's serial boundary export only on the fixtures "
+                "in the ras-commander mapping guide)"
+                if native else
+                f"{DETERMINISTIC_BOUNDARY_METHOD} (not RAS Mapper vector parity)"
+            ),
             "statistics": {
                 key: _plain(row.get(key))
                 for key in ("polygons", "holes", "vertices", "area", "crs")

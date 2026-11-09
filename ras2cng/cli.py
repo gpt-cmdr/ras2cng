@@ -506,7 +506,10 @@ def maplibre_command(
     no_simplify: bool = typer.Option(
         False,
         "--no-simplify",
-        help="Tile polygon layers without simplification (the first-pass filter and the per-zoom option)",
+        help=(
+            "Tile without simplification (the first-pass polygon filter and the per-zoom polygon "
+            "and line options)"
+        ),
     ),
     tile_polygon_simplify: Optional[float] = typer.Option(
         None,
@@ -521,6 +524,28 @@ def maplibre_command(
     ),
     no_tile_polygon_simplify: bool = typer.Option(
         False, "--no-tile-polygon-simplify", help="Turn off only the per-zoom polygon option"
+    ),
+    tile_line_simplify: Optional[float] = typer.Option(
+        None,
+        "--tile-line-simplify",
+        min=0.0,
+        max=64.0,
+        help=(
+            "Per-zoom line tolerance in tile pixels (Douglas-Peucker), with a freestiler that "
+            "has line_simplify; never mesh faces. "
+            "Default: RAS2CNG_TILE_LINE_SIMPLIFY, else 1; 0 = off"
+        ),
+    ),
+    no_tile_line_simplify: bool = typer.Option(
+        False, "--no-tile-line-simplify", help="Turn off only the per-zoom line option"
+    ),
+    compact_tiles: Optional[bool] = typer.Option(
+        None,
+        "--compact-tiles/--no-compact-tiles",
+        help=(
+            "Store identical tiles once and sort each layer's values (lossless; freestiler "
+            "builds with deduplicate / sort_values). Default: RAS2CNG_VECTOR_TILE_COMPACT, else on"
+        ),
     ),
     keep_short_lines: Optional[bool] = typer.Option(
         None,
@@ -556,11 +581,15 @@ def maplibre_command(
         mappings[geom_id] = Path(raw_path.strip())
 
     try:
-        with vector_tile_options(feature_ids=feature_ids, keep_short_lines=keep_short_lines), simplify_options(
+        with vector_tile_options(
+            feature_ids=feature_ids, keep_short_lines=keep_short_lines, compact=compact_tiles,
+        ), simplify_options(
             tolerance_ft=simplify_tolerance,
             enabled=False if no_simplify else None,
             tile_pixels=tile_polygon_simplify,
             tile_pixels_enabled=False if no_tile_polygon_simplify or tile_polygon_simplify == 0 else None,
+            tile_line_pixels=tile_line_simplify,
+            tile_line_pixels_enabled=False if no_tile_line_simplify or tile_line_simplify == 0 else None,
         ):
             summary = package_maplibre_viewer(
                 archive_dir,
@@ -755,7 +784,10 @@ def maplibre_stored_vector_command(
     no_simplify: bool = typer.Option(
         False,
         "--no-simplify",
-        help="Tile polygon layers without simplification (the first-pass filter and the per-zoom option)",
+        help=(
+            "Tile without simplification (the first-pass polygon filter and the per-zoom polygon "
+            "and line options)"
+        ),
     ),
     tile_polygon_simplify: Optional[float] = typer.Option(
         None,
@@ -1395,7 +1427,7 @@ def map_command(
         True, "--fast-map-boundary/--no-fast-map-boundary",
         help=(
             "With --engine fast-map, map --inundation-boundary in Rust "
-            "(much faster than RAS Mapper; GeoJSON, deterministic contours)"
+            "(much faster than RAS Mapper; GeoJSON; see --fast-map-boundary-method)"
         ),
     ),
     fast_map_terrain_hdf: Optional[Path] = typer.Option(
@@ -1421,17 +1453,38 @@ def map_command(
         None, "--fast-map-velocity/--no-fast-map-velocity",
         help=(
             "With --engine fast-map, Max velocity in Rust. Default: on in plain sloping and "
-            "horizontal mode when the engine has the qualified velocity rules. "
-            "--fast-map-velocity also maps slopingPretty (mask follows the slopingPretty "
-            "depth) and plain sloping on older engines; --no-fast-map-velocity leaves it "
-            "to RAS Mapper"
+            "horizontal mode when the engine has the qualified velocity rules, and in "
+            "slopingPretty (with the .rasmap's shallow-reduction / depth-weighting flags) "
+            "when the engine advertises it. --fast-map-velocity also maps plain "
+            "slopingPretty and plain sloping on older engines; --no-fast-map-velocity "
+            "leaves it to RAS Mapper"
         ),
     ),
     fast_map_derived: bool = typer.Option(
         True, "--fast-map-derived/--no-fast-map-derived",
         help=(
             "With --engine fast-map, map Max --froude, --dv and --dv-sq in Rust (one "
-            "time-series pass; plain sloping and horizontal)"
+            "time-series pass; plain sloping and horizontal, and slopingPretty when the "
+            "engine advertises it)"
+        ),
+    ),
+    fast_map_shear: bool = typer.Option(
+        True, "--fast-map-shear/--no-fast-map-shear",
+        help=(
+            "With --engine fast-map, map Max --shear-stress in Rust when the engine has "
+            "it (plain sloping and horizontal; slopingPretty and storage-area plans use "
+            "RAS Mapper)"
+        ),
+    ),
+    fast_map_boundary_method: Optional[str] = typer.Option(
+        None, "--fast-map-boundary-method",
+        help=(
+            "Rust inundation boundary method: deterministic (default; close to, not "
+            "identical with, RAS Mapper's polygons) or native-serial (opt-in; the "
+            "engine's native-serial contract, plain sloping, every terrain source; "
+            "labelled unqualified by the engine and checked against RAS Mapper's serial "
+            "boundary export on named fixtures only). Env: "
+            "RAS2CNG_FAST_MAP_BOUNDARY_METHOD"
         ),
     ),
     fast_map_effective_terrain: bool = typer.Option(
@@ -1550,6 +1603,8 @@ def map_command(
             fast_map_whole_simulation=fast_map_whole_simulation,
             fast_map_velocity=fast_map_velocity,
             fast_map_derived=fast_map_derived,
+            fast_map_shear=fast_map_shear,
+            fast_map_boundary_method=fast_map_boundary_method,
             fast_map_effective_terrain=fast_map_effective_terrain,
             fast_map_storage_areas=fast_map_storage_areas,
             fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
@@ -1667,7 +1722,7 @@ def map_hdf_command(
         True, "--fast-map-boundary/--no-fast-map-boundary",
         help=(
             "With --engine fast-map, map --inundation-boundary in Rust "
-            "(much faster than RAS Mapper; GeoJSON, deterministic contours)"
+            "(much faster than RAS Mapper; GeoJSON; see --fast-map-boundary-method)"
         ),
     ),
     fast_map_terrain_hdf: Optional[Path] = typer.Option(
@@ -1693,17 +1748,38 @@ def map_hdf_command(
         None, "--fast-map-velocity/--no-fast-map-velocity",
         help=(
             "With --engine fast-map, Max velocity in Rust. Default: on in plain sloping and "
-            "horizontal mode when the engine has the qualified velocity rules. "
-            "--fast-map-velocity also maps slopingPretty (mask follows the slopingPretty "
-            "depth) and plain sloping on older engines; --no-fast-map-velocity leaves it "
-            "to RAS Mapper"
+            "horizontal mode when the engine has the qualified velocity rules, and in "
+            "slopingPretty (with the .rasmap's shallow-reduction / depth-weighting flags) "
+            "when the engine advertises it. --fast-map-velocity also maps plain "
+            "slopingPretty and plain sloping on older engines; --no-fast-map-velocity "
+            "leaves it to RAS Mapper"
         ),
     ),
     fast_map_derived: bool = typer.Option(
         True, "--fast-map-derived/--no-fast-map-derived",
         help=(
             "With --engine fast-map, map Max --froude, --dv and --dv-sq in Rust (one "
-            "time-series pass; plain sloping and horizontal)"
+            "time-series pass; plain sloping and horizontal, and slopingPretty when the "
+            "engine advertises it)"
+        ),
+    ),
+    fast_map_shear: bool = typer.Option(
+        True, "--fast-map-shear/--no-fast-map-shear",
+        help=(
+            "With --engine fast-map, map Max --shear-stress in Rust when the engine has "
+            "it (plain sloping and horizontal; slopingPretty and storage-area plans use "
+            "RAS Mapper)"
+        ),
+    ),
+    fast_map_boundary_method: Optional[str] = typer.Option(
+        None, "--fast-map-boundary-method",
+        help=(
+            "Rust inundation boundary method: deterministic (default; close to, not "
+            "identical with, RAS Mapper's polygons) or native-serial (opt-in; the "
+            "engine's native-serial contract, plain sloping, every terrain source; "
+            "labelled unqualified by the engine and checked against RAS Mapper's serial "
+            "boundary export on named fixtures only). Env: "
+            "RAS2CNG_FAST_MAP_BOUNDARY_METHOD"
         ),
     ),
     fast_map_effective_terrain: bool = typer.Option(
@@ -1846,6 +1922,8 @@ def map_hdf_command(
             fast_map_whole_simulation=fast_map_whole_simulation,
             fast_map_velocity=fast_map_velocity,
             fast_map_derived=fast_map_derived,
+            fast_map_shear=fast_map_shear,
+            fast_map_boundary_method=fast_map_boundary_method,
             fast_map_effective_terrain=fast_map_effective_terrain,
             fast_map_storage_areas=fast_map_storage_areas,
             fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
