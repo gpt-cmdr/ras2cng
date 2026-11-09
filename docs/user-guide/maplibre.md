@@ -169,7 +169,7 @@ instead (see below). The comparison behind this choice is in
 
 A vector tile cannot hold a line of zero length, so a line whose two ends snap to one tile
 pixel has no form at that zoom. With a freestiler build that has `keep_short_lines` (the fork
-build 0.3.0.3, see [Installation](../getting-started/installation.md)) and Arrow input,
+build 0.3.0.3 or later, see [Installation](../getting-started/installation.md)) and Arrow input,
 `mesh_faces` and `breaklines`, alone or joined to results, write such a line once per zoom as
 a one-unit segment (1/4096 of a tile) that carries its properties, in the tile holding its
 first vertex. Those layers are then complete at every zoom. At low zoom such a feature draws as
@@ -188,7 +188,7 @@ The manifest's `vectorShortLines` records the layers that got the option, or why
 
 ### Sparse tilesets: line simplification, deduplication, sorted values
 
-With a freestiler build that has them (gpt-cmdr/freestiler `main` after 0.3.0.3; detected
+With a freestiler build that has them (the gpt-cmdr fork build 0.3.0.4; detected
 from the API, so older builds tile as before), three more options apply:
 
 | Setting | Default | Effect |
@@ -211,7 +211,7 @@ from the API, so older builds tile as before), three more options apply:
   left off for tilesets with mesh layers, where it measured 3-6% larger. It changes the
   archive bytes, so turn it off for a byte comparison with an older archive.
 
-| `geometry.pmtiles` | tippecanoe 2.82.0 (ras2cng's flags, with `--drop-rate=1`) | freestiler 0.3.0.3 | freestiler `main` (#11), ras2cng defaults |
+| `geometry.pmtiles` | tippecanoe 2.82.0 (ras2cng's flags, with `--drop-rate=1`) | freestiler 0.3.0.3 | freestiler 0.3.0.4, ras2cng defaults |
 |---|---:|---:|---:|
 | Bald Eagle p07 | 972,440 | 1,300,546 (+33.7%) | **966,399 (-0.6%)** |
 | Davis (without `Terrain_Profiles`) | 350,842 | 360,134 (+2.6%) | **343,964 (-2.0%)** |

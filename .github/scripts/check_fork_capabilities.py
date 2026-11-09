@@ -6,6 +6,7 @@ from ras2cng import archive_direct, vector_tiles
 
 print("freestiler", version("freestiler"), "terrio", version("terrio"))
 capabilities = vector_tiles.freestiler_capabilities()
-assert capabilities["arrow"] and capabilities["keep_short_lines"], capabilities
+required = ("arrow", "keep_short_lines", "line_simplify", "layers_deduplicate", "layers_sort_values")
+assert all(capabilities[name] for name in required), capabilities
 reason = archive_direct.direct_reason()
 assert reason is None, reason

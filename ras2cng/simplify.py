@@ -87,7 +87,7 @@ TILE_POLYGON_SIMPLIFY_ENV = "RAS2CNG_TILE_POLYGON_SIMPLIFY"
 DEFAULT_TILE_POLYGON_SIMPLIFY_PX = 0.5
 MAX_TILE_POLYGON_SIMPLIFY_PX = 64.0
 # The tiler's per-zoom Douglas-Peucker tolerance for *lines*, in tile pixels
-# (freestiler ``line_simplify``, fork build after 0.3.0.3). 1.0 is tippecanoe's
+# (freestiler ``line_simplify``, fork build 0.3.0.4). 1.0 is tippecanoe's
 # tolerance: on UPGU3 ``geometry.pmtiles`` 0.5 still left the file 9% larger.
 # Never mesh faces (:data:`NEVER_SIMPLIFY`); see :func:`tile_line_pixels`.
 TILE_LINE_SIMPLIFY_ENV = "RAS2CNG_TILE_LINE_SIMPLIFY"

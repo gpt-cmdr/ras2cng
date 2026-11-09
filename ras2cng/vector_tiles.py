@@ -76,8 +76,8 @@ carrying its properties. ``RAS2CNG_KEEP_SHORT_LINES=0`` or
 off: Davis ``geometry.pmtiles`` was +18.4% with its conduits on.
 
 ``ArrowLayer.line_simplify`` (tile pixels) is passed per layer when the
-installed ``FreestileLayer`` accepts it (gpt-cmdr/freestiler #11, after
-0.3.0.3): per-zoom Douglas-Peucker on that layer's lines, in place of the
+installed ``FreestileLayer`` accepts it (gpt-cmdr/freestiler #11, fork
+build 0.3.0.4): per-zoom Douglas-Peucker on that layer's lines, in place of the
 tiler's default pre-simplification, which keeps 1.2-1.6 times tippecanoe's
 vertices on dense breaklines. Endpoints are kept, a line that would collapse
 keeps its vertices, and ``keep_short_lines`` still applies. :class:`ArrowLayer`

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ras2cng"
-version = "0.15.0"
+version = "0.16.0"
 description = "CLI for exporting HEC-RAS geometry/results to cloud-native GIS formats (GeoParquet, PMTiles, DuckDB, PostGIS)"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -32,16 +32,15 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  # 0.116.0 installs the Rust HDF engine (ras-commander-fast-hdf >=0.3.0,<0.4)
+  # 0.117.0 installs the Rust HDF engine (ras-commander-fast-hdf >=0.5.0,<0.6)
   # by default on Windows x64, Linux x64 and macOS arm64, and [full] adds the
-  # fast-map engine (ras-commander-fast-map >=0.15.0,<0.16) on Windows x64 and
+  # fast-map engine (ras-commander-fast-map >=0.16.0,<0.17) on Windows x64 and
   # Linux x64: storage-area level pools, effective terrain, velocity, Max
-  # derived products, duration, Rust inundation boundaries (deterministic, and
-  # the opt-in native-serial contract), and
-  # HdfLandCover.export_final_mannings_raster for `ras2cng mannings`.
-  # slopingPretty velocity/derived Max and Max shear stress need engine builds
-  # after 0.15.0 / 0.116.0 and are capability-detected.
-  "ras-commander[full]>=0.116.0",
+  # derived products and shear stress, slopingPretty velocity/derived Max,
+  # duration, Rust inundation boundaries (deterministic, and the opt-in
+  # native-serial contract), and HdfLandCover.export_final_mannings_raster for
+  # `ras2cng mannings`. Every engine capability is still detected at run time.
+  "ras-commander[full]>=0.117.0",
   "typer>=0.9.0",
   "rich>=13.0.0",
   "pandas>=2.0.0",
@@ -54,12 +53,12 @@ dependencies = [
 fast-hdf = [
   # The Rust HDF engine is already a default dependency on supported
   # platforms; this extra requests it explicitly (e.g. for a source build).
-  "ras-commander[fast-hdf]>=0.116.0",
+  "ras-commander[fast-hdf]>=0.117.0",
 ]
 fast-map = [
   # Rust 2D WSE/Depth mapping for `ras2cng map --engine fast-map`. Already
   # installed by ras-commander[full] on Windows x64 and Linux x64.
-  "ras-commander[fast-map]>=0.116.0",
+  "ras-commander[fast-map]>=0.117.0",
 ]
 duckdb = [
   "duckdb>=1.0.0",
@@ -94,10 +93,10 @@ terrio = [
   # 0.5.0 and older, which are yanked on PyPI ("Superseded by 0.6.0"), and stays
   # below 0.6 so that the CLB builds satisfy it.  The direct archive path, the
   # native GeoParquet writer, the COG report and simplify_wkb need the CLB build
-  # 0.5.0.3, published only as GitHub Release assets on
+  # 0.5.0.4, published only as GitHub Release assets on
   # CLB-Engineering-Corporation/terrio-clb (PyPI rejects direct URL dependencies):
-  #   pip install terrio==0.5.0.3 --find-links
-  #     https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3
+  #   pip install terrio==0.5.0.4 --find-links
+  #     https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.4
   # Every fork feature is capability-detected; PyPI terrio keeps the Python paths.
   "terrio>=0.5.0.1",
 ]
@@ -106,10 +105,11 @@ freestiler = [
   # Selected by RAS2CNG_VECTOR_TILER. auto prefers a build with Arrow input over
   # tippecanoe, and uses an older build only when tippecanoe is absent, e.g. on
   # Windows.  See ras2cng/vector_tiles.py.  Arrow input, `buffer`, per-zoom
-  # polygon_simplify and keep_short_lines need the gpt-cmdr fork build 0.3.0.3
-  # (GitHub Release assets only, not PyPI):
-  #   pip install freestiler==0.3.0.3 --find-links
-  #     https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr
+  # polygon_simplify, keep_short_lines, deduplicate, sort_values and
+  # line_simplify need the gpt-cmdr fork build 0.3.0.4 (GitHub Release assets
+  # only, not PyPI):
+  #   pip install freestiler==0.3.0.4 --find-links
+  #     https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.4-gpt-cmdr
   # PyPI freestiler 0.3.0 still works through NDGeoJSON.
   "freestiler>=0.3.0",
 ]

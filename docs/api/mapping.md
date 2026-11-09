@@ -158,9 +158,9 @@ to RAS Mapper without a terrain export.
 | Arrival time, percent time inundated | yes (`--no-fast-map-whole-simulation` to opt out) | identical on Davis p02 (4,879 px) and bridges p05 (959,043 px) at 0.5 ft, horizontal and plain sloping; with a storage area, p07 (1,333,183 px) |
 | Duration | yes, when the engine advertises RAS Mapper's recession rule (`rasmapper-backward-window-recession/1`); not with storage areas | identical on Davis p02 and bridges p05 at 0.5 ft |
 | Velocity (Max) | yes in plain sloping and horizontal when the engine advertises `velocity_depth`; `--no-fast-map-velocity` to opt out; not with storage areas | bridges p05: 0 value and 0 mask differences in sloping (973,902 px) and horizontal (973,532 px). Older engines: opt-in, plain sloping only |
-| Velocity (Max), slopingPretty | yes when the engine advertises `rasmapper-with-faces-velocity-derived/1` (engine builds after fast-map 0.15.0 / ras-commander 0.116.0), with the `.rasmap`'s shallow-reduction and depth-weighting flags passed unchanged; with the released engines it is opt-in (`--fast-map-velocity`) and plain slopingPretty only | 0 mask and 0 bit differences on bridges p05 and Davis p02 in all four option combinations (plain, shallow reduction, depth-weighted, both). The mask is the depth rendered with the same options, so the wrong flags give a different mask: an earlier 75 + 28 px difference on bridges compared a plain run with a shallow-reduction reference |
+| Velocity (Max), slopingPretty | yes when the engine advertises `rasmapper-with-faces-velocity-derived/1` (fast-map 0.16.0 / ras-commander 0.117.0, the versions ras2cng requires), with the `.rasmap`'s shallow-reduction and depth-weighting flags passed unchanged; with older engines it is opt-in (`--fast-map-velocity`) and plain slopingPretty only | 0 mask and 0 bit differences on bridges p05 and Davis p02 in all four option combinations (plain, shallow reduction, depth-weighted, both). The mask is the depth rendered with the same options, so the wrong flags give a different mask: an earlier 75 + 28 px difference on bridges compared a plain run with a shallow-reduction reference |
 | D × V, D × V², Froude (Max) | yes in plain sloping and horizontal (`--no-fast-map-derived` to opt out), and in slopingPretty under the same engine record as velocity; not with storage areas | per-time product, pixelwise Max over every output time, as RAS Mapper computes it: 0 / 0 on bridges p05 over 433 times (973,956 px sloping); Davis within 2 ulp on ≤ 5 px. slopingPretty: 0 / 0 on bridges p05 and Davis p02, four option combinations |
-| Shear stress (Max) | yes in plain sloping and horizontal when `RasFim.supports_shear_stress()` is true (`rasmapper-face-shear-max/1`; engine builds after 0.15.0 / 0.116.0); `--no-fast-map-shear` to opt out; not in slopingPretty or with storage areas. With the released engines: RAS Mapper | 0 mask and 0 bit differences on bridges p05 (973,902 px sloping, 973,532 px horizontal) and Davis p02 (22,041 / 20,560 px). bridges 4.7 s against RAS Mapper's 84.8 s |
+| Shear stress (Max) | yes in plain sloping and horizontal when `RasFim.supports_shear_stress()` is true (`rasmapper-face-shear-max/1`; fast-map 0.16.0 / ras-commander 0.117.0); `--no-fast-map-shear` to opt out; not in slopingPretty or with storage areas. With older engines: RAS Mapper | 0 mask and 0 bit differences on bridges p05 (973,902 px sloping, 973,532 px horizontal) and Davis p02 (22,041 / 20,560 px). bridges 4.7 s against RAS Mapper's 84.8 s |
 | Inundation boundary | yes (see below): deterministic contours by default, the native-serial contract on request | deterministic: close to, not identical with, RAS Mapper's polygons. native-serial: exact against RAS Mapper's serial boundary export on named fixtures only; the engine labels it unqualified |
 
 A plan is sent to RAS Mapper instead when:
@@ -325,7 +325,7 @@ ras2cng map /path/to/project /output/maps --inundation-boundary \
 
 `--fast-map-boundary-method native-serial` (`fast_map_boundary_method`,
 `RAS2CNG_FAST_MAP_BOUNDARY_METHOD`) asks the engine for its native-serial
-contour contract (`rasmapper-serial-zero-depth-contours/1`; fast-map 0.15.0
+contour contract (`rasmapper-serial-zero-depth-contours/1`; since fast-map 0.15.0
 and ras-commander 0.116.0). **The engine and ras-commander label this method
 unqualified**, and ras2cng requests it with that explicit opt-in. It is not
 the default.
@@ -368,7 +368,7 @@ back to RAS Mapper on its own, so the rasters can still use Rust):
 | Terrain with more than one source TIFF | The deterministic method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them. `--fast-map-boundary-method native-serial` takes every source |
 | Terrain modifications | Refused by ras2cng before the engine runs (`terrain_modifications`): modified terrains always go to RAS Mapper |
 | `slopingPretty` render mode | Contours support horizontal and plain sloping only |
-| ras-commander without `RasFim.map_inundation_boundaries` | Introduced in ras-commander 0.113.0; ras2cng requires 0.116.0 |
+| ras-commander without `RasFim.map_inundation_boundaries` | Introduced in ras-commander 0.113.0; ras2cng requires 0.117.0 |
 | Storage areas | The deterministic method draws 2D cells only; the level pool would be missing. The native-serial method includes them when storage areas are opted in |
 | A terrain CRS the engine and rasterio read differently (Davis), without `--fast-map-terrain-crs-hash` | The engine cannot name an EPSG code for it; ras2cng never guesses the identity (see below) |
 

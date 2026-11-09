@@ -1,4 +1,4 @@
-# Unreleased
+# ras2cng 0.16.0 (2026-11-09)
 
 ## Fix: `ras2cng map --wgs84` did not reproject
 
@@ -20,20 +20,42 @@ layers.** freestiler tilesets were always complete.
 
 ## Engines
 
-- **Requires ras-commander 0.116.0** (`ras-commander[full]>=0.116.0`; was 0.113.0), which
-  brings ras-commander-fast-map 0.15.0 and keeps ras-commander-fast-hdf 0.3.0. No ras2cng
-  behaviour changes with the released engines except what is listed below.
-- **Engine features merged but not yet released** are used when present and detected from the
-  engine, never from a version number. With the released engines each keeps its previous
-  behaviour:
-
-  | Needs | Then |
-  |---|---|
-  | fast-map after 0.15.0 (#30) and ras-commander after 0.116.0 (#819) | slopingPretty Max velocity, D x V, D x V² and Froude are mapped in Rust by default, with the `.rasmap`'s shallow-reduction and depth-weighting flags passed unchanged |
-  | fast-map after 0.15.0 (#31) and ras-commander after 0.116.0 (#820) | Max shear stress is mapped in Rust by default in plain sloping and horizontal |
-  | a terrio build linking fast-hdf with #71 | 2D summaries of older plan files (no stored `Location`) take the direct archive path |
-  | terrio-clb after 0.5.0.3 (#17) | rows the engine leaves out of a layer are recorded in the manifest (`archive.omitted`) |
-  | freestiler after 0.3.0.3 (#11) | `deduplicate`, `sort_values` and per-zoom line simplification for vector tiles |
+- **Requires ras-commander 0.117.0** (`ras-commander[full]>=0.117.0`, also in the `fast-hdf`
+  and `fast-map` extras; was 0.116.0 in development and 0.113.0 in 0.15.0). A plain install
+  resolves **ras-commander-fast-hdf 0.5.0** and **ras-commander-fast-map 0.16.0**.
+- **Now in Rust by default with a plain PyPI install** (engine features are still detected at
+  run time, never from a version number; an older engine keeps its previous behaviour):
+  - Max shear stress in plain sloping and horizontal (fast-map 0.16.0
+    `rasmapper-face-shear-max/1`, ras-commander 0.117.0);
+  - slopingPretty Max velocity, D x V, D x V² and Froude, with the `.rasmap`'s
+    shallow-reduction and depth-weighting flags passed unchanged (fast-map 0.16.0
+    `velocity_with_faces`, ras-commander 0.117.0);
+  - HDF reads of 2D summaries that store no `Location` (HEC-RAS 5.0.x / 6.1 plan files) in
+    ras-commander, through fast-hdf 0.5.0, where 0.3.0 fell back to h5py.
+- **Optional fork builds**, published only as GitHub Release assets, not on PyPI. Without them
+  ras2cng keeps its Python paths; with them:
+  - **freestiler 0.3.0.4** adds `deduplicate`, `sort_values` and per-zoom line simplification
+    for vector tiles (below), on top of Arrow input, per-zoom polygon simplification and short
+    lines from 0.3.0.3:
+    `pip install freestiler==0.3.0.4 --find-links https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.4-gpt-cmdr`
+  - **terrio 0.5.0.4** (CLB build) is built against fast-hdf 0.5.0, so older plan files take
+    the direct archive path (below), and it reports rows it leaves out of a layer
+    (`archive.omitted`). It links two HDF5 readers: hdf5-reader 0.12.1 inside the HEC-RAS
+    engine, 0.10.1 for terrio's own NetCDF/HDF5 code.
+    `pip install terrio==0.5.0.4 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.4`
+  - In a uv project, install them **after** `uv sync` and run with `uv run --no-sync`. A later
+    `uv sync`, even with `--inexact`, puts the locked PyPI builds back; earlier notes said
+    otherwise.
+- **What stays on RAS Mapper:** 1D and mixed models (fast-map is built for FIM library creation
+  on pure 2D models, not for general use across all model types), storage-area plans unless
+  `--fast-map-storage-areas` is given (and even then velocity, derived Max, shear stress and
+  duration), non-Max profiles, shear stress in slopingPretty, terrains with modifications, and
+  any product the installed engine does not advertise. Each falls back per product group,
+  with the reason in `MapResult.fast_map_skipped`.
+- **What stays on Python:** without the CLB terrio build, archives use the Python path
+  (manifest 2.7); with it, every geometry layer other than `mesh_cells` and `mesh_faces`, every
+  text layer, and summary variables the engine refuses still come from Python. Without the
+  freestiler fork build, vector tiles go through NDGeoJSON (or tippecanoe).
 
 ## Mapping
 
@@ -43,7 +65,7 @@ layers.** freestiler tilesets were always complete.
   sloping, 973,532 px horizontal) and Davis p02 (22,041 / 20,560 px). bridges: 4.7 s against RAS
   Mapper's 84.8 s. slopingPretty and storage-area plans stay on RAS Mapper.
   `--no-fast-map-shear` (`fast_map_shear=False`) keeps it on RAS Mapper.
-- **slopingPretty velocity and derived Max in Rust by default** when the engine advertises it:
+- **slopingPretty velocity and derived Max in Rust by default** (fast-map 0.16.0 advertises it):
   0 mask and 0 bit differences on bridges p05 and Davis p02 for plain, shallow reduction,
   depth-weighted and both (48 product comparisons). The earlier 75 + 28 px difference on bridges
   came from comparing a plain run with a reference made with shallow reduction on.
@@ -63,7 +85,7 @@ layers.** freestiler tilesets were always complete.
 - The reasons the cheaper terrains were passed over are now printed also when every terrain
   candidate is refused.
 
-## Vector tiles (with the freestiler build after 0.3.0.3)
+## Vector tiles (with freestiler 0.3.0.4)
 
 - **Per-zoom line simplification** (`line_simplify=1.0` tile pixels) on the lines of every layer
   except mesh faces; **`deduplicate`** on every tileset; **`sort_values`** on tilesets without
@@ -82,12 +104,14 @@ layers.** freestiler tilesets were always complete.
 
 ## Archive
 
-- Older plan files on the direct path (with a terrio build that links fast-hdf #71): every
-  layer, row and non-null column still equals the Python path. `archive --results`, median of
-  three: Spring 20.4 s / 2,257 MB to 13.7 s / 1,367 MB; Spring_BLE 25.4 s / 3,354 MB to 13.3 s /
-  1,441 MB. `Cell Last Iteration` on 7.x plans is read by the engine with the same type as the
+- **Older plan files on the direct path** (with terrio 0.5.0.4, which links fast-hdf 0.5.0):
+  Spring p01 has 5 native summary variables and none filled from Python (3 were with 0.5.0.3);
+  Spring_BLE p02 takes the direct path with 8 (it went wholly to Python). Every layer, row and
+  non-null column still equals the Python path. `archive --results`, median of three, against
+  terrio 0.5.0.3: Spring 20.4 s / 2,257 MB to 13.7 s / 1,367 MB; Spring_BLE 25.4 s / 3,354 MB to
+  13.3 s / 1,441 MB. `Cell Last Iteration` on 7.x plans is read by the engine with the same type as the
   Python path.
-- Manifest `archive.omitted` (when the engine reports it).
+- Manifest `archive.omitted` (terrio 0.5.0.4): rows the engine left out of a layer it wrote. Empty on every model checked, because ras2cng asks the engine only for mesh layers and summary variables; recorded so such a row is never silent.
 
 ## Terrain
 
@@ -98,7 +122,8 @@ layers.** freestiler tilesets were always complete.
 
 ## Earlier in this cycle
 
-- **terrio fork build 0.5.0.3** replaces 0.5.0.2 as the recommended CLB terrio build:
+- **terrio fork build 0.5.0.3** replaced 0.5.0.2 as the recommended CLB terrio build (now
+  superseded by 0.5.0.4, above):
   `pip install terrio==0.5.0.3 --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3`.
   GeoTIFF/COG ZSTD and LERC_ZSTD still use the zstd C library (COGs byte-identical to 0.5.0.2's);
   GeoParquet, Zarr and EPT Zstandard are pure Rust. Archive GeoParquet written by the native writer
