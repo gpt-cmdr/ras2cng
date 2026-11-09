@@ -16,7 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install '.[pmtiles,netcdf]' pytest
-      # python -m: on the self-hosted runner pip may install into the user site,
-      # whose scripts directory is not on PATH.
-      - run: python -m pytest -q tests/test_rate_stack.py
+      # A job-local venv: on the self-hosted runner the toolcache Python is shared by
+      # every job on the node, so packages other jobs left there must not satisfy ours.
+      - run: python -m venv .venv
+      - run: .venv/bin/python -m pip install '.[pmtiles,netcdf]' pytest
+      - run: .venv/bin/python -m pytest -q tests/test_rate_stack.py
