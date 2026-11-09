@@ -9,11 +9,15 @@ on:
       - .github/workflows/rate-stack.yml
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # CLB self-hosted Slurm runner; pull requests from forks stay GitHub-hosted.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64", "clb-ci-linux"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install '.[pmtiles,netcdf]' pytest
-      - run: pytest -q tests/test_rate_stack.py
+      # A job-local venv: on the self-hosted runner the toolcache Python is shared by
+      # every job on the node, so packages other jobs left there must not satisfy ours.
+      - run: python -m venv .venv
+      - run: .venv/bin/python -m pip install '.[pmtiles,netcdf]' pytest
+      - run: .venv/bin/python -m pytest -q tests/test_rate_stack.py

@@ -34,12 +34,18 @@ jobs:
   locked:
     name: Locked (${{ matrix.os }})
     if: github.event_name != 'schedule'
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests -> GitHub-hosted matrix.os; otherwise CLB's self-hosted Slurm runners.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && format('["{0}"]', matrix.os) || matrix.self_hosted || format('["{0}"]', matrix.os)) }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            self_hosted: '["self-hosted", "Linux", "X64", "clb-ci-linux"]'
+          - os: windows-latest
+            self_hosted: '["self-hosted", "Windows", "X64", "clb-ci-windows"]'
     defaults:
       run:
         shell: bash
@@ -61,12 +67,18 @@ jobs:
   fork-wheels:
     name: Locked + fork wheels (${{ matrix.os }})
     if: github.event_name != 'schedule'
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests -> GitHub-hosted matrix.os; otherwise CLB's self-hosted Slurm runners.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && format('["{0}"]', matrix.os) || matrix.self_hosted || format('["{0}"]', matrix.os)) }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            self_hosted: '["self-hosted", "Linux", "X64", "clb-ci-linux"]'
+          - os: windows-latest
+            self_hosted: '["self-hosted", "Windows", "X64", "clb-ci-windows"]'
     defaults:
       run:
         shell: bash
@@ -97,13 +109,19 @@ jobs:
     # block (continue-on-error); the daily scheduled run has no such allowance, so a break
     # shows as a failed run.
     name: Fresh install (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    # Fork pull requests -> GitHub-hosted matrix.os; otherwise CLB's self-hosted Slurm runners.
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && format('["{0}"]', matrix.os) || matrix.self_hosted || format('["{0}"]', matrix.os)) }}
     continue-on-error: ${{ github.event_name != 'schedule' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            self_hosted: '["self-hosted", "Linux", "X64", "clb-ci-linux"]'
+          - os: windows-latest
+            self_hosted: '["self-hosted", "Windows", "X64", "clb-ci-windows"]'
     defaults:
       run:
         shell: bash
