@@ -62,8 +62,8 @@ report and the Rust polygon filter need the CLB build of terrio (terrio-clb), al
 GitHub Release assets rather than on PyPI:
 
 ```bash
-pip install terrio==0.5.0.2 \
-  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2
+pip install terrio==0.5.0.3 \
+  --find-links https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3
 ```
 
 Both are optional and detected at run time; with the PyPI builds ras2cng keeps

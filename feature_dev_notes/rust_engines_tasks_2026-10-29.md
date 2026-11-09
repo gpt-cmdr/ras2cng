@@ -107,3 +107,10 @@ Tile polygon tolerance 1 ft; per-zoom simplification on our freestiler fork; fix
 | T21 | freestiler fork: keep short lines instead of dropping them | **done**: freestiler #9 merged by T22. See T21.md |
 | T22 | merge #40 and freestiler #9; release freestiler 0.3.0.3; short lines on for faces and breaklines; drop 3 tile properties; fix the multi-mesh result join; no ras2cng release | **done**: freestiler `v0.3.0.3-gpt-cmdr`; ras2cng PR in T22.md; no ras2cng version, tag or upload. See T22.md |
 | T23 | ras2cng 0.15.0: everything since 0.14.0; skip the 0.14.0 upload | **done, on PyPI**: PR #42 merged at `19103c59`; tag and GitHub Release `v0.15.0`; uploaded to PyPI 2026-11-04 (UTC). See T23.md |
+| T24 | ras2cng: PR test workflow (locked, locked + fork wheels, fresh install; Ubuntu and Windows), refreshed `uv.lock`, the two fresh-install test fixes from T23 | **partial, finished by T25**: draft PR #44 (one commit `13d089d1`); 3 of 6 checks red (every Ubuntu job, one test); no T24.md. Its PyPI sdist audit is in `G:\RustDev\work\T24\logs\audit.json` |
+
+## Wave 6 (user approved 2026-11-08)
+
+| ID | Scope | Status |
+|---|---|---|
+| T25 | finish ras2cng #44; terrio-clb 0.5.0.3 (assets only); ras2cng on 0.5.0.3; no ras2cng release | **done**: #44 merged at `ac91a5a1` (fix: `sourceHdf` on Linux); terrio-clb #15 merged at `ccc4ce03`, tag and Release `gpt-cmdr-v0.5.0.3` with 9 wheels + `SHA256SUMS`; ras2cng docs/CI on 0.5.0.3 (PR in T25.md); COGs byte-identical, p07 archive equal in content, +0.36% size. See T25.md |

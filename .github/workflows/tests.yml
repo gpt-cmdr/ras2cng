@@ -27,8 +27,8 @@ concurrency:
 env:
   FREESTILER_SPEC: freestiler==0.3.0.3
   FREESTILER_LINKS: https://github.com/gpt-cmdr/freestiler/releases/expanded_assets/v0.3.0.3-gpt-cmdr
-  TERRIO_SPEC: terrio==0.5.0.2
-  TERRIO_LINKS: https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.2
+  TERRIO_SPEC: terrio==0.5.0.3
+  TERRIO_LINKS: https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/expanded_assets/gpt-cmdr-v0.5.0.3
 
 jobs:
   locked:
