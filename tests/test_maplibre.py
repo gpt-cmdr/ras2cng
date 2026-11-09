@@ -1563,3 +1563,11 @@ def test_freestiler_input_matches_what_tippecanoe_would_read() -> None:
     assert list(prepared["Name"]) == ["weir", "culvert"]
     # Nested values are stringified, as tippecanoe does with JSON arrays.
     assert list(prepared["Profile_Data"]) == ['[{"Station":0.0,"Elevation":683.0}]', "[1.5,2.5]"]
+
+
+def test_file_name_strips_windows_and_posix_directories():
+    # A manifest written on Windows is often packaged on Linux and the reverse.
+    assert maplibre._file_name(r"H:\models\Terrain.hdf") == "Terrain.hdf"
+    assert maplibre._file_name("/data/models/Terrain.hdf") == "Terrain.hdf"
+    assert maplibre._file_name("Terrain.hdf") == "Terrain.hdf"
+    assert maplibre._file_name(None) == ""

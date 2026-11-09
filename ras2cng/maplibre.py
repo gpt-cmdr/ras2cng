@@ -14,7 +14,7 @@ import json
 import logging
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import subprocess
 import tempfile
@@ -369,6 +369,17 @@ def _gdal_thread_count() -> str:
     """Return the bounded raster-processing thread count for shared workers."""
 
     return os.environ.get("RAS2CNG_GDAL_THREADS", "4")
+
+
+
+def _file_name(path: object) -> str:
+    r"""File name of a path recorded in a manifest, whichever OS wrote it.
+
+    Archives written on Windows record ``H:\models\Terrain.hdf``; ``Path(...).name`` on
+    POSIX would return that whole string and leak the workstation path into the viewer.
+    ``PureWindowsPath`` splits on both separators.
+    """
+    return PureWindowsPath(str(path or "")).name
 
 
 def _display_name(value: str) -> str:
@@ -2910,7 +2921,7 @@ def package_maplibre_viewer(
                     "provenance": {
                         "source": "HEC-RAS terrain modification HDF",
                         "terrain": terrain_name,
-                        "sourceHdf": Path(str(terrain_entry.get("source_hdf") or "")).name,
+                        "sourceHdf": _file_name(terrain_entry.get("source_hdf")),
                     },
                 }
                 if terrain_simplification:
