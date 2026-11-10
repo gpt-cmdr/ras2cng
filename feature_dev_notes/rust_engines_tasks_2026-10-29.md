@@ -114,3 +114,41 @@ Tile polygon tolerance 1 ft; per-zoom simplification on our freestiler fork; fix
 | ID | Scope | Status |
 |---|---|---|
 | T25 | finish ras2cng #44; terrio-clb 0.5.0.3 (assets only); ras2cng on 0.5.0.3; no ras2cng release | **done**: #44 merged at `ac91a5a1` (fix: `sourceHdf` on Linux); terrio-clb #15 merged at `ccc4ce03`, tag and Release `gpt-cmdr-v0.5.0.3` with 9 wheels + `SHA256SUMS`; ras2cng docs/CI on 0.5.0.3 (PR in T25.md); COGs byte-identical, p07 archive equal in content, +0.36% size. See T25.md |
+
+## Wave 7 (user approved 2026-11-09)
+
+Engine work on the forks first (T26-T31), then one ras2cng integration (T32). Reports: `rust_engines/T26.md` to `T32.md`.
+
+| ID | Scope | Status |
+|---|---|---|
+| T26 | CLB terrio fork: HTTPS on `ring`; `PREDICTOR=YES` on the prepared COG branch | **done**: `CLB-Engineering-Corporation/terrio` #37 merged at `ec2aff14`; prepared branch `upstream/cog-area-matched-2026-11` now at `16203557` (a COG's `YES` resolves to 3 for float, 2 for integer, as GDAL's COG driver). Nothing sent upstream. See T26.md |
+| T27 | old plan files on the native path | **done**: fast-hdf #71 (2D summaries without a stored `Location`, qualified by name and width; 15 plans, 140 variables: 100 equal to h5py, 28 newly read, 0 differ), terrio-clb #17 (a breakline with fewer than two points is left out and listed in `omitted`). Released in fast-hdf 0.5.0 and terrio-clb 0.5.0.4. See T27.md |
+| T28 | Max shear stress in fast-map | **done**: fast-map #31 (`rasmapper-face-shear-max/1`), ras-commander #820; 0 mask / 0 bit differences against RAS Mapper 7.0.1 stored maps on bridges p05 and Davis p02, sloping and horizontal. Released in fast-map 0.16.0 / ras-commander 0.117.0. See T28.md |
+| T29 | slopingPretty velocity and derived Max | **done**: fast-map #30, ras-commander #819. No engine gap: the T08/T13 "slopingPretty depth gap" came from a reference made with shallow reduction on; with the same options 0 / 0 on bridges p05 and Davis p02. See T29.md |
+| T30 | sparse `geometry.pmtiles` at or below tippecanoe | **done**: freestiler #11 (`deduplicate`, `sort_values`, per-zoom `line_simplify`), merged at `fa1bea1`; released in freestiler 0.3.0.4. See T30.md |
+| T31 | gdalwarp's `-wm` in terrio-clb; bounded warp/mosaic comparison re-run | **done**: terrio-clb #16 merged at `635f51f4`; released in 0.5.0.4. See T31.md |
+| T32 | ras2cng on the current engines; integration of T26-T31 | **done**: #46 merged at `a242a826` (shear stress, slopingPretty velocity and derived Max, opt-in `native-serial` boundaries, the `--wgs84` fix, sparse-tile options, `archive.omitted`, `warp.py`). Released as 0.16.0. See T32.md |
+
+## Release (2026-11-09)
+
+Shared rules: `G:\RustDev\RELEASE_BRIEF_2026-11-09.md`. Each agent's report is in `G:\RustDev\work\<ID>\REPORT.md`; the key facts are here.
+
+| ID | Package | Status |
+|---|---|---|
+| RA | ras-commander-fast-hdf 0.5.0 | **done**: PyPI (Windows x64, manylinux2014, musllinux_1_2, macOS arm64, sdist), crates.io, GitHub Release `v0.5.0` at `d48559bb` (release PR #72). Python `API_VERSION` 12, engine API 10. Carries #70 (HEC-RAS 5.0.x mesh inventories) and #71. Not done: the three-mode route suites on the 137-file corpus; the macOS wheel is published but not qualified |
+| RB | ras-commander-fast-map 0.16.0 | **done**: PyPI, crates.io, GitHub Release `v0.16.0` at `585175a7` (release PR #32). Carries #30, #31. PyPI wheel, Max shear on bridges p05 against RAS Mapper 7.0.1: sloping 973,902 px and horizontal 973,532 px, 0 / 0 |
+| RC | freestiler fork 0.3.0.4 | **done**: GitHub Release `v0.3.0.4-gpt-cmdr` at `b6407af` (PR #14), assets only (cp39-cp314, manylinux_2_28 x86_64 and win_amd64). Options off: 28 of 28 archives byte-identical to 0.3.0.3 |
+| RD | ras-commander 0.117.0 | **done**: PyPI and GitHub Release `v0.117.0` at `c88ad709` (release PR #822). Pins `ras-commander-fast-hdf>=0.5.0,<0.6` and `ras-commander-fast-map>=0.16.0,<0.17`. Not run: the receipt-gated `rust_consumer_contract` acceptance and `rust_first_tier_exports` |
+| RE | terrio-clb 0.5.0.4 | **done**: GitHub Release `gpt-cmdr-v0.5.0.4` at `84d2929` (PR #20), assets only, 9 wheels + `SHA256SUMS`; built against fast-hdf 0.5.0. Carries #16, #17, #18. The build run on the tag (42668254303) is marked failed although no job failed: see the close-out below. Two HDF5 readers are compiled in (fast-hdf 0.5.0 uses hdf5-reader 0.12.1, terrio's NetCDF code 0.10.1) |
+| RF | ras2cng 0.16.0 | **done, on PyPI**: #47 merged at `aace1cd3`; tag and GitHub Release `v0.16.0`; uploaded 2026-11-09, SHA-256 equal to the built files. Floors `ras-commander[full]>=0.117.0`; fork floors unchanged. Tests on Windows: 860 passed / 50 skipped (PyPI), 905 / 5 (with the fork builds) |
+
+CI move (2026-11-09, PE decision): Linux and Windows test jobs run on CLB's self-hosted runners, with GitHub-hosted runners for pull requests from forks. ras2cng #48 (`3609bd58`), ras-commander #823, fast-map #37, freestiler #15, terrio-clb #19; fast-hdf already ran that way. Publishing and macOS jobs stay GitHub-hosted.
+
+## Close-out (2026-11-10)
+
+- **ras2cng 0.16.0 on PyPI re-checked:** both files' SHA-256 equal the built files; a fresh no-cache install resolves ras-commander 0.117.0, fast-hdf 0.5.0, fast-map 0.16.0, and `ras2cng --help` runs. With the released fork builds added (freestiler 0.3.0.4, terrio 0.5.0.4), `map` on Davis p02 in strict mode: WSE, Depth, Velocity and Shear Stress (Max) on fast-map, 0 mask / 0 bit differences on 22,041 px against RAS Mapper 7.0.1, 2.8 s. This is the post-publish check RF left open.
+- **terrio-clb release build:** the failed tag run had no failing job. GitHub did not create 2 of its 24 jobs (two installer tests); a second dispatch lost 12. The same workflow file was green on the release branch 22 minutes earlier, and no matrix, `needs` or label in it explains a missing job. A dry run on `main` after the CI move (run 42832683341, `94fe4ce`) created all 24 jobs and every one passed. No workflow change was made.
+- **One HDF5 reader in terrio-clb: not done, on purpose.** hdf5-reader / netcdf-reader 0.12.1 give one reader with no new crates and three small code changes, but they change behaviour: of 12 probe files, 7 read differently (enum attributes, HDF5 behind a user block and szip data open where 0.10.1 refuses; an unlimited dimension without a coordinate variable gets its real length; a multi-dimensional coordinate variable changes shape). It needs a deliberate reader upgrade with tests and a CHANGELOG entry per case. Trial patch and probe: `G:\RustDev\work\CO\t7`.
+- **Prepared upstream terrio branches:** none rebases cleanly on opengeos `main` `e1f2908d` (2 conflict only in `CHANGELOG.md`, 2 in code). Nothing was pushed or sent. State: `G:\RustDev\upstream\terrio\HANDOVER_QAQC_COORDINATOR_2026-11-07.md`.
+- **Parked or deferred, unchanged:** terrain modifications in the effective terrain (fast-map #21, ras-commander #790); `feat/pure-zstd-geotiff-default` on both terrio repos; storage areas stay opt-in; `zstd-rust` 0.1.0 is prepared and not published.
+- **Old PyPI sdists:** 0.5.1 to 0.13.0 ship internal notes (0.11.0 also a `.git` file naming a LAN address). The user approved yanking; PyPI has no yank API, so it is done by hand on the website.

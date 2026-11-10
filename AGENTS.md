@@ -90,7 +90,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 
 - **PyPI terrio:** every release up to 0.5.0 is yanked ("Superseded by 0.6.0"). The floor is
   `terrio>=0.5.0.1`, not `>=0.6`, so that the CLB builds still satisfy it; a plain install gets
-  PyPI 0.6 or later (0.7.0 on 2026-11-03), which has none of the fork capabilities and keeps the Python and GDAL paths.
+  PyPI 0.6 or later (0.8.0 on 2026-11-10), which has none of the fork capabilities and keeps the Python and GDAL paths.
 - **PyPI, required:** `ras-commander[full]>=0.117.0` brings ras-commander-fast-hdf 0.5.0
   (2D summaries without a stored `Location` and HEC-RAS 5.0.x mesh inventories read natively;
   HDF5 reader 0.12.1) and ras-commander-fast-map 0.16.0 (storage-area level pools, effective
