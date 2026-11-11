@@ -103,6 +103,7 @@ nav:
     - PMTiles Generation: user-guide/pmtiles.md
     - MapLibre Project Bundles: user-guide/maplibre.md
     - Raster Delivery Defaults: user-guide/raster-delivery.md
+    - Display COG Derivatives: display-cog.md
     - Controlled Raster Recipes: user-guide/raster-recipes.md
     - Numeric Raster Service: user-guide/numeric-raster-service.md
     - PostGIS Sync: user-guide/postgis-sync.md
