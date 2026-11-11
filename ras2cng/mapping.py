@@ -187,6 +187,7 @@ def generate_result_maps(
     fast_map_terrain_crs_fnv1a64: Optional[str] = None,
     fast_map_shear: bool = True,
     fast_map_boundary_method: Optional[str] = None,
+    native_only: bool = False,
 ) -> list[MapResult]:
     """Generate result rasters for plans in a HEC-RAS project.
 
@@ -334,6 +335,12 @@ def generate_result_maps(
             ``RAS2CNG_FAST_MAP_WRITER``. Both give identical pixels and the
             same LZW strip layout; ``--cog`` still goes through
             :mod:`ras2cng.cog`.
+        native_only: Map with fast-map only, on ``fast_map_terrain``, and
+            never call RAS Mapper (no HEC-RAS terrain is needed or used).
+            Requires the fast-map engine and ``fast_map_terrain``; implies
+            ``fast_map_fallback=False``. Any requested product fast-map
+            cannot map raises :class:`ras2cng.fast_map.FastMapUnavailable`,
+            whatever ``skip_errors`` says.
         fast_map_fallback: When a plan is outside fast-map's scope (1D
             elements, a non-Max profile, no usable terrain, engine missing or
             failed), render it through RAS Mapper instead. False raises.
@@ -352,6 +359,22 @@ def generate_result_maps(
         fast_map_terrain_crs_fnv1a64
     )
     fast_map_boundary_method = _fast_map.resolve_boundary_method(fast_map_boundary_method)
+
+    if native_only:
+        native_engine = _fast_map.resolve_map_engine(map_engine)
+        if native_engine != _fast_map.FAST_MAP:
+            raise ValueError(
+                f"native-only mapping needs the fast-map engine (got {native_engine!r})"
+            )
+        if fast_map_terrain is None:
+            raise ValueError(
+                "native-only mapping needs fast_map_terrain (--fast-map-terrain): "
+                "a float32 GeoTIFF of the terrain to map on"
+            )
+        if not Path(fast_map_terrain).is_file():
+            raise FileNotFoundError(f"fast-map terrain not found: {fast_map_terrain}")
+        # Fail closed: nothing may fall back to RAS Mapper.
+        fast_map_fallback = False
 
     project_path = Path(project_path)
     # Absolute: RAS Mapper resolves a relative folder against the project, so
@@ -751,6 +774,15 @@ def generate_result_maps(
                     ))
 
             rasmapper_types = [t for t in requested_types if t not in fast_results]
+            if native_only and rasmapper_types:
+                reasons = "; ".join(
+                    f"{t} ({map_result.fast_map_skipped.get(t, 'not mapped by fast-map')})"
+                    for t in rasmapper_types
+                )
+                raise _fast_map.FastMapUnavailable(
+                    "native-only mapping cannot use RAS Mapper (no HEC-RAS terrain); "
+                    f"not mapped natively: {reasons}"
+                )
 
             # Build boolean flags for RasProcess.store_maps()
             type_flags = {t: (t in rasmapper_types) for t in MAP_TYPE_VARIABLES}
@@ -820,7 +852,7 @@ def generate_result_maps(
             error_msg = f"plan {plan_id}: {e}"
             map_result.errors.append(error_msg)
             console.print(f"    [yellow]Warning:[/yellow] {error_msg}")
-            if not skip_errors:
+            if not skip_errors or native_only:
                 raise
 
         results.append(map_result)

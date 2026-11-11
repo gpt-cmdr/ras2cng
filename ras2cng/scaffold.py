@@ -56,7 +56,7 @@ class ScaffoldInfo:
     project_dir: Path
     prj_file: Path
     plan_hdf: Path             # canonical path inside the scaffold
-    terrain_hdf: Path
+    terrain_hdf: Optional[Path]  # None for a terrain-less (native-only) scaffold
     meta: PlanHdfMetadata
 
 
@@ -145,12 +145,17 @@ def build_scaffold(
     projection_file: Optional[Path] = None,
     render_mode: str = "sloping",
     ras_version: str = "6.6",
+    allow_no_terrain: bool = False,
 ) -> ScaffoldInfo:
     """Synthesize a barebones HEC-RAS project around a plan HDF.
 
-    Exactly one of terrain_tifs / terrain_hdf must be provided. Raw TIFFs are
-    converted to a HEC-RAS terrain via RasProcess.exe CreateTerrain; a pre-built
-    terrain HDF is copied in along with its .vrt and tile TIFF sidecars.
+    Exactly one of terrain_tifs / terrain_hdf must be provided, unless
+    ``allow_no_terrain`` is set. Raw TIFFs are converted to a HEC-RAS terrain
+    via RasProcess.exe CreateTerrain; a pre-built terrain HDF is copied in
+    along with its .vrt and tile TIFF sidecars. With ``allow_no_terrain`` and
+    neither given, no terrain is built or copied and the ``.rasmap`` has no
+    terrain layer: the scaffold only serves native (fast-map) mapping on a
+    supplied terrain GeoTIFF, and RAS Mapper cannot map on it.
 
     A previously built scaffold (identified by its marker file) is reused when
     the source plan HDF is unchanged, skipping the expensive terrain build.
@@ -163,6 +168,7 @@ def build_scaffold(
         projection_file: ESRI .prj overriding the plan HDF projection WKT
         render_mode: Initial rasmap render mode (horizontal/sloping/slopingPretty)
         ras_version: HEC-RAS version for CreateTerrain (default "6.6")
+        allow_no_terrain: Permit neither terrain input (native-only mapping)
 
     Returns:
         ScaffoldInfo with project_dir, prj_file, canonical plan_hdf, terrain_hdf
@@ -170,8 +176,14 @@ def build_scaffold(
     plan_hdf = Path(plan_hdf)
     workdir = Path(workdir)
 
-    if (terrain_tifs is None) == (terrain_hdf is None):
+    no_terrain = terrain_tifs is None and terrain_hdf is None
+    if terrain_tifs is not None and terrain_hdf is not None:
         raise ValueError("Provide exactly one of terrain_tifs or terrain_hdf.")
+    if no_terrain and not allow_no_terrain:
+        raise ValueError(
+            "Provide exactly one of terrain_tifs or terrain_hdf "
+            "(or allow_no_terrain=True for native-only mapping)."
+        )
     if not plan_hdf.exists():
         raise FileNotFoundError(f"Plan HDF not found: {plan_hdf}")
 
@@ -189,7 +201,12 @@ def build_scaffold(
             f"ras2cng scaffold. Choose an empty directory or pass --workdir."
         )
 
-    terrain_sources = [Path(t) for t in (terrain_tifs if terrain_tifs is not None else [terrain_hdf])]
+    if no_terrain:
+        terrain_sources: list[Path] = []
+    else:
+        terrain_sources = [
+            Path(t) for t in (terrain_tifs if terrain_tifs is not None else [terrain_hdf])
+        ]
     missing_terrain = [p for p in terrain_sources if not p.exists()]
     if missing_terrain:
         raise FileNotFoundError(
@@ -258,7 +275,11 @@ def build_scaffold(
 
     # --- Terrain ---
     terrain_units = "Feet" if meta.units == "US Customary" else "Meters"
-    if terrain_hdf is not None:
+    scaffold_terrain_hdf: Optional[Path]
+    if no_terrain:
+        scaffold_terrain_hdf = None
+        console.print("  No HEC-RAS terrain (native-only scaffold)")
+    elif terrain_hdf is not None:
         scaffold_terrain_hdf = _import_terrain_sidecar(Path(terrain_hdf), terrain_dir)
     else:
         scaffold_terrain_hdf = terrain_dir / "Terrain.hdf"
@@ -302,7 +323,7 @@ def build_scaffold(
 
     _write_rasmap(
         workdir / f"{name}.rasmap",
-        terrain_hdf_name=scaffold_terrain_hdf.name,
+        terrain_hdf_name=scaffold_terrain_hdf.name if scaffold_terrain_hdf else None,
         units=meta.units,
         render_mode=render_mode,
     )
@@ -401,7 +422,7 @@ def _import_terrain_sidecar(terrain_hdf: Path, terrain_dir: Path) -> Path:
 def _write_rasmap(
     rasmap_path: Path,
     *,
-    terrain_hdf_name: str,
+    terrain_hdf_name: Optional[str],
     units: str,
     render_mode: str,
 ) -> None:
@@ -413,22 +434,21 @@ def _write_rasmap(
     strings — never round-tripped through Path, whose POSIX flavor treats
     backslashes as name characters.
     """
-    terrain_name = terrain_hdf_name.rsplit(".", 1)[0]
-
     root = ET.Element("RASMapper")
     ET.SubElement(root, "Version").text = "2.0.0"
     ET.SubElement(root, "RASProjectionFilename",
                   {"Filename": ".\\Terrain\\Projection.prj"})
     ET.SubElement(root, "Results", {"Checked": "True", "Expanded": "True"})
     terrains = ET.SubElement(root, "Terrains", {"Checked": "True", "Expanded": "True"})
-    layer = ET.SubElement(terrains, "Layer", {
-        "Name": terrain_name,
-        "Type": "TerrainLayer",
-        "Checked": "True",
-        "Filename": f".\\Terrain\\{terrain_hdf_name}",
-    })
-    ET.SubElement(layer, "ResampleMethod").text = "near"
-    ET.SubElement(layer, "Surface", {"On": "True"})
+    if terrain_hdf_name is not None:  # None: native-only scaffold, no terrain layer
+        layer = ET.SubElement(terrains, "Layer", {
+            "Name": terrain_hdf_name.rsplit(".", 1)[0],
+            "Type": "TerrainLayer",
+            "Checked": "True",
+            "Filename": f".\\Terrain\\{terrain_hdf_name}",
+        })
+        ET.SubElement(layer, "ResampleMethod").text = "near"
+        ET.SubElement(layer, "Surface", {"On": "True"})
     ET.SubElement(root, "Units").text = units
     ET.SubElement(root, "RenderMode").text = render_mode
 

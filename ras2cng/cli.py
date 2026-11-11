@@ -1626,7 +1626,11 @@ def map_hdf_command(
         ..., help="Output directory for result rasters"
     ),
     terrain: Optional[list[Path]] = typer.Option(
-        None, "--terrain", help="Raw terrain GeoTIFF (repeatable; tiles are stitched)"
+        None, "--terrain",
+        help=(
+            "Raw terrain GeoTIFF (repeatable; tiles are stitched into a HEC-RAS "
+            "terrain with CreateTerrain, which needs HEC-RAS)"
+        ),
     ),
     terrain_hdf: Optional[Path] = typer.Option(
         None, "--terrain-hdf",
@@ -1708,7 +1712,11 @@ def map_hdf_command(
     ),
     fast_map_terrain: Optional[Path] = typer.Option(
         None, "--fast-map-terrain",
-        help="Float32 terrain GeoTIFF for fast-map (default: a single --terrain TIFF, else exported)",
+        help=(
+            "Float32 terrain GeoTIFF for fast-map (default: a single --terrain TIFF, else "
+            "exported). Alone (no --terrain/--terrain-hdf): native-only mapping on this "
+            "TIFF, with no HEC-RAS terrain; fails if fast-map cannot map every product"
+        ),
     ),
     fast_map_threads: Optional[int] = typer.Option(
         None, "--fast-map-threads", min=1, max=64,
@@ -1835,11 +1843,18 @@ def map_hdf_command(
     terrain from raw GeoTIFF(s) via RasProcess.exe CreateTerrain (or reuses a
     pre-built terrain HDF), then renders stored maps through RASMapper.
 
+    With only --fast-map-terrain (a pre-exported terrain GeoTIFF, e.g. from
+    `ras2cng terrain-mod`), no HEC-RAS terrain is built: fast-map maps every
+    product on that TIFF and the command fails if any product would need
+    RAS Mapper (native-only; implies --fast-map-strict).
+
     Examples:
 
         ras2cng map-hdf results.p01.hdf ./maps --terrain dem.tif
 
         ras2cng map-hdf results.p01.hdf ./maps --terrain-hdf Terrain50.hdf
+
+        ras2cng map-hdf results.p01.hdf ./maps --fast-map-terrain export.tif
     """
     import shutil
 
@@ -1848,9 +1863,37 @@ def map_hdf_command(
 
     console = Console()
 
-    if bool(terrain) == bool(terrain_hdf):
+    if terrain and terrain_hdf:
         console.print("[red]ERROR:[/red] Provide exactly one of --terrain or --terrain-hdf")
         raise typer.Exit(1)
+    native_only = not terrain and not terrain_hdf
+    if native_only and fast_map_terrain is None:
+        console.print(
+            "[red]ERROR:[/red] Provide exactly one of --terrain or --terrain-hdf, "
+            "or --fast-map-terrain alone for native-only mapping"
+        )
+        raise typer.Exit(1)
+    if native_only:
+        from ras2cng.fast_map import FAST_MAP, resolve_map_engine
+
+        try:
+            engine = resolve_map_engine(map_engine)
+        except Exception as exc:
+            console.print(f"[red]ERROR:[/red] {exc}")
+            raise typer.Exit(1)
+        if engine != FAST_MAP:
+            console.print(
+                "[red]ERROR:[/red] native-only mapping (--fast-map-terrain without "
+                f"--terrain/--terrain-hdf) needs --engine fast-map (got {engine})"
+            )
+            raise typer.Exit(1)
+        if not fast_map_terrain.is_file():
+            console.print(f"[red]ERROR:[/red] fast-map terrain not found: {fast_map_terrain}")
+            raise typer.Exit(1)
+        console.print(
+            f"  Native-only: fast-map on {fast_map_terrain.name}; no HEC-RAS terrain, "
+            "no RAS Mapper fallback"
+        )
 
     if rasprocess and terrain:
         console.print(
@@ -1875,6 +1918,7 @@ def map_hdf_command(
             projection_file=projection,
             render_mode=render_mode or "sloping",
             ras_version=ras_version,
+            allow_no_terrain=native_only,
         )
         console.print(
             f"  Scaffold: {info.project_dir} "
@@ -1929,7 +1973,8 @@ def map_hdf_command(
             fast_map_terrain_crs_fnv1a64=fast_map_terrain_crs_hash,
             fast_map_invalid_cells=fast_map_invalid_cells,
             fast_map_writer=fast_map_writer,
-            fast_map_fallback=fast_map_fallback,
+            fast_map_fallback=fast_map_fallback and not native_only,
+            native_only=native_only,
         )
     except Exception as e:
         Console().print(f"[red]ERROR:[/red] {e}")
