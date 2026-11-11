@@ -691,7 +691,7 @@ def test_modified_terrain_skips_rust_terrain_and_uses_the_export(tmp_path, monke
 
     assert fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", run)[1] == fast_map.TERRAIN_EXPORT
     assert kinds == ["export"], "neither the source TIFF nor the effective terrain is tried"
-    assert any("1 modification(s)" in note for note in resolver.notes)
+    assert any("1 active modification(s)" in note for note in resolver.notes)
 
 
 def test_unmodified_terrain_still_uses_the_source(tmp_path, monkeypatch):

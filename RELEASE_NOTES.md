@@ -1,3 +1,25 @@
+# ras2cng (unreleased)
+
+## Fix: modifications the `.rasmap` does not activate were treated as applied
+
+RAS Mapper applies a terrain HDF's modification layers only when the project's `.rasmap`
+lists them under the terrain layer (`ElevationModificationGroup`). ras2cng counted every
+layer stored in the HDF, so a project whose `.rasmap` lists none (its RAS Mapper export is
+identical to the unmodified terrain) was still sent to the RAS Mapper terrain export, and its
+Rust boundaries were refused.
+
+- New `terrain_modification_status()` (stored, registered, active, inactive, basis) and
+  `active_terrain_modifications()`. Without a `.rasmap` entry for the terrain, every stored
+  layer counts as active.
+- fast-map's routing (source TIFF / effective terrain vs. RAS Mapper export, and Rust
+  boundaries) now uses the active set, and notes stored-but-inactive layers.
+- `ras2cng inspect` shows active/stored modification counts per terrain; `--json` and
+  `TerrainInfo.modifications` carry the lists. Archive manifests add
+  `stored_modifications`, `active_modifications`, `inactive_modifications` and
+  `activation_basis` to each `terrain_modifications` entry.
+- `terrain_modifications()` is unchanged (an inventory of stored and registered layers); its
+  docstring no longer says every stored layer is applied.
+
 # ras2cng 0.16.0 (2026-11-09)
 
 ## Fix: `ras2cng map --wgs84` did not reproject

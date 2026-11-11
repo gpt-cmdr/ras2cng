@@ -14,6 +14,33 @@ The `terrain` module discovers named terrain layers from a HEC-RAS project's ras
 - **Creating HEC-RAS terrain HDFs**: Generate new terrain HDF files via RasProcess.exe (required for result mapping)
 - **Native modification-aware export**: Ask RAS Mapper to consolidate a registered terrain into one validated GeoTIFF while preserving source priority, stitches, masks, and vector modifications
 
+## Stored vs Active Modifications
+
+A terrain HDF stores modification layers under `/Modifications`, but RAS Mapper applies only
+the layers the project's `.rasmap` lists in the `ElevationModificationGroup` under that
+terrain layer. Two projects can share one terrain HDF and still map on
+different terrains: a project whose `.rasmap` lists no modifications maps on the unmodified
+terrain, and a RAS Mapper export through it is identical to the unmodified terrain.
+
+```python
+from ras2cng.terrain import terrain_modification_status, active_terrain_modifications
+
+status = terrain_modification_status("Terrain/T.hdf", "Model.rasmap")
+status.stored      # layers in the HDF
+status.active      # layers RAS Mapper applies in this project
+status.inactive    # stored but not listed: not applied
+status.basis       # "rasmap", or "hdf" when the .rasmap has no entry for this terrain
+```
+
+Without a `.rasmap`, or when it has no layer for this terrain HDF, every stored layer counts
+as active, so an unknown activation is never treated as unmodified.
+`active_terrain_modifications()` returns the labels of the active set; fast-map uses it to
+choose between native terrain operations and the RAS Mapper export.
+`terrain_modifications()` remains an inventory of everything stored or registered.
+`ras2cng inspect` shows active/stored counts per terrain, and archive manifests record
+`stored_modifications`, `active_modifications`, `inactive_modifications` and
+`activation_basis` in each `terrain_modifications` entry.
+
 ## How Terrain Discovery Works
 
 1. Reads the project's `.rasmap` file to get terrain names in priority order
@@ -122,3 +149,13 @@ binary satisfies the exact managed API contract.
 ::: ras2cng.terrain.extract_terrain_modification_layers
     options:
       show_source: true
+
+::: ras2cng.terrain.terrain_modification_status
+    options:
+      show_source: true
+
+::: ras2cng.terrain.active_terrain_modifications
+    options:
+      show_source: true
+
+::: ras2cng.terrain.TerrainModificationStatus

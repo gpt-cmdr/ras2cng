@@ -126,6 +126,15 @@ class ManifestTerrainModificationEntry:
     terrain_name: str
     source_hdf: str
     layers: list[dict] = field(default_factory=list)
+    #: Modification layers in the terrain HDF.
+    stored_modifications: list[str] = field(default_factory=list)
+    #: The layers RAS Mapper applies in this project (listed in the
+    #: ``.rasmap`` under the terrain; every stored layer when it cannot tell).
+    active_modifications: list[str] = field(default_factory=list)
+    #: Stored layers the project's ``.rasmap`` does not list (not applied).
+    inactive_modifications: list[str] = field(default_factory=list)
+    #: ``"rasmap"`` or ``"hdf"`` (no ``.rasmap`` entry for the terrain).
+    activation_basis: Optional[str] = None
 
 
 @dataclass
