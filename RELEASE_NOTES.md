@@ -1,3 +1,37 @@
+# ras2cng (unreleased)
+
+## Modified terrains can use the native effective terrain (`rasmapper-effective-terrain/2`)
+
+Until now every terrain with modifications went to RAS Mapper's terrain export (HEC-RAS),
+whatever the engine advertised. `ras2cng map` with the fast-map engine now builds such a terrain
+natively, with the modifications applied, **only when all of these hold**
+(`fast_map.TerrainResolver.modified_route`):
+
+- the installed engine advertises `rasmapper-effective-terrain/2` with a `modifications` record
+  (Fast-Map 0.18.0 and later);
+- ras-commander's terrain-modification reader (0.119.0 and later) stages every modification
+  layer without refusing one;
+- every staged layer kind, ground-line subtype and elevation type is in the engine's qualified
+  list, and none is a form the engine refuses;
+- the existing native-terrain conditions hold (effective terrain enabled and supported, layers
+  stored in the terrain HDF, HEC-RAS 6.6 rules only with an engine that advertises them).
+
+Otherwise the RAS Mapper export builds the terrain exactly as before. Either way the decision and
+its reason are recorded in `MapResult.fast_map_terrain_route` and in
+`_fast_map_terrain/fast_map_terrain_route.json`; an engine refusal on the native route falls back
+to the export and is recorded as `fallback`. Inundation boundaries on modified terrains stay on
+RAS Mapper.
+
+- **No change with Fast-Map 0.17.0 or ras-commander 0.117/0.118:** 0.17.0 advertises only
+  `rasmapper-effective-terrain/1`, so every modified terrain still goes to RAS Mapper (reason
+  recorded).
+- **Schema 1 results change with `/2`.** Fast-Map runs one rule, `rasmapper-effective-terrain/2`,
+  for both request schemas, so the native effective terrain of an *unmodified* terrain (schema
+  1) from a `/2` engine differs numerically from a `/1` engine's; receipts report `/2`. Products
+  mapped on the effective terrain can change when the engine is upgraded.
+- **Not yet qualified through ras2cng:** modified terrains via the engine must still be checked
+  against repeat HEC-RAS exports before the result is relied on.
+
 # ras2cng 0.16.0 (2026-11-09)
 
 ## Fix: `ras2cng map --wgs84` did not reproject

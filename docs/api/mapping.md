@@ -191,7 +191,8 @@ it. ras2cng then:
    Bald Eagle Terrain50 the valid mask is identical on 197,179,058 px and 8
    values differ, all in stitch-TIN corners where RAS Mapper's own exports
    disagree (max 1.53 ft); it took 7.0 s and 1.4 GB, against about 190 s
-   for the export. Terrains with modifications are refused;
+   for the export. Terrains with modifications only on the conditions
+   below;
 3. otherwise exports the plan's terrain once per run through RAS Mapper
    (`RasTerrain.export_rasmapper_terrain`, HEC-RAS 6.4.1/6.5/6.6/7.0.1/7.1;
    pass `--ras-version`).
@@ -200,16 +201,47 @@ it. ras2cng then:
 `--no-fast-map-effective-terrain` skips step 2, and
 `--no-fast-map-source-terrain` skips the source TIFF.
 
-**Terrains with modifications always go to RAS Mapper.** Before any of the
-steps above, ras2cng reads the terrain HDF's `/Modifications` group and the
-`.rasmap`'s modification layers (`ras2cng.terrain.terrain_modifications`).
-If it finds any, or cannot read the terrain HDF, steps 1 and 2 are skipped
-and RAS Mapper's export builds the terrain (step 3), and the inundation
-boundary is drawn by RAS Mapper. Rust terrain operations run only on
-unmodified terrains, even with an engine build that accepts modifications:
-that work is parked because it does not yet reproduce RAS Mapper on real
-modified terrains. `map-hdf` with a
-single raw `--terrain` TIFF passes that TIFF directly.
+**Terrains with modifications.** Before any of the steps above, ras2cng
+reads the terrain HDF's `/Modifications` group and the `.rasmap`'s
+modification layers (`ras2cng.terrain.terrain_modifications`). If it finds
+any, or cannot read the terrain HDF, the source TIFF (and step 1) is skipped
+and the inundation boundary is drawn by RAS Mapper. Step 2 then builds the
+native effective terrain **with the modifications applied** only when every
+one of these holds (`TerrainResolver.modified_route`):
+
+- the installed engine advertises `rasmapper-effective-terrain/2` (Fast-Map
+  0.18.0 and later; 0.17.0 advertises only `/1`) with a `modifications`
+  record and accepts `ras-commander-effective-terrain-request/2`;
+- ras-commander has the terrain-modification reader that stages the
+  engine's `modification_layers` (0.119.0 and later), and it stages every
+  layer without refusing one;
+- every staged layer kind, ground-line subtype and elevation type is in the
+  engine's qualified list (`effective_terrain.modifications.supported`), and
+  no layer is a form the engine refuses (shape-Z polygons without boundary
+  elevations, multi-part polygons that need a TIN);
+- the modification layers are readable and stored in the terrain HDF (not
+  only in the `.rasmap`), HEC-RAS 6.6 projects have an engine that
+  advertises `hecras_version`, and the effective terrain is enabled
+  (`--fast-map-effective-terrain`, the default) and supported by RasFim.
+
+Otherwise RAS Mapper's export builds the terrain (step 3), exactly as before,
+and the reason is recorded. An engine refusal on the native route (at build
+or mapping time) also falls back to the export. The decision is kept in
+`MapResult.fast_map_terrain_route` (per product: `route` is
+`native-effective` or `rasmapper-export`, with `reason`, the staged `layers`,
+`hecras_version` and any `fallback`) and in
+`_fast_map_terrain/fast_map_terrain_route.json` under the output folder.
+**With Fast-Map 0.17.0 every modified terrain still goes to RAS Mapper.**
+
+The native route is not yet qualified in ras2cng: it must be checked on
+modified terrains against repeat HEC-RAS exports before it is relied on
+(Fast-Map's qualification is in its
+`feature_dev_notes/effective_terrain_modifications/modification_rules.md`).
+**Effective-terrain values change with `/2` for unmodified terrains too:**
+Fast-Map runs one rule, `rasmapper-effective-terrain/2`, for both request
+schemas, so schema 1 (no modifications) results from a `/2` engine differ
+numerically from a `/1` engine's (its receipts report `/2`). `map-hdf` with
+a single raw `--terrain` TIFF passes that TIFF directly.
 
 Measured on a shared, loaded host:
 
@@ -366,7 +398,7 @@ back to RAS Mapper on its own, so the rasters can still use Rust):
 | Condition | Why |
 |---|---|
 | Terrain with more than one source TIFF | The deterministic method needs the original terrain HDF's masks, perimeters and stitch TIN for a single source. The flattened raster export cannot stand in for them. `--fast-map-boundary-method native-serial` takes every source |
-| Terrain modifications | Refused by ras2cng before the engine runs (`terrain_modifications`): modified terrains always go to RAS Mapper |
+| Terrain modifications | Refused by ras2cng before the engine runs (`terrain_modifications`): boundaries on modified terrains always go to RAS Mapper, even when the raster products use the native effective terrain with modifications |
 | `slopingPretty` render mode | Contours support horizontal and plain sloping only |
 | ras-commander without `RasFim.map_inundation_boundaries` | Introduced in ras-commander 0.113.0; ras2cng requires 0.117.0 |
 | Storage areas | The deterministic method draws 2D cells only; the level pool would be missing. The native-serial method includes them when storage areas are opted in |
