@@ -118,6 +118,7 @@ _GEOMETRY_LABELS = {
     "infiltration_regions": "Infiltration Regions",
     "terrain_modification_lines": "Modification Lines",
     "terrain_modification_polygons": "Modification Polygons",
+    "terrain_modification_footprints": "Modification Footprints",
     "terrain_modification_control_points": "Elevation Control Points",
     "terrain_source_footprints": "Source Raster Footprints",
 }
@@ -145,6 +146,7 @@ _GEOMETRY_STYLES = {
     "infiltration_regions": {"fill": "#22c55e", "fillOpacity": 0.10, "line": "#15803d", "lineWidth": 1.0},
     "terrain_modification_lines": {"fill": "#f97316", "fillOpacity": 0.0, "line": "#ea580c", "lineWidth": 2.0},
     "terrain_modification_polygons": {"fill": "#facc15", "fillOpacity": 0.18, "line": "#ca8a04", "lineWidth": 1.4},
+    "terrain_modification_footprints": {"fill": "#fb923c", "fillOpacity": 0.10, "line": "#c2410c", "lineWidth": 1.0},
     "terrain_modification_control_points": {"fill": "#ef4444", "fillOpacity": 0.9, "line": "#7f1d1d", "lineWidth": 1.0},
     "terrain_source_footprints": {"fill": "#14b8a6", "fillOpacity": 0.08, "line": "#0f766e", "lineWidth": 1.2},
 }
@@ -3307,6 +3309,7 @@ def _geometry_sort(kind: str) -> int:
         "pipe_nodes": 66,
         "cross_sections": 70,
         "bc_lines": 80,
+        "terrain_modification_footprints": 195,
         "terrain_modification_polygons": 200,
         "terrain_modification_lines": 210,
         "terrain_modification_control_points": 220,

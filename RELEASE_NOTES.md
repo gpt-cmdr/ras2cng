@@ -1,3 +1,26 @@
+# ras2cng (unreleased)
+
+## Fix: terrain-modification vectors missed piers, shapes and widths
+
+`extract_terrain_modification_layers()` / `export_terrain_modifications()` (and so the
+archive's `terrain/modifications/` layers and the web map's modification layers):
+
+- **Pier, rectangle, ellipse and triangle modifications produced no geometry.** They are
+  stored as parameter tables (`Piers`, `Rectangles`, `Circles`, `Triangles`), not as point
+  lists, and were skipped. Their outlines now come out in `terrain_modification_polygons`
+  with a `shape_type` column (body and round or sharp noses for piers, rotated as RAS Mapper
+  rotates them).
+- **A layer with several features was read as one feature.** All points of a layer became
+  one line (or one polygon with every other ring as a hole), with the first feature's
+  attributes. Features are now split by `Polyline/Polygon Info` and keep their own
+  attributes (`feature_index`, `feature_name`, `width`, slopes, `max_extent`,
+  `elevation_value`, `elevation_type`).
+- **Line modifications had no width.** New layer `terrain_modification_footprints`: one
+  polygon per feature for the terrain it can change. Lines are buffered by `max_extent`
+  (RAS Mapper's *Max Reach*, the offset RAS Mapper itself indexes them by) or by half the top
+  width when no max extent is stored (`footprint_basis`, `footprint_half_width`). Use it
+  instead of a centreline to decide whether a modification can affect a cell.
+
 # ras2cng 0.16.0 (2026-11-09)
 
 ## Fix: `ras2cng map --wgs84` did not reproject

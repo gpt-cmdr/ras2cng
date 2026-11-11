@@ -28,6 +28,7 @@ _FEATURE_KINDS = {
 _TERRAIN_MODIFICATION_KINDS = {
     "terrain_modification_lines",
     "terrain_modification_polygons",
+    "terrain_modification_footprints",
     "terrain_modification_control_points",
 }
 

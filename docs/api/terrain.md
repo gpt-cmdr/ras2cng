@@ -14,6 +14,25 @@ The `terrain` module discovers named terrain layers from a HEC-RAS project's ras
 - **Creating HEC-RAS terrain HDFs**: Generate new terrain HDF files via RasProcess.exe (required for result mapping)
 - **Native modification-aware export**: Ask RAS Mapper to consolidate a registered terrain into one validated GeoTIFF while preserving source priority, stitches, masks, and vector modifications
 
+## Terrain Modification Vectors
+
+`extract_terrain_modification_layers()` (and `export_terrain_modifications()`, which writes
+each non-empty layer as GeoParquet) reads the terrain HDF's `/Modifications` group. Each
+modification layer can hold several features, and each feature is one row with its own
+attributes (`feature_index`, `feature_name`).
+
+| Layer | Contents |
+|---|---|
+| `terrain_modification_lines` | Line, levee and channel centrelines with `width` (top width), `left_slope`, `right_slope` and `max_extent` (RAS Mapper's *Max Reach*) |
+| `terrain_modification_polygons` | Polygon modifications (`shape_type="polygon"`) and the outlines of pier, rectangle, ellipse and triangle modifications (`shape_type`), built from their stored parameters |
+| `terrain_modification_footprints` | One polygon per feature covering the terrain it can change: lines buffered by `max_extent` (or half the top width when no max extent is stored; see `footprint_basis` and `footprint_half_width`), polygons and shapes as drawn |
+| `terrain_modification_control_points` | Elevation control points |
+
+A centreline is not a footprint: a channel or levee changes the terrain across its top width
+and side slopes, up to *Max Reach* either side. Use `terrain_modification_footprints` to
+test whether a feature can affect a location. The footprint is an upper bound; how far the
+side slopes actually reach depends on the terrain.
+
 ## How Terrain Discovery Works
 
 1. Reads the project's `.rasmap` file to get terrain names in priority order

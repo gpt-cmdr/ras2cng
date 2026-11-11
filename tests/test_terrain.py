@@ -687,9 +687,11 @@ def test_terrain_modifications_export_lines_polygons_and_controls(tmp_path):
         tmp_path / "modifications",
         crs="EPSG:2271",
     )
+    # The line has no width or max extent, so only the polygon has a footprint.
     assert set(outputs) == {
         "terrain_modification_lines",
         "terrain_modification_polygons",
+        "terrain_modification_footprints",
         "terrain_modification_control_points",
     }
     assert all(path.is_file() for path in outputs.values())
@@ -711,6 +713,7 @@ def test_terrain_modifications_return_geometry_aware_empty_layers(tmp_path):
     assert len(layers["terrain_modification_lines"]) == 1
     for name in (
         "terrain_modification_polygons",
+        "terrain_modification_footprints",
         "terrain_modification_control_points",
     ):
         assert layers[name].empty

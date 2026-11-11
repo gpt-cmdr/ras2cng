@@ -546,17 +546,64 @@ def consolidate_project_terrains(
     return outputs
 
 
+#: Terrain-modification layers written by :func:`extract_terrain_modification_layers`.
+TERRAIN_MODIFICATION_LAYERS = (
+    "terrain_modification_lines",
+    "terrain_modification_polygons",
+    "terrain_modification_footprints",
+    "terrain_modification_control_points",
+)
+
+#: RAS Mapper's affine shape modifications: dataset name under
+#: ``/Modifications/<layer>`` -> ``shape_type`` (RasMapperLib ``*FeatureLayer``).
+_TERRAIN_SHAPE_DATASETS = {
+    "Piers": "pier",
+    "Rectangles": "rectangle",
+    "Circles": "ellipse",
+    "Triangles": "triangle",
+}
+
+
 def extract_terrain_modification_layers(
     terrain_hdf_path: Path,
     *,
     crs: Optional[str] = None,
 ) -> dict[str, object]:
-    """Read RASMapper terrain modification vectors from a terrain HDF."""
+    """Read RASMapper terrain modification vectors from a terrain HDF.
+
+    Each ``/Modifications/<layer>`` group can hold several features; every
+    feature becomes its own row (``feature_index`` within the layer, with that
+    feature's own ``Attributes`` row).
+
+    Returns four GeoDataFrames (always present, possibly empty):
+
+    * ``terrain_modification_lines``: line, levee and channel centrelines with
+      their ``width`` (top width), ``left_slope``, ``right_slope`` and
+      ``max_extent`` (RAS Mapper's "Max Reach": how far either side of the
+      centreline the modification may change the terrain).
+    * ``terrain_modification_polygons``: polygon modifications, and the
+      outlines of pier, rectangle, ellipse and triangle modifications
+      (``shape_type``), built from their stored parameters the way RAS Mapper
+      builds them.
+    * ``terrain_modification_footprints``: one polygon per feature covering
+      the terrain the feature can change. Lines are buffered by ``max_extent``
+      (or by half the top width when no max extent is stored;
+      ``footprint_basis`` says which and ``footprint_half_width`` by how
+      much); polygons and shapes are their own footprint. A line with neither
+      value has no footprint row.
+    * ``terrain_modification_control_points``.
+
+    Args:
+        terrain_hdf_path: HEC-RAS terrain HDF.
+        crs: CRS to assign (default: the terrain HDF's projection).
+
+    Raises:
+        FileNotFoundError: The terrain HDF does not exist.
+        ValueError: No CRS is given and the HDF has none.
+    """
 
     import geopandas as gpd
     import h5py
-    import numpy as np
-    from shapely.geometry import LineString, Point, Polygon
     from ras_commander.hdf import HdfBase
     from ras_commander.terrain import RasTerrainModWriter
 
@@ -579,76 +626,358 @@ def extract_terrain_modification_layers(
         str(row["name"]): row.to_dict()
         for _, row in metadata.iterrows()
     }
-    lines: list[dict] = []
-    polygons: list[dict] = []
-    control_points: list[dict] = []
+    rows: dict[str, list[dict]] = {name: [] for name in TERRAIN_MODIFICATION_LAYERS}
     with h5py.File(terrain_hdf_path, "r") as hdf:
         modifications = hdf.get("Modifications")
-        if modifications is None:
-            return {
-                "terrain_modification_lines": gpd.GeoDataFrame(geometry=[], crs=source_crs),
-                "terrain_modification_polygons": gpd.GeoDataFrame(geometry=[], crs=source_crs),
-                "terrain_modification_control_points": gpd.GeoDataFrame(geometry=[], crs=source_crs),
-            }
-        for name, group in modifications.items():
-            properties = _terrain_modification_properties(name, group, metadata_by_name.get(name, {}))
-            if "Polyline Points" in group:
-                points = np.asarray(group["Polyline Points"][:], dtype="float64")
-                if points.ndim == 2 and points.shape[1] >= 2 and len(points) >= 2:
-                    lines.append({**properties, "geometry": LineString(points[:, :2])})
-            elif "Polygon Points" in group and "Polygon Parts" in group:
-                points = np.asarray(group["Polygon Points"][:], dtype="float64")
-                parts = np.asarray(group["Polygon Parts"][:], dtype="int64")
-                rings = [
-                    points[start:start + count, :2]
-                    for start, count in parts[:, :2]
-                    if count >= 3
-                ]
-                if rings:
-                    polygons.append(
-                        {
-                            **properties,
-                            "boundary_elevation_min": _finite_dataset_stat(group, "Boundary Elevations", "min"),
-                            "boundary_elevation_max": _finite_dataset_stat(group, "Boundary Elevations", "max"),
-                            "geometry": Polygon(rings[0], holes=rings[1:]),
-                        }
-                    )
-
-            controls = group.get("Control Points")
-            if controls is not None and "Points" in controls:
-                points = np.asarray(controls["Points"][:], dtype="float64")
-                elevations = (
-                    np.asarray(controls["Elevations"][:], dtype="float64")
-                    if "Elevations" in controls
-                    else np.full(len(points), np.nan)
-                )
-                names = _terrain_control_names(controls, len(points))
-                for index, point in enumerate(points):
-                    if len(point) < 2:
-                        continue
-                    control_points.append(
-                        {
-                            "parent_modification": name,
-                            "control_name": names[index],
-                            "elevation": float(elevations[index]) if np.isfinite(elevations[index]) else None,
-                            "modification_mode": properties.get("modification_mode"),
-                            "geometry": Point(float(point[0]), float(point[1])),
-                        }
+        if modifications is not None:
+            for name, group in modifications.items():
+                if isinstance(group, h5py.Group):
+                    _collect_modification_group(
+                        name, group, metadata_by_name.get(name, {}), rows
                     )
 
     return {
-        "terrain_modification_lines": gpd.GeoDataFrame(
-            lines if lines else {"geometry": []}, geometry="geometry", crs=source_crs
-        ),
-        "terrain_modification_polygons": gpd.GeoDataFrame(
-            polygons if polygons else {"geometry": []}, geometry="geometry", crs=source_crs
-        ),
-        "terrain_modification_control_points": gpd.GeoDataFrame(
-            control_points if control_points else {"geometry": []},
-            geometry="geometry",
-            crs=source_crs,
-        ),
+        layer: gpd.GeoDataFrame(
+            records if records else {"geometry": []}, geometry="geometry", crs=source_crs
+        )
+        for layer, records in rows.items()
     }
+
+
+def _collect_modification_group(name: str, group, metadata: dict, rows: dict) -> None:
+    """Append one modification layer's features to ``rows`` (by output layer)."""
+    import numpy as np
+    from shapely.geometry import Point
+
+    base = _terrain_modification_properties(name, group, metadata)
+    attributes = _attribute_rows(group)
+
+    def feature_properties(index: int) -> dict:
+        row = attributes[index] if index < len(attributes) else {}
+        props = {**base, "feature_index": index}
+        props["feature_name"] = str(row.get("Name") or row.get("System Name") or name)
+        for key, names in _FEATURE_FLOAT_ATTRIBUTES.items():
+            value = _first_float(row, names)
+            if value is not None:
+                props[key] = value
+            else:
+                props[key] = _finite_or_none(props.get(key)) if not row else None
+        elevation_type = row.get("Elevation Type")
+        props["elevation_type"] = (
+            None if elevation_type is None else str(_decode_hdf_value(elevation_type))
+        )
+        return props
+
+    if "Polyline Points" in group:
+        for index, parts in enumerate(_poly_feature_parts(group, "Polyline")):
+            geometry = _line_geometry(parts)
+            if geometry is None:
+                continue
+            props = feature_properties(index)
+            rows["terrain_modification_lines"].append({**props, "geometry": geometry})
+            footprint = _line_footprint(geometry, props)
+            if footprint is not None:
+                rows["terrain_modification_footprints"].append(footprint)
+    elif "Polygon Points" in group:
+        boundary_min = _finite_dataset_stat(group, "Boundary Elevations", "min")
+        boundary_max = _finite_dataset_stat(group, "Boundary Elevations", "max")
+        for index, parts in enumerate(_poly_feature_parts(group, "Polygon")):
+            geometry = _polygon_geometry(parts)
+            if geometry is None or geometry.is_empty:
+                continue
+            props = {
+                **feature_properties(index),
+                "shape_type": "polygon",
+                "boundary_elevation_min": boundary_min,
+                "boundary_elevation_max": boundary_max,
+            }
+            rows["terrain_modification_polygons"].append({**props, "geometry": geometry})
+            rows["terrain_modification_footprints"].append(
+                {**props, "footprint_basis": "polygon", "footprint_half_width": None,
+                 "geometry": geometry}
+            )
+    for dataset_name, shape_type in _TERRAIN_SHAPE_DATASETS.items():
+        if dataset_name not in group:
+            continue
+        values = np.asarray(group[dataset_name][:], dtype="float64")
+        for index, geometry in enumerate(_shape_geometries(shape_type, values)):
+            if geometry is None or geometry.is_empty:
+                continue
+            props = {**feature_properties(index), "shape_type": shape_type}
+            rows["terrain_modification_polygons"].append({**props, "geometry": geometry})
+            rows["terrain_modification_footprints"].append(
+                {**props, "footprint_basis": shape_type, "footprint_half_width": None,
+                 "geometry": geometry}
+            )
+
+    controls = group.get("Control Points")
+    if controls is not None and "Points" in controls:
+        points = np.asarray(controls["Points"][:], dtype="float64")
+        elevations = (
+            np.asarray(controls["Elevations"][:], dtype="float64")
+            if "Elevations" in controls
+            else np.full(len(points), np.nan)
+        )
+        names = _terrain_control_names(controls, len(points))
+        for index, point in enumerate(points):
+            if len(point) < 2:
+                continue
+            rows["terrain_modification_control_points"].append(
+                {
+                    "parent_modification": name,
+                    "control_name": names[index],
+                    "elevation": float(elevations[index]) if np.isfinite(elevations[index]) else None,
+                    "modification_mode": base.get("modification_mode"),
+                    "geometry": Point(float(point[0]), float(point[1])),
+                }
+            )
+
+
+#: Per-feature numeric attributes: output column -> HDF column names (stored
+#: name first, then the RAS Mapper display name).
+_FEATURE_FLOAT_ATTRIBUTES = {
+    "width": ("Top Width", "Width"),
+    "left_slope": ("Left Slope", "LeftSlope"),
+    "right_slope": ("Right Slope", "RightSlope"),
+    "max_extent": ("Max Reach", "Max Extent"),
+    "top_elevation": ("Top Elevation",),
+    "elevation_value": ("Elevation Value",),
+}
+
+
+def _finite_or_none(value) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _attribute_rows(group) -> list[dict]:
+    """The group's ``Attributes`` compound rows as dicts (one per feature)."""
+    dataset = group.get("Attributes")
+    if dataset is None or getattr(dataset, "dtype", None) is None or not dataset.dtype.names:
+        return []
+    names = dataset.dtype.names
+    return [
+        {key: _decode_hdf_value(record[key]) for key in names}
+        for record in dataset[:]
+    ]
+
+
+def _first_float(row: dict, names) -> Optional[float]:
+    for key in names:
+        if key in row:
+            value = _finite_or_none(row[key])
+            if value is not None:
+                return value
+    return None
+
+
+def _poly_feature_parts(group, prefix: str) -> list[list]:
+    """Per-feature point parts of a RAS Mapper poly feature set.
+
+    ``<prefix> Info`` rows are ``[point start, point count, part start, part
+    count]``; ``<prefix> Parts`` rows are ``[start within the feature, point
+    count]`` (HDF5Storage.ReadPolyFeatures). Without an ``Info`` dataset the
+    whole point array is one feature.
+    """
+    import numpy as np
+
+    points = np.asarray(group[f"{prefix} Points"][:], dtype="float64")
+    if points.ndim != 2 or points.shape[1] < 2:
+        return []
+    parts = (
+        np.asarray(group[f"{prefix} Parts"][:], dtype="int64").reshape(-1, 2)
+        if f"{prefix} Parts" in group else None
+    )
+    info = (
+        np.asarray(group[f"{prefix} Info"][:], dtype="int64").reshape(-1, 4)
+        if f"{prefix} Info" in group else None
+    )
+    if info is None:
+        spans = [(0, len(points), 0, len(parts) if parts is not None else 0)]
+    else:
+        spans = [tuple(int(v) for v in row) for row in info]
+    features = []
+    for start, count, part_start, part_count in spans:
+        feature = points[start:start + count, :2]
+        if parts is not None and part_count > 0:
+            part_rows = parts[part_start:part_start + part_count]
+        else:
+            part_rows = [(0, len(feature))]
+        features.append(
+            [feature[int(s):int(s) + int(c)] for s, c in part_rows if int(c) > 0]
+        )
+    return features
+
+
+def _line_geometry(parts):
+    from shapely.geometry import LineString, MultiLineString
+
+    lines = [LineString(part) for part in parts if len(part) >= 2]
+    if not lines:
+        return None
+    return lines[0] if len(lines) == 1 else MultiLineString(lines)
+
+
+def _polygon_geometry(parts):
+    """Rings combined by the even-odd rule (a ring inside another is a hole)."""
+    from shapely import make_valid
+    from shapely.geometry import Polygon
+
+    geometry = None
+    for part in parts:
+        if len(part) < 3:
+            continue
+        ring = Polygon(part)
+        if not ring.is_valid:
+            ring = make_valid(ring)
+        geometry = ring if geometry is None else geometry.symmetric_difference(ring)
+    return geometry
+
+
+def _line_footprint(geometry, props: dict) -> Optional[dict]:
+    """Buffer a line modification by the distance it can change the terrain.
+
+    RAS Mapper indexes a ground-line modification by the polygon offset
+    ``Max Reach`` either side of its centreline
+    (``GroundLineModificationLayer.PolygonSpatialIndex``). Without a max
+    extent, half the top width is used, which leaves out the side slopes.
+    """
+    max_extent = props.get("max_extent")
+    width = props.get("width")
+    half_top = (width / 2.0) if width is not None and width > 0 else 0.0
+    if max_extent is not None and max_extent > 0:
+        basis, half_width = "max_extent", max(max_extent, half_top)
+    elif half_top > 0:
+        basis, half_width = "top_width", half_top
+    else:
+        return None
+    return {
+        **props,
+        "footprint_basis": basis,
+        "footprint_half_width": float(half_width),
+        "geometry": geometry.buffer(half_width, cap_style="flat", join_style="round"),
+    }
+
+
+def _shape_geometries(shape_type: str, values) -> list:
+    """Outlines of RAS Mapper's affine shape modifications, one per row.
+
+    Angles are degrees clockwise (RasMapperLib rotates by ``-angle`` in a
+    y-up frame); shapes rotate about their centre.
+    """
+    from shapely import affinity
+    from shapely.geometry import Polygon, box
+
+    if values.ndim != 2:
+        return []
+
+    def rectangle(r):
+        local = box(-r[2] / 2, -r[3] / 2, r[2] / 2, r[3] / 2) if r[2] > 0 and r[3] > 0 else None
+        return (r[0], r[1]), local, r[4]
+
+    def ellipse(r):
+        local = _ellipse_arc(r[2], r[3], 0.0, 2 * math.pi) if r[2] > 0 and r[3] > 0 else None
+        return (r[0], r[1]), local, r[4]
+
+    def triangle(r):
+        local = Polygon([
+            (r[2] - r[0], r[3] - r[1]), (r[4] - r[0], r[5] - r[1]), (r[6] - r[0], r[7] - r[1]),
+        ])
+        return (r[0], r[1]), local, r[8]
+
+    builders = {
+        "pier": (15, _pier_outline),
+        "rectangle": (5, rectangle),
+        "ellipse": (5, ellipse),
+        "triangle": (9, triangle),
+    }
+    columns, build = builders[shape_type]
+    if values.shape[1] < columns:
+        raise ValueError(
+            f"{shape_type} modification dataset has {values.shape[1]} columns; "
+            f"expected {columns}"
+        )
+    outlines = []
+    for row in values:
+        center, local, angle = build(row)
+        if local is None or local.is_empty or local.area <= 0:
+            outlines.append(None)
+            continue
+        placed = affinity.translate(local, center[0], center[1])
+        if angle:
+            placed = affinity.rotate(placed, -float(angle), origin=center)
+        outlines.append(placed)
+    return outlines
+
+
+def _ellipse_arc(radius_x: float, radius_y: float, start: float, stop: float,
+                 y0: float = 0.0, segments: int = 32):
+    """Polygon of an elliptical arc about ``(0, y0)``, closed through its chord."""
+    import numpy as np
+    from shapely.geometry import Polygon
+
+    angles = np.linspace(start, stop, segments + 1)
+    return Polygon(list(zip(radius_x * np.cos(angles), y0 + radius_y * np.sin(angles))))
+
+
+def _pier_outline(row):
+    """Pier outline in its local frame, as ``Pier.MakePierFromParams`` builds it.
+
+    Columns (``Column Ordering``): Body X, Body Y, Body Width, Body Height,
+    TopCap X, TopCap Y, TopCap RadiusX, TopCap RadiusY, TopCap Type,
+    BottomCap X, BottomCap Y, BottomCap RadiusX, BottomCap RadiusY,
+    BottomCap Type (0 round, 1 sharp), AngleRotation. The centre and width
+    come from the body when it has a position, else from a cap
+    (``HDF5Storage.ReadPierFeatures``). The body is ``width`` across and
+    ``height`` along the pier axis (+y before rotation). A round cap is a half
+    ellipse of radii (width/2, cap RadiusY) on the body end; a sharp cap is a
+    triangle of base ``width`` and height 2 x cap RadiusY. Without a body the
+    caps sit on the centre; a lone sharp cap is centred on it.
+    """
+    from shapely.geometry import Polygon, box
+    from shapely.ops import unary_union
+
+    (body_x, body_y, body_width, body_height, top_x, top_y, _top_rx, top_ry, top_type,
+     bottom_x, bottom_y, _bottom_rx, bottom_ry, bottom_type, angle) = (
+        float(v) for v in row[:15]
+    )
+    center, width = (0.0, 0.0), 0.0
+    if body_x != 0.0 and body_y != 0.0:
+        center, width = (body_x, body_y), body_width
+    else:
+        if top_x != 0.0 and top_y != 0.0:
+            center, width = (top_x, top_y), _top_rx * 2.0
+        if bottom_x != 0.0 and bottom_y != 0.0:
+            center, width = (bottom_x, bottom_y), _bottom_rx * 2.0
+    if width <= 0:
+        return center, None, angle
+    half = width / 2.0
+    has_body = body_height > 0
+    if not has_body and top_ry <= 0 and bottom_ry <= 0:
+        return center, None, angle
+    pieces = []
+    if has_body:
+        pieces.append(box(-half, -body_height / 2.0, half, body_height / 2.0))
+
+    def cap(radius_y: float, cap_type: float, sign: float, other_cap: bool):
+        base_y = sign * body_height / 2.0 if has_body else 0.0
+        if round(cap_type) == 0:  # round nose: half ellipse beyond the base
+            return _ellipse_arc(half, sign * radius_y, 0.0, math.pi, y0=base_y)
+        height = 2.0 * radius_y
+        if has_body or other_cap:  # base on the body end / centre, apex outward
+            apex_y = base_y + sign * height
+        else:  # a lone sharp cap is centred on the pier centre
+            base_y, apex_y = -sign * height / 2.0, sign * height / 2.0
+        return Polygon([(-half, base_y), (half, base_y), (0.0, apex_y)])
+
+    if top_ry > 0:
+        pieces.append(cap(top_ry, top_type, 1.0, bottom_ry > 0))
+    if bottom_ry > 0:
+        pieces.append(cap(bottom_ry, bottom_type, -1.0, top_ry > 0))
+    return center, unary_union(pieces), angle
 
 
 def export_terrain_modifications(
