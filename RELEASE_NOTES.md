@@ -1,5 +1,90 @@
 # ras2cng (unreleased)
 
+## Modified terrains can use the native effective terrain (`rasmapper-effective-terrain/2`)
+
+Until now every terrain with modifications went to RAS Mapper's terrain export (HEC-RAS),
+whatever the engine advertised (user decision 2026-10-30). That decision is superseded: the
+project engineer confirmed the reversal on 2026-11-11, now that it is implemented.
+`ras2cng map` with the fast-map engine now builds such a terrain
+natively, with the modifications applied, **only when all of these hold**
+(`fast_map.TerrainResolver.modified_route`):
+
+- the installed engine advertises `rasmapper-effective-terrain/2` with a `modifications` record
+  (Fast-Map 0.18.0 and later);
+- ras-commander's terrain-modification reader stages every modification layer without
+  refusing one: the public `RasFim.read_terrain_modifications` (ras-commander 0.119.0 and
+  later), else the private `ras_commander.fim._terrain_mods.read_layers` on a ras-commander
+  that has only that. The reader used is recorded as `modification_reader`, and a refusal's
+  code as `refusal_reason` (a polygon with more than one ring is `multi_ring_polygon` and goes
+  to RAS Mapper);
+- every staged layer kind, ground-line subtype and elevation type is in the engine's qualified
+  list, and none is a form the engine refuses;
+- the existing native-terrain conditions hold (effective terrain enabled and supported, layers
+  stored in the terrain HDF, HEC-RAS 6.6 rules only with an engine that advertises them).
+
+Otherwise the RAS Mapper export builds the terrain exactly as before. Either way the decision and
+its reason are recorded in `MapResult.fast_map_terrain_route` and in
+`_fast_map_terrain/fast_map_terrain_route.json`; an engine refusal on the native route falls back
+to the export and is recorded as `fallback`. Inundation boundaries on modified terrains stay on
+RAS Mapper.
+
+- **One HEC-RAS release for both routes.** The RAS Mapper export, Commander's reader and the
+  native build now all take the release ras2cng resolves once: `--ras-version`, else the one
+  ras-commander's `init_ras_project` detects from the plan files (what the export uses). Before,
+  without `--ras-version`, the reader and the native build used Commander's own guess (newest
+  plan/geometry `Program Version`, else 7.0.1) while the export used the detected release, so the
+  two could differ (Middle Cahaba: plans `7.00`, geometry `7.01`, so the export used 7.0 and the
+  native route 7.0.1 rules; Bald Eagle: export 5.03, native 7.0.1 rules). The native route now
+  needs that release to be one the export supports and 6.6 or 7.0.1; otherwise the terrain stays
+  on the export (which, for an unsupported release, fails as before: pass `--ras-version`).
+  Recorded as `hecras_runtime` / `hecras_runtime_basis`.
+- **Layers RAS Mapper does not apply are not modifications.** A terrain whose HDF stores
+  modification layers but whose `.rasmap` has no group named exactly `Modifications` (for
+  example the original Helena terrain's `Hydroconnectors` group) is mapped as unmodified, as
+  RAS Mapper and ras-commander 0.119 treat it, with Commander's warning recorded
+  (`route: "unmodified"`, `rasmap_warnings`). Before, such a terrain went to the export, and the
+  reason recorded was a reader refusal of layers RAS Mapper never applies.
+- **Requires ras-commander 0.119.0** (`ras-commander[full]>=0.119.0`, also in the `fast-hdf` and
+  `fast-map` extras; was 0.117.0). A plain install resolves ras-commander-fast-map 0.18.0, so
+  native effective terrains of unmodified terrains now come from the `/2` rule (below).
+- **Schema 1 results change with `/2`.** Fast-Map runs one rule, `rasmapper-effective-terrain/2`,
+  for both request schemas, so the native effective terrain of an *unmodified* terrain (schema
+  1) from a `/2` engine differs numerically from a `/1` engine's; receipts report `/2`. Products
+  mapped on the effective terrain can change when the engine is upgraded.
+- **Qualified through `ras2cng map`** (ras-commander 0.119.0, Fast-Map 0.18.0, HEC-RAS 7.0.1
+  and 6.6, against two repeat RAS Mapper exports per case made by ras2cng's own export route):
+  Bald Eagle p08 with 8 single-ring polygons, and with 8 rotated ellipses, routes to the native
+  effective terrain with 0 mask and 0 value differences in the modified window (90,000 px) and in
+  WSE, Depth and Velocity (Max) (431,872 / 432,120 valid px). Over the whole terrain (197,179,058
+  valid px), 2 (7.0.1) or 4 (6.6) values differ, all stitch-TIN pixels of the base terrain where
+  the unmodified native build also differs from RAS Mapper's base export. Multi-ring polygons go
+  to RAS Mapper with `refusal_reason: "multi_ring_polygon"`.
+- **Terrains whose CRS has no EPSG code stay on RAS Mapper.** ras-commander 0.119.0 refuses the
+  native effective terrain for such a CRS (for example ESRI:102630, Alabama West ftUS, the Helena
+  terrain), so the route is decided but the build falls back to the export (recorded as
+  `fallback`), and fast-map then refuses the export too, so RAS Mapper maps the plan.
+
+## Fix: terrain-modification vectors missed piers, shapes and widths
+
+`extract_terrain_modification_layers()` / `export_terrain_modifications()` (and so the
+archive's `terrain/modifications/` layers and the web map's modification layers):
+
+- **Pier, rectangle, ellipse and triangle modifications produced no geometry.** They are
+  stored as parameter tables (`Piers`, `Rectangles`, `Circles`, `Triangles`), not as point
+  lists, and were skipped. Their outlines now come out in `terrain_modification_polygons`
+  with a `shape_type` column (body and round or sharp noses for piers, rotated as RAS Mapper
+  rotates them).
+- **A layer with several features was read as one feature.** All points of a layer became
+  one line (or one polygon with every other ring as a hole), with the first feature's
+  attributes. Features are now split by `Polyline/Polygon Info` and keep their own
+  attributes (`feature_index`, `feature_name`, `width`, slopes, `max_extent`,
+  `elevation_value`, `elevation_type`).
+- **Line modifications had no width.** New layer `terrain_modification_footprints`: one
+  polygon per feature for the terrain it can change. Lines are buffered by `max_extent`
+  (RAS Mapper's *Max Reach*, the offset RAS Mapper itself indexes them by) or by half the top
+  width when no max extent is stored (`footprint_basis`, `footprint_half_width`). Use it
+  instead of a centreline to decide whether a modification can affect a cell.
+
 ## Fix: modifications the `.rasmap` does not activate were treated as applied
 
 RAS Mapper applies a terrain HDF's modification layers only when the project's `.rasmap`
@@ -11,8 +96,10 @@ Rust boundaries were refused.
 - New `terrain_modification_status()` (stored, registered, active, inactive, basis) and
   `active_terrain_modifications()`. Without a `.rasmap` entry for the terrain, every stored
   layer counts as active.
-- fast-map's routing (source TIFF / effective terrain vs. RAS Mapper export, and Rust
-  boundaries) now uses the active set, and notes stored-but-inactive layers.
+- fast-map's routing (source TIFF, the modified-terrain route of
+  `TerrainResolver.modified_route()` above, and Rust boundaries) now uses the active set, and
+  notes stored-but-inactive layers. A terrain with no active layer is unmodified; the
+  `Modifications`-group check above then applies to the active layers.
 - `ras2cng inspect` shows active/stored modification counts per terrain; `--json` and
   `TerrainInfo.modifications` carry the lists. Archive manifests add
   `stored_modifications`, `active_modifications`, `inactive_modifications` and

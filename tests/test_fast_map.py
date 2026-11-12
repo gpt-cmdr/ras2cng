@@ -679,6 +679,13 @@ def test_modified_terrain_skips_rust_terrain_and_uses_the_export(tmp_path, monke
     _terrain_h5(hdf, ["Levee A"])
     monkeypatch.setattr(resolver, "_terrain_hdf_for", lambda plan: hdf)
     monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: True)
+    # The released engine (Fast-Map 0.17.0) advertises only /1, so a modified
+    # terrain stays on the RAS Mapper export (see test_fast_map_modified_terrain).
+    monkeypatch.setattr(
+        fast_map, "engine_method",
+        lambda kind: {"method_id": "rasmapper-effective-terrain/1"}
+        if kind == "effective_terrain" else {},
+    )
     monkeypatch.setattr(
         resolver, "_effective",
         lambda plan: pytest.fail("the effective terrain must not be built for a modified terrain"),
@@ -692,6 +699,9 @@ def test_modified_terrain_skips_rust_terrain_and_uses_the_export(tmp_path, monke
     assert fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", run)[1] == fast_map.TERRAIN_EXPORT
     assert kinds == ["export"], "neither the source TIFF nor the effective terrain is tried"
     assert any("1 active modification(s)" in note for note in resolver.notes)
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
+    assert fast_map.EFFECTIVE_TERRAIN_V2 in route["reason"]
 
 
 def test_unmodified_terrain_still_uses_the_source(tmp_path, monkeypatch):
