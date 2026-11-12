@@ -134,8 +134,11 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   stages every layer and every staged form is in the engine's qualified
   list; otherwise RAS Mapper's export builds it, as before, and the reason
   is recorded in ``MapResult.fast_map_terrain_route`` and
-  :data:`TERRAIN_ROUTE_MANIFEST`. With Fast-Map 0.17.0 (``/1`` only) every
-  modified terrain still goes to the export.
+  :data:`TERRAIN_ROUTE_MANIFEST`. The run's HEC-RAS release must be one the
+  engine's rules are qualified against (:data:`QUALIFIED_MODIFICATION_RUNTIMES`:
+  6.6, 6.7, 7.0, 7.0.1, 7.0.2); any other stays on the export with reason
+  code :data:`HECRAS_VERSION_UNQUALIFIED`. With Fast-Map 0.17.0 (``/1``
+  only) every modified terrain still goes to the export.
 * **Invalid cell polygons** (ras-commander 0.110.2+). ``invalid_cells``
   (:data:`INVALID_CELL_POLICIES`) sets pixel ownership for cells whose face
   polylines cross; the engine default ``repair`` maps such meshes instead of
@@ -246,10 +249,22 @@ MODIFICATION_READER_PRIVATE = "ras_commander.fim._terrain_mods.read_layers"
 # parts; ras-commander #837, Fast-Map #42): always the RAS Mapper export.
 MULTI_RING_POLYGON = "multi_ring_polygon"
 # HEC-RAS releases whose RAS Mapper terrain exports the engine's modification
-# rules reproduce (Fast-Map 0.18.0 is qualified against 6.6 and 7.0.1 exports).
-# The native route and the export use one resolved release (resolve_hecras_runtime);
-# a modified terrain whose export runs on any other release stays on the export.
-QUALIFIED_MODIFICATION_RUNTIMES = ("6.6", "7.0.1")
+# rules reproduce exactly (per-release qualification, 2026-11-12: 7.0 and 7.0.2
+# render every form as 7.0.1; the 6.7 betas as 6.6 on every form 6.6 renders;
+# 6.5 and earlier match neither rule). The native route and the export use one
+# resolved release (resolve_hecras_runtime); a modified terrain on any other
+# release (before 6.6, or after the latest qualified, 7.0.2) stays on the export
+# with reason code HECRAS_VERSION_UNQUALIFIED.
+QUALIFIED_MODIFICATION_RUNTIMES = ("6.6", "6.7", "7.0", "7.0.1", "7.0.2")
+# The engine rule each qualified release takes when ras-commander cannot map a
+# release itself (0.119.0 maps every release but 6.6 to 7.0.1, wrong for 6.7).
+# Newer ras-commander maps the release (from the engine's advertised
+# hecras_versions table when there is one), so it is given the release.
+MODIFICATION_RELEASE_RULES = {
+    "6.6": "6.6", "6.7": "6.6", "7.0": "7.0.1", "7.0.1": "7.0.1", "7.0.2": "7.0.1",
+}
+# Route reason code for a release outside QUALIFIED_MODIFICATION_RUNTIMES.
+HECRAS_VERSION_UNQUALIFIED = "hecras_version_unqualified"
 # A terrain whose HDF stores modification layers that RAS Mapper does not apply
 # (no .rasmap group named exactly "Modifications"; ras-commander 0.119) is mapped
 # as unmodified; its route record says so (route MODIFIED_ROUTE_UNAPPLIED).
@@ -972,6 +987,65 @@ class HecRasRuntime:
     basis: str
     canonical: Optional[str]
     problem: Optional[str] = None
+    #: The HEC-RAS release the label names (``"6.7"`` for a 6.7 beta,
+    #: ``"7.0"`` for 7.0.0), whether or not the export supports it; ``None``
+    #: when the label names no release. The native route is decided on it.
+    release: Optional[str] = None
+
+
+def hecras_release(label: Any) -> Optional[str]:
+    """``"major.minor[.patch]"`` of a HEC-RAS version label, or None.
+
+    Reads release labels (``"7.0.2"``), plan-file ``Program Version`` values
+    (``"6.60"`` = 6.6, ``"7.02"`` = 7.0.2), install folders (``"6.7 Beta 5"``,
+    a ``Ras.exe`` path) and the dotted product form (``"7.00.0002"``); a zero
+    patch is dropped (``"7.0.0"`` is ``"7.0"``). The same reading as
+    ras-commander's ``_terrain_mods.hecras_release``.
+    """
+    if label is None:
+        return None
+    text = str(label).strip()
+    if text.lower().endswith(".exe"):
+        parts = [part for part in re.split(r"[\\/]", text) if part]
+        text = parts[-2] if len(parts) >= 2 else ""
+    match = re.search(r"(?<![\d.])(\d+)\.(\d+)(?:\.(\d+))?(?![\d.])", text)
+    if match is None:
+        return None
+    major, minor_text, patch_text = int(match.group(1)), match.group(2), match.group(3)
+    if patch_text is None and len(minor_text) == 2:
+        minor, patch = int(minor_text[0]), int(minor_text[1])
+    elif patch_text is None and len(minor_text) > 2:
+        return None
+    else:
+        minor, patch = int(minor_text), int(patch_text or 0)
+    return f"{major}.{minor}" if patch == 0 else f"{major}.{minor}.{patch}"
+
+
+def _commander_maps_releases() -> bool:
+    """Whether ras-commander maps a HEC-RAS release to an engine rule itself.
+
+    True from the ras-commander that has ``_terrain_mods.HECRAS_RELEASE_RULES``
+    (6.7 and 7.0.x mapped, other releases refused); 0.119.0 maps every release
+    except 6.6 to the 7.0.1 rule, so it is given the rule instead.
+    """
+    try:
+        from ras_commander.fim import _terrain_mods
+    except ImportError:
+        return False
+    return isinstance(getattr(_terrain_mods, "HECRAS_RELEASE_RULES", None), dict)
+
+
+def modification_hecras_version(release: Optional[str]) -> Optional[str]:
+    """The ``hecras_version`` ras2cng passes to Commander for a qualified release.
+
+    The release itself when Commander maps releases (it then picks the rule
+    from the engine's advertised table), else the rule from
+    :data:`MODIFICATION_RELEASE_RULES`; ``None`` for an unqualified release.
+    Never a label the engine or Commander would map wrongly or refuse.
+    """
+    if release not in QUALIFIED_MODIFICATION_RUNTIMES:
+        return None
+    return release if _commander_maps_releases() else MODIFICATION_RELEASE_RULES[release]
 
 
 def _runtime_release(label: str) -> Optional[str]:
@@ -991,7 +1065,11 @@ def resolve_hecras_runtime(prj_file: Path, ras_version: Optional[str]) -> HecRas
     which is what :func:`ras2cng.terrain.export_modified_terrain` uses when it
     is given no version. The release is then checked as the export checks it
     (``resolve_supported_hecras_version``: 6.4.1, 6.5, 6.6, 7.0.1, 7.0.2,
-    7.1). Never raises.
+    7.1); ``canonical`` is ``None`` with the reason in ``problem`` when it
+    does not support the release. ``release`` is read from the label either
+    way (:func:`hecras_release`), because the native route does not need the
+    export: 6.7 betas and 7.0.0, which the export refuses, are qualified
+    for it. Never raises.
     """
     if ras_version:
         label, basis = str(ras_version), f"--ras-version {ras_version}"
@@ -1014,15 +1092,16 @@ def resolve_hecras_runtime(prj_file: Path, ras_version: Optional[str]) -> HecRas
             )
         label = str(detected)
         basis = f"detected from the project's plan files ({label})"
+    release = hecras_release(label)
     try:
         from ras_commander.native.terrain_export_host import resolve_supported_hecras_version
     except ImportError:
-        return HecRasRuntime(label, basis, _runtime_release(label))
+        return HecRasRuntime(label, basis, _runtime_release(label), release=release)
     try:
         canonical = resolve_supported_hecras_version(label, None)
     except (ValueError, TypeError) as exc:
-        return HecRasRuntime(label, basis, None, str(exc))
-    return HecRasRuntime(label, basis, str(canonical))
+        return HecRasRuntime(label, basis, None, str(exc), release=release)
+    return HecRasRuntime(label, basis, str(canonical), release=release)
 
 
 def rasmap_unapplied_modifications(
@@ -1513,7 +1592,9 @@ class TerrainResolver:
         engine refuses; the RAS Mapper export's own HEC-RAS release
         (:meth:`hecras_runtime`, recorded as ``hecras_runtime``) resolved and
         in :data:`QUALIFIED_MODIFICATION_RUNTIMES`, the release both routes
-        then use; and every staged layer form in the engine's qualified
+        then use (otherwise ``reason_code`` :data:`HECRAS_VERSION_UNQUALIFIED`;
+        the export need not support it: 6.7 betas and 7.0.0 are recorded with
+        ``export_problem``); and every staged layer form in the engine's qualified
         list (:func:`unqualified_modification_forms`). An engine refusal at
         build or mapping time still falls back to the export and is added to
         the record as ``fallback``. Every record is written to
@@ -1595,24 +1676,38 @@ class TerrainResolver:
         # One release for both routes: the one the RAS Mapper export uses.
         runtime = self.hecras_runtime()
         details.update(
-            hecras_runtime=runtime.canonical or runtime.label,
+            hecras_runtime=runtime.canonical or runtime.release or runtime.label,
             hecras_runtime_basis=runtime.basis,
         )
-        if runtime.problem is not None or runtime.canonical is None:
+        if runtime.label is None or runtime.release is None:
             return (
                 "the HEC-RAS release of the RAS Mapper export could not be resolved, so the "
                 f"native terrain cannot follow it: {runtime.problem}", details,
             )
-        if runtime.canonical not in QUALIFIED_MODIFICATION_RUNTIMES:
+        if runtime.release not in QUALIFIED_MODIFICATION_RUNTIMES:
+            details["reason_code"] = HECRAS_VERSION_UNQUALIFIED
             return (
-                f"the RAS Mapper export runs on HEC-RAS {runtime.canonical}; the engine's "
-                "modification rules are qualified against HEC-RAS "
-                f"{' and '.join(QUALIFIED_MODIFICATION_RUNTIMES)} exports only", details,
+                f"[{HECRAS_VERSION_UNQUALIFIED}] the RAS Mapper export runs on HEC-RAS "
+                f"{runtime.label}; the engine's modification rules are qualified against "
+                f"HEC-RAS {', '.join(QUALIFIED_MODIFICATION_RUNTIMES)} exports only", details,
             )
+        if runtime.problem is not None:
+            # The export refuses this release (6.7 betas, 7.0.0); the native
+            # route is qualified for it, but a refusal cannot fall back.
+            details["export_problem"] = runtime.problem
+        version_arg = modification_hecras_version(runtime.release)
         try:
-            staged = reader.read(hdf, rasmap_path, runtime.canonical)
+            staged = reader.read(hdf, rasmap_path, version_arg)
         except Exception as exc:
             return f"Commander's modification reader failed: {exc}", details
+        if staged.get("refusal_reason") == "unqualified_hecras_version":
+            # Commander (from the engine's table) has no rule for this release.
+            details.update(reason_code=HECRAS_VERSION_UNQUALIFIED,
+                           refusal_reason="unqualified_hecras_version")
+            return (
+                f"[{HECRAS_VERSION_UNQUALIFIED}] Commander's modification reader has no rule "
+                f"for HEC-RAS {runtime.label}: {staged.get('refusal')}", details,
+            )
         version = staged.get("hecras_version")
         units = staged.get("length_units")
         if version is None or units is None:
@@ -1730,10 +1825,11 @@ class TerrainResolver:
                 RasFim.build_effective_terrain, "hecras_version"
             ):
                 # The release the RAS Mapper export uses (hecras_runtime), with
-                # or without --ras-version; never Commander's own guess.
-                runtime = self.hecras_runtime()
-                if runtime.canonical is not None:
-                    kwargs["hecras_version"] = runtime.canonical
+                # or without --ras-version; never Commander's own guess. A
+                # release Commander maps itself, else its engine rule.
+                version = modification_hecras_version(self.hecras_runtime().release)
+                if version is not None:
+                    kwargs["hecras_version"] = version
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 RasFim.build_effective_terrain(

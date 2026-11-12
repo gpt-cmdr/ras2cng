@@ -221,8 +221,11 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   stored in the HDF; the effective terrain is enabled and supported; and
   the one HEC-RAS release both routes use (`TerrainResolver.hecras_runtime()`:
   `--ras-version`, else what `init_ras_project` detects from the plan files,
-  exactly as the export does) is supported by the export and is 6.6 or
-  7.0.1 (`QUALIFIED_MODIFICATION_RUNTIMES`). The export, the reader and
+  exactly as the export does) is 6.6, 6.7 (betas), 7.0, 7.0.1 or 7.0.2
+  (`QUALIFIED_MODIFICATION_RUNTIMES`, decided on `HecRasRuntime.release`, not
+  on the export's support; earlier or later releases record
+  `reason_code: "hecras_version_unqualified"`). Commander gets the release
+  when it maps releases itself, else the rule (`modification_hecras_version`). The export, the reader and
   `build_effective_terrain` all take that release (recorded as
   `hecras_runtime`); before, without `--ras-version`, the reader and build
   used Commander's own guess (newest plan/geometry `Program Version`, else
