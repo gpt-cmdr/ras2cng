@@ -120,6 +120,20 @@ were refused.
 - `terrain_modifications()` is unchanged (an inventory of stored and registered layers); its
   docstring no longer says every stored layer is applied.
 
+## New: `map-hdf` maps natively on a pre-exported terrain
+
+`ras2cng map-hdf PLAN_HDF OUT --fast-map-terrain terrain.tif` (no `--terrain` /
+`--terrain-hdf`) maps with fast-map on that GeoTIFF and needs no HEC-RAS: the scaffold builds
+no terrain (`build_scaffold(allow_no_terrain=True)`, a `.rasmap` without a terrain layer) and
+no terrain sidecar set is required. It fails closed: `--engine rasmapper` is refused, engine
+failures are errors, and any requested product fast-map does not map (non-Max profiles, 1D or
+storage-area plans, inundation boundaries without a terrain HDF) fails instead of going to RAS
+Mapper. Before, `--terrain <tif>` built the scaffold terrain with HEC-RAS CreateTerrain, and
+`--terrain-hdf` required the registered terrain's full source set even when
+`--fast-map-terrain` supplied the mapping terrain. Python: `generate_result_maps(...,
+native_only=True)`. The supplied TIFF is used as given: it must be the terrain the model ran
+on, with the modifications its `.rasmap` activates.
+
 # ras2cng 0.16.0 (2026-11-09)
 
 ## Fix: `ras2cng map --wgs84` did not reproject

@@ -57,6 +57,11 @@ HEC-RAS terrain is built headlessly from the raw TIFF via `RasProcess.exe
 CreateTerrain`, and a minimal `.rasmap` is generated. The scaffold then flows
 through the same `generate_result_maps()` pipeline as `map`.
 
+With only `--fast-map-terrain` (a pre-exported terrain GeoTIFF), `map-hdf` maps
+natively: no HEC-RAS terrain is built, no HEC-RAS install is needed, and the
+command fails rather than fall back to RAS Mapper. See the
+[CLI reference](../api/cli.md#ras2cng-map-hdf).
+
 The scaffold directory (default `OUTPUT/_scaffold`) is kept between runs so the
 expensive terrain build is reused; pass `--rm-scaffold` to delete it. The ESRI
 projection file is written to `Terrain\Projection.prj` inside the scaffold —

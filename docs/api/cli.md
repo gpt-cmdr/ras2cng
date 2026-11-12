@@ -448,6 +448,11 @@ Usage: ras2cng map-hdf [OPTIONS] PLAN_HDF OUTPUT
   terrain from raw GeoTIFF(s) via RasProcess.exe CreateTerrain (or reuses a
   pre-built terrain HDF), then renders stored maps through RASMapper.
 
+  With only --fast-map-terrain (a pre-exported terrain GeoTIFF, e.g. from
+  `ras2cng terrain-mod`), no HEC-RAS terrain is built: fast-map maps every
+  product on that TIFF and the command fails if any product would need
+  RAS Mapper (native-only; implies --fast-map-strict).
+
 Arguments:
   PLAN_HDF  Computed plan results HDF (*.pNN.hdf, any filename)
   OUTPUT    Output directory for result rasters
@@ -500,11 +505,27 @@ ras2cng map-hdf results.p01.hdf ./maps --terrain dem_a.tif --terrain dem_b.tif
 
 # Pre-built HEC-RAS terrain (skips the terrain build)
 ras2cng map-hdf results.p01.hdf ./maps --terrain-hdf Terrain50.hdf
+
+# Native-only: map on a pre-exported terrain GeoTIFF, no HEC-RAS needed
+ras2cng map-hdf results.p01.hdf ./maps --fast-map-terrain terrain_export.tif
 ```
 
-Requires a Windows HEC-RAS install (RasMapperLib + bundled GDAL). Exactly one
-of `--terrain` / `--terrain-hdf` must be given. The plan HDF must carry a
-`Projection` attribute or `--projection` must be supplied.
+`--terrain` and `--terrain-hdf` need a Windows HEC-RAS install (RasMapperLib +
+bundled GDAL) or the Wine setup; give at most one of them. The plan HDF must
+carry a `Projection` attribute or `--projection` must be supplied.
+
+**Native-only mapping.** `--fast-map-terrain` without `--terrain` /
+`--terrain-hdf` maps on that GeoTIFF with the fast-map engine and nothing else:
+no terrain is built or copied (the scaffold's `.rasmap` has no terrain layer),
+no terrain sidecar set is needed, and RAS Mapper is never called. It fails
+closed: `--engine rasmapper` is refused, fast-map engine failures are errors
+(as with `--fast-map-strict`), and a requested product fast-map does not map
+(for example a non-Max profile, a 1D or storage-area plan, or an inundation
+boundary, which needs the terrain HDF) fails the command instead of going to
+RAS Mapper. The TIFF is used as given: supply a float32 export of the terrain
+the model was run on, with the modifications its `.rasmap` activates (for
+example `ras2cng terrain-mod` on the source project). Results record
+`fast_map_terrain = "supplied"`.
 
 ## ras2cng terrain-mod
 
