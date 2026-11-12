@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import gc
+import logging
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -46,6 +47,7 @@ from ras2cng.geometry import (
 )
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 VALID_RESULTS_LAYOUTS = {"plan", "variable"}
 VALID_RESULTS_GEOMETRY_MODES = {"polygon", "point", "none"}
@@ -134,6 +136,9 @@ class TerrainFileInfo:
     crs: Optional[str] = None
     resolution: Optional[str] = None       # e.g. "50.0 x 50.0"
     total_size_mb: float = 0.0
+    #: Stored vs active modifications in this project
+    #: (``ras2cng.terrain.TerrainModificationStatus.to_dict()``), or None.
+    modifications: Optional[dict] = None
 
 
 @dataclass
@@ -298,6 +303,7 @@ def print_project_info(info: ProjectInfo, as_json: bool = False) -> None:
                     "crs": td.crs,
                     "resolution": td.resolution,
                     "total_size_mb": round(td.total_size_mb, 2),
+                    "modifications": _modification_summary(td.modifications),
                 }
                 for td in info.terrain_details
             ],
@@ -362,6 +368,7 @@ def print_project_info(info: ProjectInfo, as_json: bool = False) -> None:
         terrain_table.add_column("CRS")
         terrain_table.add_column("Resolution")
         terrain_table.add_column("Size (MB)", justify="right")
+        terrain_table.add_column("Mods (active/stored)", justify="center")
         for td in info.terrain_details:
             terrain_table.add_row(
                 td.name,
@@ -370,6 +377,7 @@ def print_project_info(info: ProjectInfo, as_json: bool = False) -> None:
                 td.crs or "-",
                 td.resolution or "-",
                 f"{td.total_size_mb:.1f}" if td.total_size_mb > 0 else "-",
+                _modification_cell(td.modifications),
             )
         console.print(terrain_table)
     elif info.terrain_files:
@@ -1003,11 +1011,16 @@ def archive_project(
                             "crs": metadata["crs"],
                         }
                     )
+                status = terrain.modifications or {}
                 manifest.add_terrain_modification_entry(
                     ManifestTerrainModificationEntry(
                         terrain_name=terrain.name,
                         source_hdf=str(terrain.hdf_path),
                         layers=layers,
+                        stored_modifications=list(status.get("stored") or []),
+                        active_modifications=list(status.get("active") or []),
+                        inactive_modifications=list(status.get("inactive") or []),
+                        activation_basis=status.get("basis"),
                     )
                 )
             except Exception as e:
@@ -1737,6 +1750,39 @@ def _terrain_hdf_paths_from_rasmap(rasmap_path: Path, project_dir: Path) -> dict
     return paths
 
 
+def _terrain_modification_record(
+    hdf_path: Optional[Path], rasmap_path: Optional[Path]
+) -> Optional[dict]:
+    """Stored vs active modifications of one terrain, or None (no readable HDF)."""
+    if hdf_path is None or not Path(hdf_path).is_file():
+        return None
+    from ras2cng.terrain import terrain_modification_status
+
+    try:
+        return terrain_modification_status(Path(hdf_path), rasmap_path).to_dict()
+    except Exception as exc:
+        logger.warning("Could not read terrain modifications of %s: %s", hdf_path, exc)
+        return None
+
+
+def _modification_summary(record: Optional[dict]) -> Optional[dict]:
+    if record is None:
+        return None
+    return {
+        key: record.get(key)
+        for key in ("stored", "active", "inactive", "basis", "problems")
+    }
+
+
+def _modification_cell(record: Optional[dict]) -> str:
+    if record is None:
+        return "-"
+    cell = f"{len(record.get('active') or [])}/{len(record.get('stored') or [])}"
+    if record.get("basis") != "rasmap" and record.get("stored"):
+        cell += " (no .rasmap entry: all counted)"
+    return cell
+
+
 def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
     """Discover detailed terrain information from rasmap and filesystem.
 
@@ -1771,6 +1817,9 @@ def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
                         total_size_mb=sum(
                             f.stat().st_size for f in tif_files if f.exists()
                         ) / (1024 * 1024) if tif_files else 0.0,
+                        modifications=_terrain_modification_record(
+                            hdf_path, rasmap_files[0]
+                        ),
                     ))
                 return terrain_details
     except Exception:
@@ -1796,6 +1845,7 @@ def _discover_terrain_details(ras, project_dir: Path) -> list[TerrainFileInfo]:
                 total_size_mb=sum(
                     f.stat().st_size for f in tif_files if f.exists()
                 ) / (1024 * 1024) if tif_files else 0.0,
+                modifications=_terrain_modification_record(hdf_f, None),
             ))
     else:
         # Just TIF files, no HDFs

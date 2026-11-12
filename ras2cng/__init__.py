@@ -125,6 +125,7 @@ from ras2cng.scaffold import (
 )
 from ras2cng.spatial_index import postprocess_archive, postprocess_geoparquet, postprocess_result_table
 from ras2cng.terrain import (
+    active_terrain_modifications,
     consolidate_terrain,
     consolidate_terrain_files,
     consolidate_project_terrains,
@@ -135,7 +136,9 @@ from ras2cng.terrain import (
     extract_terrain_source_footprints,
     inspect_terrain_sources,
     select_terrain_resolution,
+    terrain_modification_status,
     TerrainInfo,
+    TerrainModificationStatus,
     TerrainResolutionDecision,
 )
 
@@ -273,6 +276,7 @@ __all__ = [
     "postprocess_geoparquet",
     "postprocess_result_table",
     # Terrain
+    "active_terrain_modifications",
     "consolidate_terrain",
     "consolidate_terrain_files",
     "consolidate_project_terrains",
@@ -282,7 +286,9 @@ __all__ = [
     "extract_terrain_modification_layers",
     "extract_terrain_source_footprints",
     "TerrainInfo",
+    "TerrainModificationStatus",
     "TerrainResolutionDecision",
     "inspect_terrain_sources",
+    "terrain_modification_status",
     "select_terrain_resolution",
 ]

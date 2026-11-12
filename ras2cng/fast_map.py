@@ -121,9 +121,11 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   against ~190 s). Any other refusal falls back to the RAS Mapper export,
   which needs HEC-RAS (Windows or Wine). Each is built at most once per run.
   **Modified terrains** (:meth:`TerrainResolver.modified_route`): when
-  :func:`ras2cng.terrain.terrain_modifications` finds any modification in
-  the terrain HDF or the ``.rasmap``, the unmodified source TIFF is skipped
-  and Rust boundaries are refused (RAS Mapper draws them). The terrain is
+  :func:`ras2cng.terrain.active_terrain_modifications` finds any modification
+  RAS Mapper applies (every terrain-HDF layer when the ``.rasmap`` terrain
+  layer has a ``Modifications`` group; every stored layer when the
+  ``.rasmap`` cannot tell), the unmodified source TIFF is skipped and Rust
+  boundaries are refused (RAS Mapper draws them). The terrain is
   built by the native effective terrain *with modifications* only when the
   engine advertises ``rasmapper-effective-terrain/2`` (Fast-Map 0.18+) with a
   ``modifications`` record, ras-commander's modification reader
@@ -1418,10 +1420,14 @@ class TerrainResolver:
                 yield TERRAIN_EXPORT_CANONICAL, canonical, None
 
     def modifications(self, plan_hdf: Path) -> list[str]:
-        """The plan terrain's modifications (cached), ``[]`` when unmodified.
+        """The plan terrain's active modifications (cached), ``[]`` when unmodified.
 
-        Any modification skips the unmodified source TIFF and refuses Rust
-        boundaries. The terrain goes to RAS Mapper's export unless
+        Only active modifications count
+        (:func:`ras2cng.terrain.terrain_modification_status`: every stored
+        layer when the ``.rasmap`` terrain layer has a ``Modifications``
+        group, none without one); stored but inactive layers are noted and
+        ignored. Any active modification skips
+        the unmodified source TIFF and refuses Rust boundaries. The terrain goes to RAS Mapper's export unless
         :meth:`modified_route` qualifies the native effective terrain with
         modifications. A terrain whose HDF cannot be found or read counts as
         unknown, which also keeps it on RAS Mapper. A terrain whose HDF layers
@@ -1439,13 +1445,23 @@ class TerrainResolver:
             if hdf is None:
                 found: list[str] = []
             else:
-                from ras2cng.terrain import terrain_modifications
+                from ras2cng.terrain import terrain_modification_status
 
                 rasmap = self.prj_file.with_suffix(".rasmap")
                 try:
-                    found = terrain_modifications(
+                    status = terrain_modification_status(
                         hdf, rasmap if rasmap.is_file() else None
                     )
+                    found = status.active_labels()
+                    if status.inactive:
+                        # No Modifications group under the terrain: RAS Mapper
+                        # applies none, so they do not route the terrain.
+                        self.notes.append(
+                            f"terrain {hdf.name} stores {len(status.stored)} modification "
+                            f"layer(s); the .rasmap activates {len(status.active)} "
+                            f"(inactive: {', '.join(status.inactive[:5])}"
+                            f"{' ...' if len(status.inactive) > 5 else ''})"
+                        )
                 except Exception as exc:  # unreadable: do not assume unmodified
                     found = [f"unreadable terrain HDF ({exc})"]
                 unapplied = (
@@ -1473,8 +1489,8 @@ class TerrainResolver:
             if found:
                 shown = ", ".join(found[:5]) + (" ..." if len(found) > 5 else "")
                 self.notes.append(
-                    f"terrain {hdf.name if hdf else '?'} has {len(found)} modification(s) "
-                    f"({shown})"
+                    f"terrain {hdf.name if hdf else '?'} has {len(found)} active "
+                    f"modification(s) ({shown})"
                 )
             self._sources[key] = found
         return self._sources[key]
@@ -1814,16 +1830,18 @@ class TerrainResolver:
                 f"terrain HDF for {Path(plan_hdf).name} not found ({hdf}); "
                 "supply it with --fast-map-terrain-hdf"
             )
-        from ras2cng.terrain import terrain_modifications
+        from ras2cng.terrain import active_terrain_modifications
 
         rasmap = self.prj_file.with_suffix(".rasmap")
         try:
-            mods = terrain_modifications(Path(hdf), rasmap if rasmap.is_file() else None)
+            mods = active_terrain_modifications(
+                Path(hdf), rasmap if rasmap.is_file() else None
+            )
         except Exception as exc:
             mods = [f"unreadable terrain HDF ({exc})"]
         if mods:
             raise FastMapUnavailable(
-                f"terrain {Path(hdf).name} has {len(mods)} modification(s); "
+                f"terrain {Path(hdf).name} has {len(mods)} active modification(s); "
                 "Rust boundaries are only used on unmodified terrains"
             )
         tifs = _discover_tifs_for_hdf(Path(hdf))

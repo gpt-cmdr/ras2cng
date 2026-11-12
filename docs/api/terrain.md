@@ -36,6 +36,36 @@ extent stored) covers only the top width and can omit side-slope reach, so do no
 rule out an effect at a location. A line with no usable max extent or width
 has no footprint, so check `terrain_modification_lines` when every feature must be covered.
 
+## Stored vs Active Modifications
+
+A terrain HDF stores modification layers under `/Modifications`. RAS Mapper (HEC-RAS 6.6,
+7.0.1) applies them only when the project's `.rasmap` terrain layer has an
+`ElevationModificationGroup` named exactly `Modifications`, and then applies every stored
+layer: the group's per-layer entries and `Checked` state are not consulted. Two projects can
+share one terrain HDF and still map on different terrains: a project whose terrain layer has
+no `Modifications` group (none, or only one under another name) maps on the unmodified
+terrain, and a RAS Mapper export through it is identical to the unmodified terrain.
+
+```python
+from ras2cng.terrain import terrain_modification_status, active_terrain_modifications
+
+status = terrain_modification_status("Terrain/T.hdf", "Model.rasmap")
+status.stored      # layers in the HDF
+status.active      # layers RAS Mapper applies in this project
+status.inactive    # stored but not applied (no Modifications group)
+status.registered  # layers the .rasmap lists (informational)
+status.basis       # "rasmap", or "hdf" when the .rasmap has no entry for this terrain
+```
+
+Without a `.rasmap`, or when it has no layer for this terrain HDF, every stored layer counts
+as active, so an unknown activation is never treated as unmodified.
+`active_terrain_modifications()` returns the labels of the active set; fast-map uses it to
+choose between native terrain operations and the RAS Mapper export.
+`terrain_modifications()` remains an inventory of everything stored or registered.
+`ras2cng inspect` shows active/stored counts per terrain, and archive manifests record
+`stored_modifications`, `active_modifications`, `inactive_modifications` and
+`activation_basis` in each `terrain_modifications` entry.
+
 ## How Terrain Discovery Works
 
 1. Reads the project's `.rasmap` file to get terrain names in priority order
@@ -144,3 +174,13 @@ binary satisfies the exact managed API contract.
 ::: ras2cng.terrain.extract_terrain_modification_layers
     options:
       show_source: true
+
+::: ras2cng.terrain.terrain_modification_status
+    options:
+      show_source: true
+
+::: ras2cng.terrain.active_terrain_modifications
+    options:
+      show_source: true
+
+::: ras2cng.terrain.TerrainModificationStatus
