@@ -240,6 +240,9 @@ TERRAIN_ROUTE_MANIFEST = "fast_map_terrain_route.json"
 # the public API (ras-commander 0.119+), else the private module it wraps.
 MODIFICATION_READER_PUBLIC = "RasFim.read_terrain_modifications"
 MODIFICATION_READER_PRIVATE = "ras_commander.fim._terrain_mods.read_layers"
+# Reader refusal code for a polygon with more than one ring (holes or separate
+# parts; ras-commander #837, Fast-Map #42): always the RAS Mapper export.
+MULTI_RING_POLYGON = "multi_ring_polygon"
 FAST_MAP_RENDER_MODES = ("horizontal", "sloping", "slopingPretty")
 # Deterministic contours support horizontal and plain cell-corner sloping only.
 FAST_MAP_BOUNDARY_RENDER_MODES = ("horizontal", "sloping")
@@ -869,6 +872,21 @@ class ModificationReader:
     read: Callable[[Path, Optional[Path], Optional[str]], dict]
 
 
+def modification_refusal_reason(code: Any, message: Optional[str]) -> Optional[str]:
+    """Stable reason code of a modification-reader refusal, or None.
+
+    Uses the code Commander attaches (``FimUnsupportedError.reason``, or
+    ``refusal_reason`` on the public record) when present; for an older
+    Commander without codes, recognises a multi-ring polygon from the message.
+    """
+    if code:
+        return str(code)
+    text = (message or "").lower()
+    if MULTI_RING_POLYGON in text or "multi-ring polygon" in text:
+        return MULTI_RING_POLYGON
+    return None
+
+
 def _read_public(read: Callable) -> Callable:
     def run(hdf: Path, rasmap_path: Optional[Path], ras_version: Optional[str]) -> dict:
         record = dict(read(hdf, rasmap_path=rasmap_path, hecras_version=ras_version))
@@ -901,6 +919,7 @@ def _read_private(module: Any) -> Callable:
             layers = module.read_layers(hdf, length_units=units, hecras_version=version)
         except Exception as exc:  # FimUnsupportedError: an unqualified form
             record["refusal"] = str(exc)
+            record["refusal_reason"] = getattr(exc, "reason", None)
             return record
         record.update(status="staged" if layers else "none", layers=layers)
         return record
@@ -1400,6 +1419,9 @@ class TerrainResolver:
                 "modification rules are not available", details,
             )
         if staged.get("status") == "refused":
+            code = modification_refusal_reason(staged.get("refusal_reason"), staged.get("refusal"))
+            if code is not None:
+                details["refusal_reason"] = code
             return (
                 f"Commander's modification reader refused the terrain: {staged.get('refusal')}",
                 details,

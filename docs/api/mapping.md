@@ -220,7 +220,10 @@ one of these holds (`TerrainResolver.modified_route`):
   one. ras2cng uses the public `RasFim.read_terrain_modifications`
   (ras-commander 0.119.0 and later) and falls back to the private
   `ras_commander.fim._terrain_mods.read_layers` on a ras-commander that has
-  only that; with neither, the terrain goes to RAS Mapper;
+  only that; with neither, the terrain goes to RAS Mapper. A polygon with
+  more than one ring (holes or separate parts) is refused by the reader
+  (ras-commander 0.119.0, code `multi_ring_polygon`) and goes to RAS Mapper
+  with `refusal_reason: "multi_ring_polygon"` recorded;
 - every staged layer kind, ground-line subtype and elevation type is in the
   engine's qualified list (`effective_terrain.modifications.supported`), and
   no layer is a form the engine refuses (shape-Z polygons without boundary
@@ -235,7 +238,7 @@ and the reason is recorded. An engine refusal on the native route (at build
 or mapping time) also falls back to the export. The decision is kept in
 `MapResult.fast_map_terrain_route` (per product: `route` is
 `native-effective` or `rasmapper-export`, with `reason`, the staged `layers`,
-`hecras_version`, `modification_reader` (`RasFim.read_terrain_modifications`,
+`hecras_version`, any `refusal_reason`, `modification_reader` (`RasFim.read_terrain_modifications`,
 `ras_commander.fim._terrain_mods.read_layers` or `None`) and any `fallback`) and in
 `_fast_map_terrain/fast_map_terrain_route.json` under the output folder.
 **With Fast-Map 0.17.0 every modified terrain still goes to RAS Mapper.**

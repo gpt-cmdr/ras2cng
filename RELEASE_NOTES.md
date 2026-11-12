@@ -14,7 +14,9 @@ natively, with the modifications applied, **only when all of these hold**
 - ras-commander's terrain-modification reader stages every modification layer without
   refusing one: the public `RasFim.read_terrain_modifications` (ras-commander 0.119.0 and
   later), else the private `ras_commander.fim._terrain_mods.read_layers` on a ras-commander
-  that has only that. The reader used is recorded as `modification_reader`;
+  that has only that. The reader used is recorded as `modification_reader`, and a refusal's
+  code as `refusal_reason` (a polygon with more than one ring is `multi_ring_polygon` and goes
+  to RAS Mapper);
 - every staged layer kind, ground-line subtype and elevation type is in the engine's qualified
   list, and none is a form the engine refuses;
 - the existing native-terrain conditions hold (effective terrain enabled and supported, layers

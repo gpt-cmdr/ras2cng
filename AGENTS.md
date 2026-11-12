@@ -208,7 +208,9 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   (public `RasFim.read_terrain_modifications`, 0.119.0+, else the private
   `ras_commander.fim._terrain_mods.read_layers` it wraps; the one used is
   `modification_reader` on the route record, `None` when there is neither)
-  stages every layer; every
+  stages every layer (a refusal's code, for example `multi_ring_polygon` for
+  a polygon with more than one ring, ras-commander #837, is kept as
+  `refusal_reason`; older Commander is matched by message); every
   staged kind/subtype/elevation type is in
   `effective_terrain.modifications.supported` and no form is one the engine
   refuses (`unqualified_modification_forms()`); the layers are readable and

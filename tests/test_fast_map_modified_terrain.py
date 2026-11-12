@@ -96,7 +96,8 @@ def _reader(layers=None, error=None, version=("7.0.1", "default")):
     )
 
 
-def _public_reader(layers=None, refusal=None, version=("7.0.1", "default"), units="feet"):
+def _public_reader(layers=None, refusal=None, version=("7.0.1", "default"), units="feet",
+                   refusal_reason=None):
     """A fake RasFim.read_terrain_modifications (ras-commander 0.119+)."""
     calls = []
 
@@ -113,6 +114,7 @@ def _public_reader(layers=None, refusal=None, version=("7.0.1", "default"), unit
             "method_id": fast_map.EFFECTIVE_TERRAIN_V2,
             "status": "refused" if refusal else ("staged" if layers else "none"),
             "refusal": refusal,
+            "refusal_reason": refusal_reason,
             "hecras_version": resolved[0],
             "hecras_version_basis": resolved[1],
             "length_units": units,
@@ -275,6 +277,49 @@ def test_a_public_reader_refusal_goes_to_rasmapper_with_its_reason(tmp_path, mon
     assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
     assert "reader refused" in route["reason"] and "sampled from the terrain" in route["reason"]
     assert route["modification_reader"] == fast_map.MODIFICATION_READER_PUBLIC
+
+
+MULTI_RING_MESSAGE = (
+    "modification 'Pond' feature 0: multi-ring polygon (2 rings: a hole or separate/overlapping "
+    "parts) is not qualified [reason: multi_ring_polygon]; use the RAS Mapper export"
+)
+
+
+def _multi_ring_error(with_code=True):
+    from ras_commander.fim.errors import FimUnsupportedError
+
+    error = FimUnsupportedError(MULTI_RING_MESSAGE)
+    if with_code:
+        error.reason = "multi_ring_polygon"
+    return error
+
+
+@pytest.mark.parametrize("case", ["public", "private-coded", "private-message-only"])
+def test_a_multi_ring_polygon_refusal_goes_to_rasmapper_with_its_reason(tmp_path, monkeypatch, case):
+    """ras-commander #837 refuses polygons with more than one ring up front
+    (reason ``multi_ring_polygon``). The code comes from the public record or
+    the error's ``reason`` attribute; an older Commander is matched by message."""
+    if case == "public":
+        public, private = _public_reader(refusal=MULTI_RING_MESSAGE,
+                                         refusal_reason="multi_ring_polygon"), None
+    else:
+        public = None
+        private = _reader(error=_multi_ring_error(with_code=case == "private-coded"))
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, private, public=public)
+    kind, kinds = _run(resolver, tmp_path)
+    assert kind == fast_map.TERRAIN_EXPORT and kinds == ["export"] and built == []
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
+    assert route["refusal_reason"] == fast_map.MULTI_RING_POLYGON
+    assert "multi-ring polygon" in route["reason"]
+    assert _manifest(tmp_path)["routes"][0]["refusal_reason"] == "multi_ring_polygon"
+
+
+def test_refusal_reason_codes():
+    assert fast_map.modification_refusal_reason("other_code", MULTI_RING_MESSAGE) == "other_code"
+    assert fast_map.modification_refusal_reason(None, MULTI_RING_MESSAGE) == "multi_ring_polygon"
+    assert fast_map.modification_refusal_reason(None, "shape-Z polygons ...") is None
+    assert fast_map.modification_refusal_reason(None, None) is None
 
 
 def test_a_public_reader_unit_conflict_is_a_resolution_failure(tmp_path, monkeypatch):
