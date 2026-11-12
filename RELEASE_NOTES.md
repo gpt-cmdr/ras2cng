@@ -1,5 +1,26 @@
 # ras2cng (unreleased)
 
+## Unmodified terrains: the native effective terrain only on HEC-RAS 6.6 to 7.0.2
+
+- The per-release qualification (2026-11-12) found that base (unmodified) terrains on HEC-RAS
+  6.5 and earlier differ from RAS Mapper's export. The native effective terrain of an
+  unmodified terrain is now used only on **6.6, 6.7 (Beta 4/5), 7.0, 7.0.1 and 7.0.2**
+  (`fast_map.QUALIFIED_EFFECTIVE_RUNTIMES`, `TerrainResolver.effective_route`). Any other
+  release goes to the RAS Mapper export with `reason_code: "hecras_version_unqualified"`, as
+  for modified terrains; a release that cannot be resolved fails closed with
+  `"hecras_version_unresolved"` (pass `--ras-version`).
+- The release is the run's (`--ras-version`, else ras-commander's detection) or, without an
+  installed HEC-RAS (Linux), the newest `Program Version` of the project's plan and geometry
+  files (`fast_map.project_program_release`). The modified route resolves its release as
+  before.
+- The decision is recorded as a separate `effective_terrain` entry: on each product's
+  `MapResult.fast_map_terrain_route` record and in the `effective_terrain` list of
+  `fast_map_terrain_route.json` (`route`, `reason`, `reason_code`, `hecras_release`,
+  `hecras_release_basis`, per-group `product_groups`).
+- Unchanged: mapping directly on the priority-1 source TIFF (the single-source path) builds no
+  effective terrain and is used on any release; Rust boundaries read the original source TIFF
+  and are not affected.
+
 ## Native modified terrains for HEC-RAS 6.6 to 7.0.2
 
 - The native effective terrain with modifications is now allowed for HEC-RAS **6.6, 6.7

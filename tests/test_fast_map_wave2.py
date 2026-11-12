@@ -431,9 +431,25 @@ def test_whole_simulation_maps_duration_and_level_pools(fim, tmp_path, new_engin
 # ---------------------------------------------------------------------------
 
 
-def _resolver(tmp_path, monkeypatch, *, effective=True, source=True):
+def _resolver(tmp_path, monkeypatch, *, effective=True, source=True,
+              program_version="6.60", ras_version=None):
+    """A resolver over an unmodified terrain HDF.
+
+    No installed HEC-RAS is assumed (ras-commander detects no release, as on
+    Linux), so the release comes from ``ras_version`` or the plan file's
+    ``Program Version`` (``None`` writes no plan file).
+    """
+    if program_version is not None:
+        (tmp_path / "a.p01").write_text(f"Plan Title=P\nProgram Version={program_version}\n")
     resolver = fast_map.TerrainResolver(
-        tmp_path / "a.prj", tmp_path / "w", terrain_name="T", effective=effective
+        tmp_path / "a.prj", tmp_path / "w", terrain_name="T", effective=effective,
+        ras_version=ras_version,
+    )
+    real_resolve = fast_map.resolve_hecras_runtime
+    monkeypatch.setattr(
+        fast_map, "resolve_hecras_runtime",
+        lambda prj, version: real_resolve(prj, version) if version else fast_map.HecRasRuntime(
+            None, "project plan files", None, "no installed HEC-RAS release (test)"),
     )
     monkeypatch.setattr(fast_map, "source_terrain_supported", lambda: source)
     monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: True)
@@ -477,6 +493,116 @@ def test_a_refused_effective_terrain_falls_back_to_the_export(fim, tmp_path, mon
     result, kind = fast_map.with_terrain(resolver, tmp_path / "a.p01.hdf", lambda t, h, k: k)
     assert kind == fast_map.TERRAIN_EXPORT
     assert any("modifications" in note for note in resolver.notes)
+
+
+@pytest.mark.parametrize("program_version, release", [
+    ("6.60", "6.6"), ("6.70", "6.7"), ("7.00", "7.0"), ("7.01", "7.0.1"), ("7.02", "7.0.2"),
+])
+@patch("ras_commander.RasFim")
+def test_effective_terrain_runs_on_qualified_releases(fim, program_version, release,
+                                                      tmp_path, monkeypatch):
+    """6.6 and later, to the latest qualified (7.0.2), read from the plan files."""
+    resolver = _resolver(tmp_path, monkeypatch, source=False, program_version=program_version)
+    fim.build_effective_terrain.side_effect = lambda hdf, target, **kw: {"output": str(target)}
+    plan = tmp_path / "a.p01.hdf"
+    assert fast_map.with_terrain(resolver, plan, lambda t, h, k: k)[1] == fast_map.TERRAIN_EFFECTIVE
+    route = resolver.effective_route(plan)
+    assert route["route"] == fast_map.EFFECTIVE_ROUTE_NATIVE and route["reason"] is None
+    assert route["hecras_release"] == release
+    assert route["hecras_release_basis"] == f"Program Version {program_version} in a.p01"
+    group = resolver.record_product_group(plan, "WSE/Depth", fast_map.TERRAIN_EFFECTIVE)
+    assert group["terrain"] == "effective" and "route" not in group
+    assert group["effective_terrain"]["route"] == fast_map.EFFECTIVE_ROUTE_NATIVE
+
+
+@pytest.mark.parametrize("program_version, release", [
+    ("6.50", "6.5"), ("6.41", "6.4.1"), ("6.31", "6.3.1"), ("5.07", "5.0.7"), ("7.10", "7.1"),
+    ("7.03", "7.0.3"),
+])
+@patch("ras_commander.RasFim")
+def test_unqualified_releases_send_an_unmodified_terrain_to_the_export(
+    fim, program_version, release, tmp_path, monkeypatch
+):
+    """Base terrains on 6.5 and earlier differ from RAS Mapper, and releases
+    after 7.0.2 are unqualified. The source TIFF is still tried first; only the
+    effective terrain is skipped, with hecras_version_unqualified recorded."""
+    resolver = _resolver(tmp_path, monkeypatch, program_version=program_version)
+    kinds = []
+
+    def run(tif, hdf, kind):
+        kinds.append(kind)
+        if kind == fast_map.TERRAIN_SOURCE:
+            raise fast_map.FastMapUnavailable("28 storage-area pixels lie outside the footprint")
+        return "ok"
+
+    plan = tmp_path / "a.p01.hdf"
+    assert fast_map.with_terrain(resolver, plan, run)[1] == fast_map.TERRAIN_EXPORT
+    assert kinds == ["source", "export"]
+    fim.build_effective_terrain.assert_not_called()
+    route = resolver.effective_route(plan)
+    assert route["route"] == fast_map.EFFECTIVE_ROUTE_RASMAPPER
+    assert route["reason_code"] == fast_map.HECRAS_VERSION_UNQUALIFIED
+    assert route["hecras_release"] == release
+    assert route["reason"].startswith(f"[{fast_map.HECRAS_VERSION_UNQUALIFIED}]")
+    assert any(fast_map.HECRAS_VERSION_UNQUALIFIED in n for n in resolver.notes)
+    # MapResult's record and the route manifest: a separate "effective_terrain" entry.
+    group = resolver.record_product_group(plan, "WSE/Depth", fast_map.TERRAIN_EXPORT)
+    assert group["product_group"] == "WSE/Depth" and group["terrain"] == "export"
+    assert group["effective_terrain"]["reason_code"] == fast_map.HECRAS_VERSION_UNQUALIFIED
+    assert "product_groups" not in group["effective_terrain"]
+    manifest = json.loads((tmp_path / "w" / fast_map.TERRAIN_ROUTE_MANIFEST).read_text())
+    assert manifest["routes"] == []
+    (entry,) = manifest["effective_terrain"]
+    assert entry["reason_code"] == fast_map.HECRAS_VERSION_UNQUALIFIED
+    assert entry["product_groups"]["a.p01.hdf"]["WSE/Depth"] == {"terrain": "export"}
+
+
+@patch("ras_commander.RasFim")
+def test_the_single_source_path_is_not_gated_by_release(fim, tmp_path, monkeypatch):
+    """Mapping directly on the priority-1 source TIFF builds no effective
+    terrain, so it is used on any release and nothing is recorded."""
+    resolver = _resolver(tmp_path, monkeypatch, program_version="6.50")
+    plan = tmp_path / "a.p01.hdf"
+    assert fast_map.with_terrain(resolver, plan, lambda t, h, k: k)[1] == fast_map.TERRAIN_SOURCE
+    fim.build_effective_terrain.assert_not_called()
+    assert resolver.record_product_group(plan, "WSE/Depth", fast_map.TERRAIN_SOURCE) is None
+    assert not (tmp_path / "w" / fast_map.TERRAIN_ROUTE_MANIFEST).exists()
+
+
+@patch("ras_commander.RasFim")
+def test_an_unresolved_release_fails_closed_to_the_export(fim, tmp_path, monkeypatch):
+    resolver = _resolver(tmp_path, monkeypatch, source=False, program_version=None)
+    plan = tmp_path / "a.p01.hdf"
+    assert fast_map.with_terrain(resolver, plan, lambda t, h, k: k)[1] == fast_map.TERRAIN_EXPORT
+    fim.build_effective_terrain.assert_not_called()
+    route = resolver.effective_route(plan)
+    assert route["reason_code"] == fast_map.HECRAS_VERSION_UNRESOLVED
+    assert route["hecras_release"] is None and "--ras-version" in route["reason"]
+
+
+@pytest.mark.parametrize("ras_version, kind", [
+    ("7.0.2", fast_map.TERRAIN_EFFECTIVE), ("6.5", fast_map.TERRAIN_EXPORT),
+])
+@patch("ras_commander.RasFim")
+def test_ras_version_decides_over_the_plan_files(fim, ras_version, kind, tmp_path, monkeypatch):
+    resolver = _resolver(
+        tmp_path, monkeypatch, source=False,
+        program_version="6.50" if kind == fast_map.TERRAIN_EFFECTIVE else "7.02",
+        ras_version=ras_version,
+    )
+    fim.build_effective_terrain.side_effect = lambda hdf, target, **kw: {"output": str(target)}
+    plan = tmp_path / "a.p01.hdf"
+    assert fast_map.with_terrain(resolver, plan, lambda t, h, k: k)[1] == kind
+    assert resolver.effective_route(plan)["hecras_release_basis"] == f"--ras-version {ras_version}"
+
+
+def test_project_program_release_takes_the_newest(tmp_path):
+    (tmp_path / "m.p01").write_text("Plan Title=a\nProgram Version=6.50\n")
+    (tmp_path / "m.g01").write_text("Geom Title=g\nProgram Version=7.02\n")
+    (tmp_path / "m.p02").write_text("Plan Title=b\nProgram Version=6.60\n")
+    (tmp_path / "m.p03.hdf").write_text("Program Version=9.99\n")  # not a text plan file
+    assert fast_map.project_program_release(tmp_path) == ("7.0.2", "Program Version 7.02 in m.g01")
+    assert fast_map.project_program_release(tmp_path / "missing") is None
 
 
 @patch("ras_commander.RasFim")

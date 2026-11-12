@@ -192,7 +192,21 @@ it. ras2cng then:
    values differ, all in stitch-TIN corners where RAS Mapper's own exports
    disagree (max 1.53 ft); it took 7.0 s and 1.4 GB, against about 190 s
    for the export. Terrains with modifications only on the conditions
-   below;
+   below. An unmodified terrain also needs a qualified HEC-RAS release
+   (`QUALIFIED_EFFECTIVE_RUNTIMES`: 6.6, 6.7 Beta 4/5, 7.0, 7.0.1, 7.0.2;
+   the 2026-11-12 qualification found base terrains on 6.5 and earlier
+   differ from RAS Mapper, and later releases are unqualified): the run's
+   release (`--ras-version`, else ras-commander's detection) or, when no
+   installed HEC-RAS resolves one (Linux), the newest `Program Version` of
+   the project's plan and geometry files. Any other release skips this step
+   with `reason_code: "hecras_version_unqualified"`, and a release that does
+   not resolve with `"hecras_version_unresolved"` (pass `--ras-version`).
+   The decision is recorded under `effective_terrain` in
+   `MapResult.fast_map_terrain_route` (`route` `native-effective` or
+   `rasmapper-export`, `reason`, `reason_code`, `hecras_release`,
+   `hecras_release_basis`) and in the route manifest's `effective_terrain`
+   list (`TerrainResolver.effective_route`). The priority-1 source TIFF
+   path above builds no effective terrain and is used on any release;
 3. otherwise exports the plan's terrain once per run through RAS Mapper
    (`RasTerrain.export_rasmapper_terrain`, HEC-RAS 6.4.1/6.5/6.6/7.0.1/7.1;
    pass `--ras-version`).

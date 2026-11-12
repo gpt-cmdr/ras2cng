@@ -118,7 +118,14 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   rebuilt in Rust from the source TIFFs, masks and stitch TIN, without
   HEC-RAS (Bald Eagle Terrain50: 0 mask differences, 8 of 197 M values differ
   in stitch-TIN corners where RAS Mapper's own exports are unstable; ~7 s
-  against ~190 s). Any other refusal falls back to the RAS Mapper export,
+  against ~190 s), only on a qualified HEC-RAS release
+  (:data:`QUALIFIED_EFFECTIVE_RUNTIMES`: 6.6, 6.7, 7.0, 7.0.1, 7.0.2;
+  base terrains on 6.5 and earlier differ from RAS Mapper). Any other
+  release goes to the RAS Mapper export with reason code
+  :data:`HECRAS_VERSION_UNQUALIFIED` (or :data:`HECRAS_VERSION_UNRESOLVED`
+  when no release resolves; :meth:`TerrainResolver.effective_route`,
+  recorded under ``effective_terrain``). The source TIFF itself is not
+  gated: it builds no effective terrain. Any other refusal falls back to the RAS Mapper export,
   which needs HEC-RAS (Windows or Wine). Each is built at most once per run.
   **Modified terrains** (:meth:`TerrainResolver.modified_route`): when
   :func:`ras2cng.terrain.active_terrain_modifications` finds any modification
@@ -265,6 +272,19 @@ MODIFICATION_RELEASE_RULES = {
 }
 # Route reason code for a release outside QUALIFIED_MODIFICATION_RUNTIMES.
 HECRAS_VERSION_UNQUALIFIED = "hecras_version_unqualified"
+# Unmodified terrains too: the native effective terrain (the multi-source mosaic,
+# masks and stitch TIN, without modifications) is used only on these releases.
+# The per-release qualification (2026-11-12) found base terrains on HEC-RAS 6.5
+# and earlier differ from RAS Mapper's export, and releases after the latest
+# qualified (7.0.2) are not qualified. Any other release, or one that cannot be
+# resolved (reason code HECRAS_VERSION_UNRESOLVED), goes to the RAS Mapper
+# export; the decision is recorded under "effective_terrain"
+# (TerrainResolver.effective_route). The single-source path (the priority-1
+# source TIFF) builds no effective terrain and is not gated.
+QUALIFIED_EFFECTIVE_RUNTIMES = QUALIFIED_MODIFICATION_RUNTIMES
+HECRAS_VERSION_UNRESOLVED = "hecras_version_unresolved"
+EFFECTIVE_ROUTE_NATIVE = "native-effective"
+EFFECTIVE_ROUTE_RASMAPPER = "rasmapper-export"
 # A terrain whose HDF stores modification layers that RAS Mapper does not apply
 # (no .rasmap group named exactly "Modifications"; ras-commander 0.119) is mapped
 # as unmodified; its route record says so (route MODIFIED_ROUTE_UNAPPLIED).
@@ -1057,6 +1077,41 @@ def _runtime_release(label: str) -> Optional[str]:
     return f"{major}.{minor}" if patch == 0 else f"{major}.{minor}.{patch}"
 
 
+def _release_key(release: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in release.split("."))
+
+
+def project_program_release(folder: Path) -> Optional[tuple[str, str]]:
+    """``(release, basis)`` of the newest ``Program Version`` in a project folder, or None.
+
+    Reads the ``Program Version=`` line of every plan and geometry text file
+    (``*.p##``, ``*.g##``; first 400 lines each) in ``folder``, as
+    ras-commander's ``_terrain_mods.project_hecras_version`` does, and returns
+    the newest release (:func:`hecras_release`: ``"6.60"`` is 6.6). Needs no
+    installed HEC-RAS, so it also works on Linux. Never raises.
+    """
+    best: Optional[tuple[tuple[int, ...], str, str]] = None
+    try:
+        paths = sorted(Path(folder).glob("*.[pg][0-9][0-9]"))
+    except OSError:
+        return None
+    for path in paths:
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                for _, line in zip(range(400), handle):
+                    if line.startswith("Program Version="):
+                        label = line.split("=", 1)[1].strip()
+                        release = hecras_release(label)
+                        if release is not None:
+                            key = _release_key(release)
+                            if best is None or key > best[0]:
+                                best = (key, release, f"Program Version {label} in {path.name}")
+                        break
+        except OSError:
+            continue
+    return None if best is None else (best[1], best[2])
+
+
 def resolve_hecras_runtime(prj_file: Path, ras_version: Optional[str]) -> HecRasRuntime:
     """Resolve the HEC-RAS release the RAS Mapper terrain export will use.
 
@@ -1483,10 +1538,85 @@ class TerrainResolver:
                     if canonical is not None:
                         yield TERRAIN_SOURCE_CANONICAL, canonical, hdf
         if self.effective and effective_terrain_supported():
-            effective = self._effective(plan_hdf)
-            if effective is not None:
-                yield TERRAIN_EFFECTIVE, effective, None
+            # Only on a qualified HEC-RAS release (effective_route); otherwise
+            # the RAS Mapper export, with the reason recorded.
+            route = self.effective_route(plan_hdf)
+            if route is not None and route.get("route") == EFFECTIVE_ROUTE_NATIVE:
+                effective = self._effective(plan_hdf)
+                if effective is not None:
+                    yield TERRAIN_EFFECTIVE, effective, None
         yield from self._export_candidates(plan_hdf)
+
+    def effective_route(self, plan_hdf: Path) -> Optional[dict[str, Any]]:
+        """Decide, once per terrain HDF, whether an unmodified terrain may be built natively.
+
+        Consulted only when an unmodified terrain reaches the native effective
+        terrain (the source TIFF was refused or not used, the effective
+        terrain is enabled and RasFim builds it); ``None`` when there is no
+        terrain HDF. ``route`` is :data:`EFFECTIVE_ROUTE_NATIVE` when the
+        run's HEC-RAS release is in :data:`QUALIFIED_EFFECTIVE_RUNTIMES`, else
+        :data:`EFFECTIVE_ROUTE_RASMAPPER` with ``reason`` and ``reason_code``
+        :data:`HECRAS_VERSION_UNQUALIFIED` (6.5 and earlier, after 7.0.2) or
+        :data:`HECRAS_VERSION_UNRESOLVED`. The release is the run's
+        (:meth:`hecras_runtime`: ``--ras-version``, else ras-commander's
+        detection) or, when that resolves none (no installed HEC-RAS, e.g. on
+        Linux), the newest ``Program Version`` of the project's plan and
+        geometry files (:func:`project_program_release`). The record is kept
+        under ``effective_terrain`` in :data:`TERRAIN_ROUTE_MANIFEST` and in
+        ``MapResult.fast_map_terrain_route``. Modified terrains are decided
+        by :meth:`modified_route` instead.
+        """
+        try:
+            hdf = self._terrain_hdf_for(plan_hdf)
+        except Exception:
+            hdf = None
+        if hdf is None:
+            return None
+        key = ("effective_route", str(hdf))
+        if key in self._sources:
+            return self._sources[key]
+        record: dict[str, Any] = {"terrain_hdf": str(hdf)}
+        runtime = self.hecras_runtime()
+        release, basis = runtime.release, runtime.basis
+        if release is None:
+            found = project_program_release(self.prj_file.parent)
+            if found is not None:
+                release, basis = found
+        record.update(hecras_release=release, hecras_release_basis=basis)
+        qualified = ", ".join(QUALIFIED_EFFECTIVE_RUNTIMES)
+        if release is None:
+            record.update(
+                route=EFFECTIVE_ROUTE_RASMAPPER, reason_code=HECRAS_VERSION_UNRESOLVED,
+                reason=(
+                    f"[{HECRAS_VERSION_UNRESOLVED}] the project's HEC-RAS release could not be "
+                    f"resolved ({runtime.problem}; no Program Version in its plan or geometry "
+                    f"files); the native effective terrain is qualified against HEC-RAS "
+                    f"{qualified} only (pass --ras-version)"
+                ),
+            )
+        elif release not in QUALIFIED_EFFECTIVE_RUNTIMES:
+            record.update(
+                route=EFFECTIVE_ROUTE_RASMAPPER, reason_code=HECRAS_VERSION_UNQUALIFIED,
+                reason=(
+                    f"[{HECRAS_VERSION_UNQUALIFIED}] HEC-RAS {release} ({basis}); the native "
+                    f"effective terrain is qualified against HEC-RAS {qualified} only"
+                ),
+            )
+        else:
+            record.update(route=EFFECTIVE_ROUTE_NATIVE, reason=None)
+        if record["route"] == EFFECTIVE_ROUTE_RASMAPPER:
+            self.notes.append(f"unmodified terrain goes to the RAS Mapper export: {record['reason']}")
+        self._sources[key] = record
+        self._write_routes()
+        return record
+
+    def _effective_route_record(self, plan_hdf: Path) -> Optional[dict[str, Any]]:
+        """The :meth:`effective_route` record already decided for this plan, or None."""
+        try:
+            hdf = self._terrain_hdf_for(plan_hdf)
+        except Exception:
+            return None
+        return None if hdf is None else self._sources.get(("effective_route", str(hdf)))
 
     def _export_candidates(self, plan_hdf: Path):
         """The RAS Mapper export, then its CRS-canonical copy after a CRS refusal."""
@@ -1769,15 +1899,35 @@ class TerrainResolver:
         import copy
 
         route = self.modified_route(plan_hdf)
-        if route is None:
+        effective = self._effective_route_record(plan_hdf)
+        if route is None and effective is None:
             return None
+
+        def bare(record: dict) -> dict:
+            return copy.deepcopy({k: v for k, v in record.items() if k != "product_groups"})
+
+        if route is None:
+            # An unmodified terrain whose native effective terrain was decided
+            # by effective_route: that decision, under "effective_terrain".
+            effective.setdefault("product_groups", {}).setdefault(Path(plan_hdf).name, {})[
+                label
+            ] = {"terrain": kind}
+            self._write_routes()
+            return {
+                "terrain_hdf": effective.get("terrain_hdf"),
+                "effective_terrain": bare(effective),
+                "product_group": label,
+                "terrain": kind,
+            }
         fallback = list(route.get("fallback") or ())
         route.setdefault("product_groups", {}).setdefault(Path(plan_hdf).name, {})[label] = {
             "terrain": kind, "fallback": fallback,
         }
         self._write_routes()
-        snapshot = copy.deepcopy({k: v for k, v in route.items() if k != "product_groups"})
+        snapshot = bare(route)
         snapshot.update(product_group=label, terrain=kind)
+        if effective is not None:  # layers RAS Mapper does not apply: an unmodified terrain
+            snapshot["effective_terrain"] = bare(effective)
         return snapshot
 
     def _record_fallback(self, plan_hdf: Path, message: str) -> None:
@@ -1793,11 +1943,14 @@ class TerrainResolver:
 
     def _write_routes(self) -> None:
         routes = [v for k, v in self._sources.items() if k[0] == "route"]
+        effective = [v for k, v in self._sources.items() if k[0] == "effective_route"]
+        payload: dict[str, Any] = {"schema": "ras2cng-terrain-route/1", "routes": routes}
+        if effective:  # unmodified terrains gated by effective_route
+            payload["effective_terrain"] = effective
         try:
             self.work_dir.mkdir(parents=True, exist_ok=True)
             (self.work_dir / TERRAIN_ROUTE_MANIFEST).write_text(
-                json.dumps({"schema": "ras2cng-terrain-route/1", "routes": routes},
-                           indent=2, default=str),
+                json.dumps(payload, indent=2, default=str),
                 encoding="utf-8",
             )
         except OSError as exc:

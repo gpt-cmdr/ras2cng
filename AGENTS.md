@@ -192,7 +192,14 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   HEC-RAS. Bald Eagle Terrain50: identical valid mask on 197,179,058 px, 8
   values differ (stitch-TIN corners, max 1.53 ft, where RAS Mapper's own
   exports disagree); 7.0 s / 1.4 GB through RasFim against ~190 s for the
-  export. **Modified terrains** (`terrain.terrain_modification_status()`:
+  export. The native effective terrain of an *unmodified* terrain is only
+  used on a qualified HEC-RAS release (`QUALIFIED_EFFECTIVE_RUNTIMES`, 6.6 to
+  7.0.2, `TerrainResolver.effective_route`; release from `--ras-version`,
+  Commander's detection, else the plan/geometry `Program Version`); 6.5 and
+  earlier (base terrains differ from RAS Mapper) and later releases go to
+  the export with `hecras_version_unqualified` (`hecras_version_unresolved`
+  when none resolves), recorded under `effective_terrain`. The source-TIFF
+  path is not gated. **Modified terrains** (`terrain.terrain_modification_status()`:
   every `/Modifications` layer of the terrain HDF when the `.rasmap`
   terrain layer has an `ElevationModificationGroup` named exactly
   `Modifications`, whatever it lists; none without one; every stored layer
