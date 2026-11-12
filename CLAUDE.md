@@ -196,14 +196,19 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   the Rust boundary. Until 2026-11 every modified terrain went to RAS
   Mapper's export (user decision 2026-10-30, while fast-map #21 /
   ras-commander #790 were parked: none of 11 real modified terrains came out
-  pixel-identical, `feature_dev_notes/rust_engines/T14.md`). Fast-Map #40/#41
+  pixel-identical, `feature_dev_notes/rust_engines/T14.md`). **That decision
+  is superseded:** the project engineer confirmed the reversal on 2026-11-11,
+  now that it is implemented (#53). Fast-Map #40/#41
   and ras-commander #790/#833 since reproduce the export on the corpora in
   Fast-Map's `modification_rules.md`, so `TerrainResolver.modified_route()`
   now builds the **native effective terrain with modifications** only when
   all hold: the engine advertises `rasmapper-effective-terrain/2` with a
   `modifications` record (Fast-Map 0.18.0+; 0.17.0 advertises `/1` only, so
   behaviour with it is unchanged); ras-commander's modification reader
-  (`ras_commander.fim._terrain_mods`, 0.119.0+) stages every layer; every
+  (public `RasFim.read_terrain_modifications`, 0.119.0+, else the private
+  `ras_commander.fim._terrain_mods.read_layers` it wraps; the one used is
+  `modification_reader` on the route record, `None` when there is neither)
+  stages every layer; every
   staged kind/subtype/elevation type is in
   `effective_terrain.modifications.supported` and no form is one the engine
   refuses (`unqualified_modification_forms()`); the layers are readable and

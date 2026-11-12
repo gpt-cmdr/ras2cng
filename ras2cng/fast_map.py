@@ -126,7 +126,9 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   and Rust boundaries are refused (RAS Mapper draws them). The terrain is
   built by the native effective terrain *with modifications* only when the
   engine advertises ``rasmapper-effective-terrain/2`` (Fast-Map 0.18+) with a
-  ``modifications`` record, ras-commander's modification reader (0.119+)
+  ``modifications`` record, ras-commander's modification reader
+  (``RasFim.read_terrain_modifications``, 0.119+, else the private
+  ``_terrain_mods.read_layers``; recorded as ``modification_reader``)
   stages every layer and every staged form is in the engine's qualified
   list; otherwise RAS Mapper's export builds it, as before, and the reason
   is recorded in ``MapResult.fast_map_terrain_route`` and
@@ -153,8 +155,9 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 RASMAPPER = "rasmapper"
 FAST_MAP = "fast-map"
@@ -233,6 +236,10 @@ EFFECTIVE_TERRAIN_SCHEMA_V2 = "ras-commander-effective-terrain-request/2"
 MODIFIED_ROUTE_NATIVE = "native-effective"
 MODIFIED_ROUTE_RASMAPPER = "rasmapper-export"
 TERRAIN_ROUTE_MANIFEST = "fast_map_terrain_route.json"
+# Commander's modification reader recorded on the route (``modification_reader``):
+# the public API (ras-commander 0.119+), else the private module it wraps.
+MODIFICATION_READER_PUBLIC = "RasFim.read_terrain_modifications"
+MODIFICATION_READER_PRIVATE = "ras_commander.fim._terrain_mods.read_layers"
 FAST_MAP_RENDER_MODES = ("horizontal", "sloping", "slopingPretty")
 # Deterministic contours support horizontal and plain cell-corner sloping only.
 FAST_MAP_BOUNDARY_RENDER_MODES = ("horizontal", "sloping")
@@ -821,8 +828,22 @@ def unqualified_modification_forms(layers: list, record: dict) -> list[str]:
     return problems
 
 
-def _modification_reader():
-    """Commander's modification reader module, or None (ras-commander < 0.119)."""
+def _public_modification_reader():
+    """``RasFim.read_terrain_modifications`` (ras-commander 0.119+), or None."""
+    try:
+        from ras_commander.fim import RasFim
+    except ImportError:
+        return None
+    read = getattr(RasFim, "read_terrain_modifications", None)
+    return read if callable(read) else None
+
+
+def _private_modification_reader():
+    """The private ``ras_commander.fim._terrain_mods`` module, or None.
+
+    Fallback for a ras-commander that stages modifications but has no public
+    reader yet.
+    """
     try:
         from ras_commander.fim import _terrain_mods
     except ImportError:
@@ -831,6 +852,75 @@ def _modification_reader():
     if not all(callable(getattr(_terrain_mods, name, None)) for name in needed):
         return None
     return _terrain_mods
+
+
+@dataclass(frozen=True)
+class ModificationReader:
+    """Commander's terrain-modification reader, public or private.
+
+    ``read(terrain_hdf, rasmap_path, ras_version)`` returns a record shaped
+    like ``RasFim.read_terrain_modifications``: ``status`` (``staged``,
+    ``none`` or ``refused``), ``refusal``, ``hecras_version``,
+    ``hecras_version_basis``, ``length_units`` (``None`` when the version or
+    units could not be resolved) and ``layers``.
+    """
+
+    name: str
+    read: Callable[[Path, Optional[Path], Optional[str]], dict]
+
+
+def _read_public(read: Callable) -> Callable:
+    def run(hdf: Path, rasmap_path: Optional[Path], ras_version: Optional[str]) -> dict:
+        record = dict(read(hdf, rasmap_path=rasmap_path, hecras_version=ras_version))
+        if ras_version is not None and record.get("hecras_version_basis") == "argument":
+            record["hecras_version_basis"] = f"ras_version {ras_version}"
+        return record
+
+    return run
+
+
+def _read_private(module: Any) -> Callable:
+    def run(hdf: Path, rasmap_path: Optional[Path], ras_version: Optional[str]) -> dict:
+        record: dict[str, Any] = {
+            "status": "refused", "refusal": None, "hecras_version": None,
+            "hecras_version_basis": None, "length_units": None, "layers": [],
+        }
+        try:
+            if ras_version is not None:
+                version = module.hecras_version_for(ras_version)
+                basis = f"ras_version {ras_version}"
+            else:
+                version, basis = module.project_hecras_version(hdf, rasmap_path, None)
+            record.update(hecras_version=version, hecras_version_basis=basis)
+            units = module.project_length_units(hdf, rasmap_path, None)
+        except Exception as exc:
+            record["refusal"] = str(exc)
+            return record
+        record["length_units"] = units
+        try:
+            layers = module.read_layers(hdf, length_units=units, hecras_version=version)
+        except Exception as exc:  # FimUnsupportedError: an unqualified form
+            record["refusal"] = str(exc)
+            return record
+        record.update(status="staged" if layers else "none", layers=layers)
+        return record
+
+    return run
+
+
+def _modification_reader() -> Optional[ModificationReader]:
+    """Commander's modification reader: the public API, else the private module.
+
+    ``None`` when the installed ras-commander has neither (before 0.119);
+    such terrains stay on the RAS Mapper export.
+    """
+    read = _public_modification_reader()
+    if read is not None:
+        return ModificationReader(MODIFICATION_READER_PUBLIC, _read_public(read))
+    module = _private_modification_reader()
+    if module is not None:
+        return ModificationReader(MODIFICATION_READER_PRIVATE, _read_private(module))
+    return None
 
 
 def normalize_invalid_cells(policy: Optional[str]) -> Optional[str]:
@@ -1280,30 +1370,41 @@ class TerrainResolver:
         if reader is None:
             return (
                 "ras-commander has no terrain-modification reader (needs ras-commander 0.119.0 "
-                "or later)", {"method_id": EFFECTIVE_TERRAIN_V2},
+                "or later)", {"method_id": EFFECTIVE_TERRAIN_V2, "modification_reader": None},
             )
         rasmap = self.prj_file.with_suffix(".rasmap")
         rasmap_path = rasmap if rasmap.is_file() else None
-        details: dict[str, Any] = {"method_id": EFFECTIVE_TERRAIN_V2}
+        details: dict[str, Any] = {
+            "method_id": EFFECTIVE_TERRAIN_V2, "modification_reader": reader.name,
+        }
+        ras_version = None if self.ras_version is None else str(self.ras_version)
         try:
-            if self.ras_version is not None:
-                version = reader.hecras_version_for(self.ras_version)
-                basis = f"ras_version {self.ras_version}"
-            else:
-                version, basis = reader.project_hecras_version(hdf, rasmap_path, None)
-            units = reader.project_length_units(hdf, rasmap_path, None)
+            staged = reader.read(hdf, rasmap_path, ras_version)
         except Exception as exc:
-            return f"could not resolve the project's HEC-RAS version or units: {exc}", details
-        details.update(hecras_version=version, hecras_version_basis=basis, length_units=units)
+            return f"Commander's modification reader failed: {exc}", details
+        version = staged.get("hecras_version")
+        units = staged.get("length_units")
+        if version is None or units is None:
+            return (
+                "could not resolve the project's HEC-RAS version or units: "
+                f"{staged.get('refusal')}", details,
+            )
+        details.update(
+            hecras_version=version,
+            hecras_version_basis=staged.get("hecras_version_basis"),
+            length_units=units,
+        )
         if version != "7.0.1" and "hecras_version" not in record:
             return (
                 f"the engine does not advertise hecras_version; HEC-RAS {version} "
                 "modification rules are not available", details,
             )
-        try:
-            layers = reader.read_layers(hdf, length_units=units, hecras_version=version)
-        except Exception as exc:  # FimUnsupportedError: an unqualified form
-            return f"Commander's modification reader refused the terrain: {exc}", details
+        if staged.get("status") == "refused":
+            return (
+                f"Commander's modification reader refused the terrain: {staged.get('refusal')}",
+                details,
+            )
+        layers = list(staged.get("layers") or ())
         details["layers"] = [
             {
                 "name": layer.get("name"),

@@ -5,8 +5,10 @@ A modified terrain goes to the native effective terrain with modifications
 when the engine advertises ``/2`` with a ``modifications`` record, Commander's
 reader stages every layer and every staged form is in the engine's qualified
 list. Otherwise it goes to the RAS Mapper export, as before, with the reason
-recorded. The engine record and Commander's reader are faked here; no HEC-RAS,
-engine or real terrain is needed.
+recorded. Commander's reader is the public ``RasFim.read_terrain_modifications``
+(ras-commander 0.119+), else the private ``_terrain_mods`` module; which one
+was used is recorded as ``modification_reader``. The engine record and both
+readers are faked here; no HEC-RAS, engine or real terrain is needed.
 """
 
 from __future__ import annotations
@@ -76,7 +78,7 @@ def _terrain_h5(path, modifications=("Levee A",)):
 
 
 def _reader(layers=None, error=None, version=("7.0.1", "default")):
-    """A fake ras_commander.fim._terrain_mods."""
+    """A fake private ras_commander.fim._terrain_mods (ras-commander without the public API)."""
     calls = []
 
     def read_layers(hdf, length_units="feet", hecras_version="7.0.1"):
@@ -94,14 +96,52 @@ def _reader(layers=None, error=None, version=("7.0.1", "default")):
     )
 
 
-def _setup(tmp_path, monkeypatch, engine, reader, *, effective=True):
-    """A resolver over a modified terrain HDF with the given engine record and reader."""
+def _public_reader(layers=None, refusal=None, version=("7.0.1", "default"), units="feet"):
+    """A fake RasFim.read_terrain_modifications (ras-commander 0.119+)."""
+    calls = []
+
+    def read(terrain_hdf, *, rasmap_path=None, ras_object=None, hecras_version=None,
+             length_units=None, strict=False):
+        calls.append((terrain_hdf, rasmap_path, hecras_version))
+        if hecras_version is not None:
+            resolved = ("6.6" if str(hecras_version).startswith("6.6") else "7.0.1", "argument")
+        else:
+            resolved = version
+        record = {
+            "schema": "ras-commander-terrain-modifications/1",
+            "terrain_hdf": str(terrain_hdf),
+            "method_id": fast_map.EFFECTIVE_TERRAIN_V2,
+            "status": "refused" if refusal else ("staged" if layers else "none"),
+            "refusal": refusal,
+            "hecras_version": resolved[0],
+            "hecras_version_basis": resolved[1],
+            "length_units": units,
+            "length_units_basis": "project",
+            "layers": [] if refusal else [dict(layer) for layer in (layers or [])],
+        }
+        return record
+
+    read.calls = calls
+    return read
+
+
+def _readers(monkeypatch, private=None, public=None):
+    """Install fakes for Commander's public and private modification readers."""
+    monkeypatch.setattr(fast_map, "_public_modification_reader", lambda: public)
+    monkeypatch.setattr(fast_map, "_private_modification_reader", lambda: private)
+
+
+def _setup(tmp_path, monkeypatch, engine, reader, *, effective=True, public=None):
+    """A resolver over a modified terrain HDF with the given engine record and readers.
+
+    ``reader`` fakes the private module, ``public`` the public API.
+    """
     hdf = _terrain_h5(tmp_path / "T.hdf")
     resolver = fast_map.TerrainResolver(
         tmp_path / "a.prj", tmp_path / "w", terrain_name="T", effective=effective
     )
     monkeypatch.setattr(fast_map, "engine_method", lambda kind: dict(engine) if kind == "effective_terrain" else {})
-    monkeypatch.setattr(fast_map, "_modification_reader", lambda: reader)
+    _readers(monkeypatch, private=reader, public=public)
     monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: True)
     monkeypatch.setattr(fast_map, "source_terrain_supported", lambda: True)
     monkeypatch.setattr(resolver, "_terrain_hdf_for", lambda plan: hdf)
@@ -185,6 +225,113 @@ def test_v2_engine_with_an_unqualified_form_goes_to_rasmapper_with_a_reason(tmp_
     assert "Mound" in route["reason"] and "'Add'" in route["reason"]
     assert route["unqualified"] == [route["reason"]]
     assert "Mound" in _manifest(tmp_path)["routes"][0]["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Commander's reader: public API, private fallback, none
+# ---------------------------------------------------------------------------
+
+
+def test_the_public_reader_is_preferred_and_recorded(tmp_path, monkeypatch):
+    """ras-commander 0.119+: RasFim.read_terrain_modifications; the private
+    module is not consulted even when it is present."""
+    public = _public_reader([LEVEE, PAD])
+    private = _reader([LEVEE])
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, private, public=public)
+    kind, kinds = _run(resolver, tmp_path)
+    assert kind == fast_map.TERRAIN_EFFECTIVE and len(built) == 1
+    assert private.calls == [] and len(public.calls) == 1
+    hdf, rasmap_path, hecras_version = public.calls[0]
+    assert hdf == tmp_path / "T.hdf" and rasmap_path is None and hecras_version is None
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["modification_reader"] == fast_map.MODIFICATION_READER_PUBLIC
+    assert route["modification_reader"] == "RasFim.read_terrain_modifications"
+    assert (route["hecras_version"], route["hecras_version_basis"]) == ("7.0.1", "default")
+    assert route["length_units"] == "feet"
+    assert [layer["name"] for layer in route["layers"]] == ["Levee A", "Pad"]
+    assert _manifest(tmp_path)["routes"][0]["modification_reader"] == (
+        fast_map.MODIFICATION_READER_PUBLIC
+    )
+
+
+def test_the_public_reader_receives_ras_version(tmp_path, monkeypatch):
+    public = _public_reader([LEVEE])
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public)
+    resolver.ras_version = "6.6"
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EFFECTIVE
+    assert public.calls[0][2] == "6.6"
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["hecras_version"] == "6.6"
+    assert route["hecras_version_basis"] == "ras_version 6.6"
+
+
+def test_a_public_reader_refusal_goes_to_rasmapper_with_its_reason(tmp_path, monkeypatch):
+    public = _public_reader(
+        refusal="modification 'Ring' feature 0: boundary elevations sampled from the terrain "
+                "(no stored profile, no control points) are not qualified")
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public)
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EXPORT and built == []
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
+    assert "reader refused" in route["reason"] and "sampled from the terrain" in route["reason"]
+    assert route["modification_reader"] == fast_map.MODIFICATION_READER_PUBLIC
+
+
+def test_a_public_reader_unit_conflict_is_a_resolution_failure(tmp_path, monkeypatch):
+    public = _public_reader([LEVEE], refusal="project files state different units", units=None)
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public)
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EXPORT and built == []
+    reason = resolver.modified_route(tmp_path / "a.p01.hdf")["reason"]
+    assert reason.startswith("could not resolve the project's HEC-RAS version or units")
+    assert "different units" in reason
+
+
+def test_the_private_reader_is_the_fallback_and_recorded(tmp_path, monkeypatch):
+    """ras-commander with _terrain_mods but no public reader."""
+    private = _reader([LEVEE, PAD])
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, private, public=None)
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EFFECTIVE and len(built) == 1
+    assert private.calls and private.calls[0][1:] == ("feet", "7.0.1")
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["modification_reader"] == fast_map.MODIFICATION_READER_PRIVATE
+    assert route["modification_reader"] == "ras_commander.fim._terrain_mods.read_layers"
+    assert _manifest(tmp_path)["routes"][0]["modification_reader"] == (
+        fast_map.MODIFICATION_READER_PRIVATE
+    )
+
+
+def test_no_reader_keeps_rasmapper_and_records_none(tmp_path, monkeypatch):
+    """ras-commander 0.117/0.118: neither reader."""
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=None)
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EXPORT and built == []
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
+    assert "0.119.0" in route["reason"]
+    assert "modification_reader" in route and route["modification_reader"] is None
+
+
+def test_reader_selection_follows_the_installed_commander(monkeypatch):
+    """_modification_reader() picks public, then private, then None."""
+    public = _public_reader([LEVEE])
+    _readers(monkeypatch, private=_reader([LEVEE]), public=public)
+    assert fast_map._modification_reader().name == fast_map.MODIFICATION_READER_PUBLIC
+    _readers(monkeypatch, private=_reader([LEVEE]), public=None)
+    assert fast_map._modification_reader().name == fast_map.MODIFICATION_READER_PRIVATE
+    _readers(monkeypatch, private=None, public=None)
+    assert fast_map._modification_reader() is None
+
+
+def test_the_installed_commander_reader_is_detected():
+    """Whatever ras-commander is installed, detection agrees with its API."""
+    from ras_commander.fim import RasFim
+
+    reader = fast_map._modification_reader()
+    if callable(getattr(RasFim, "read_terrain_modifications", None)):
+        assert reader is not None and reader.name == fast_map.MODIFICATION_READER_PUBLIC
+    elif fast_map._private_modification_reader() is not None:
+        assert reader is not None and reader.name == fast_map.MODIFICATION_READER_PRIVATE
+    else:
+        assert reader is None
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +506,7 @@ def test_map_result_records_the_route(tmp_path, monkeypatch, engine, layers, exp
     monkeypatch.setattr(fast_map, "preflight", lambda plan, r, mode, **kw: {"mode": "sloping"})
     monkeypatch.setattr(fast_map, "engine_method",
                         lambda kind: dict(engine) if kind == "effective_terrain" else {})
-    monkeypatch.setattr(fast_map, "_modification_reader", lambda: _reader(layers))
+    _readers(monkeypatch, public=_public_reader(layers))
     monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: True)
     monkeypatch.setattr(fast_map, "source_terrain_supported", lambda: False)
     monkeypatch.setattr(fast_map.TerrainResolver, "_terrain_hdf_for", lambda self, plan: hdf)
@@ -385,3 +532,7 @@ def test_map_result_records_the_route(tmp_path, monkeypatch, engine, layers, exp
     assert (result.fast_map_terrain_route["depth"]["reason"] is None) == (
         expected_route == "native-effective"
     )
+    if engine is ENGINE_V2:
+        assert result.fast_map_terrain_route["wse"]["modification_reader"] == (
+            fast_map.MODIFICATION_READER_PUBLIC
+        )

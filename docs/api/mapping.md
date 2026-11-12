@@ -201,7 +201,10 @@ it. ras2cng then:
 `--no-fast-map-effective-terrain` skips step 2, and
 `--no-fast-map-source-terrain` skips the source TIFF.
 
-**Terrains with modifications.** Before any of the steps above, ras2cng
+**Terrains with modifications.** The earlier rule that every modified
+terrain goes to RAS Mapper (user decision 2026-10-30) is superseded: the
+project engineer confirmed the reversal on 2026-11-11, now that the native
+route is implemented. Before any of the steps above, ras2cng
 reads the terrain HDF's `/Modifications` group and the `.rasmap`'s
 modification layers (`ras2cng.terrain.terrain_modifications`). If it finds
 any, or cannot read the terrain HDF, the source TIFF (and step 1) is skipped
@@ -213,8 +216,11 @@ one of these holds (`TerrainResolver.modified_route`):
   0.18.0 and later; 0.17.0 advertises only `/1`) with a `modifications`
   record and accepts `ras-commander-effective-terrain-request/2`;
 - ras-commander has the terrain-modification reader that stages the
-  engine's `modification_layers` (0.119.0 and later), and it stages every
-  layer without refusing one;
+  engine's `modification_layers`, and it stages every layer without refusing
+  one. ras2cng uses the public `RasFim.read_terrain_modifications`
+  (ras-commander 0.119.0 and later) and falls back to the private
+  `ras_commander.fim._terrain_mods.read_layers` on a ras-commander that has
+  only that; with neither, the terrain goes to RAS Mapper;
 - every staged layer kind, ground-line subtype and elevation type is in the
   engine's qualified list (`effective_terrain.modifications.supported`), and
   no layer is a form the engine refuses (shape-Z polygons without boundary
@@ -229,7 +235,8 @@ and the reason is recorded. An engine refusal on the native route (at build
 or mapping time) also falls back to the export. The decision is kept in
 `MapResult.fast_map_terrain_route` (per product: `route` is
 `native-effective` or `rasmapper-export`, with `reason`, the staged `layers`,
-`hecras_version` and any `fallback`) and in
+`hecras_version`, `modification_reader` (`RasFim.read_terrain_modifications`,
+`ras_commander.fim._terrain_mods.read_layers` or `None`) and any `fallback`) and in
 `_fast_map_terrain/fast_map_terrain_route.json` under the output folder.
 **With Fast-Map 0.17.0 every modified terrain still goes to RAS Mapper.**
 

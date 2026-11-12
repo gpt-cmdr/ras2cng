@@ -3,14 +3,18 @@
 ## Modified terrains can use the native effective terrain (`rasmapper-effective-terrain/2`)
 
 Until now every terrain with modifications went to RAS Mapper's terrain export (HEC-RAS),
-whatever the engine advertised. `ras2cng map` with the fast-map engine now builds such a terrain
+whatever the engine advertised (user decision 2026-10-30). That decision is superseded: the
+project engineer confirmed the reversal on 2026-11-11, now that it is implemented.
+`ras2cng map` with the fast-map engine now builds such a terrain
 natively, with the modifications applied, **only when all of these hold**
 (`fast_map.TerrainResolver.modified_route`):
 
 - the installed engine advertises `rasmapper-effective-terrain/2` with a `modifications` record
   (Fast-Map 0.18.0 and later);
-- ras-commander's terrain-modification reader (0.119.0 and later) stages every modification
-  layer without refusing one;
+- ras-commander's terrain-modification reader stages every modification layer without
+  refusing one: the public `RasFim.read_terrain_modifications` (ras-commander 0.119.0 and
+  later), else the private `ras_commander.fim._terrain_mods.read_layers` on a ras-commander
+  that has only that. The reader used is recorded as `modification_reader`;
 - every staged layer kind, ground-line subtype and elevation type is in the engine's qualified
   list, and none is a form the engine refuses;
 - the existing native-terrain conditions hold (effective terrain enabled and supported, layers
