@@ -93,6 +93,33 @@ archive's `terrain/modifications/` layers and the web map's modification layers)
   `make_valid` keeps only its polygonal parts. `ras2cng/schemas.py` (1.4) documents the
   terrain-modification layers.
 
+## Fix: modifications the `.rasmap` does not activate were treated as applied
+
+RAS Mapper applies a terrain HDF's modification layers only when the project's `.rasmap`
+terrain layer has an `ElevationModificationGroup` named exactly `Modifications`; it then
+applies every stored layer, whatever the group lists. ras2cng counted every layer stored in
+the HDF, so a project without that group (its RAS Mapper export is identical to the
+unmodified terrain) was still sent to the RAS Mapper terrain export, and its Rust boundaries
+were refused.
+
+- New `terrain_modification_status()` (stored, registered, active, inactive, basis) and
+  `active_terrain_modifications()`. Active is every stored layer with a `Modifications`
+  group and none without one, as in ras-commander 0.119 (`top_priority_terrain_source`);
+  `registered` lists the group's entries for information. Without a `.rasmap` entry for the
+  terrain (or with an unreadable `.rasmap`), every stored layer counts as active. A
+  `.rasmap` terrain reference is matched by file name only when the referenced file no
+  longer exists (a moved project).
+- fast-map's routing (source TIFF, the modified-terrain route of
+  `TerrainResolver.modified_route()` above, and Rust boundaries) now uses the active set, and
+  notes stored-but-inactive layers. A terrain with no active layer is unmodified.
+- `ras2cng inspect` shows active/stored modification counts per terrain; `--json` and
+  `TerrainInfo.modifications` carry the lists (also for terrains found by the `Terrain/`
+  scan). Archive manifests add
+  `stored_modifications`, `active_modifications`, `inactive_modifications` and
+  `activation_basis` to each `terrain_modifications` entry.
+- `terrain_modifications()` is unchanged (an inventory of stored and registered layers); its
+  docstring no longer says every stored layer is applied.
+
 ## New: `map-hdf` maps natively on a pre-exported terrain
 
 `ras2cng map-hdf PLAN_HDF OUT --fast-map-terrain terrain.tif` (no `--terrain` /
