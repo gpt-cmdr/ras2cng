@@ -82,7 +82,7 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - `fast_map.py` — Rust mapping for **pure 2D models (FIM library scope)** (the default `map` engine; `--engine rasmapper` / env `RAS2CNG_MAP_ENGINE` forces RAS Mapper) via `RasFim` and `ras-commander-fast-map`, qualified against RAS Mapper stored maps. `map_plan()` does Max WSE/Depth, `map_velocity()` Max velocity, `map_derived()` Max D x V / D x V^2 / Froude (`RasFim.map_derived_max`, one `reduce_max/1` time-series pass), `map_shear()` Max shear stress (its own engine call, like velocity), `map_whole_simulation()` arrival time, percent inundated and duration, `map_boundary()` the boundary (original terrain TIFF + HDF; `deterministic` by default, `native-serial` opt-in); each product group falls back to RAS Mapper on its own, and `velocity_plan()` / `derived_plan()` / `shear_plan()` / `whole_simulation_types()` route products before any terrain work. slopingPretty velocity and derived Max are defaults only when the engine advertises `velocity_with_faces` (`WITH_FACES_METHOD`, `with_faces_options()`), and then the `.rasmap`'s shallow-reduction and depth-weighting flags are passed through unchanged, because RAS Mapper clips with the depth rendered with the same options: the wrong flags reproduce the old 75 + 28 px mismatch. Storage areas are **opt-in** (`--fast-map-storage-areas`, `fast_map_storage_areas=True`, `RAS2CNG_FAST_MAP_STORAGE_AREAS=1`; user decision 2026-10-31: not a default until faster than RAS Mapper): by default a storage-area plan goes wholly to RAS Mapper and `MapResult.fast_map_skipped` records why; opted in, they are drawn as level pools when the engine advertises `storage-area-level-pool/1` (`storage_areas_supported()`; WSE/Depth/arrival/percent only). `--fast-map-terrain-crs-hash` (`fast_map_terrain_crs_fnv1a64`) passes a user-verified engine WKT hash for Rust boundaries. `with_terrain()` tries the priority-1 source TIFF (no HEC-RAS export), its CRS-canonical copy after a CRS refusal, the native effective terrain (`RasFim.build_effective_terrain`), then the export and, after a CRS refusal of the export, the export's CRS-canonical copy (`export-canonical`: the same pixels with EPSG GeoTIFF keys; this is how Davis maps in slopingPretty, where the source terrain is refused), and, for a terrain with modifications (`terrain.terrain_modifications()`), skips the source TIFF and goes to the export unless `TerrainResolver.modified_route()` qualifies the native effective terrain with modifications (engine `rasmapper-effective-terrain/2`, Commander's reader, every form in the engine's qualified list; Fast-Map 0.17.0 never qualifies; the decision and its reason are in `MapResult.fast_map_terrain_route` and `_fast_map_terrain/fast_map_terrain_route.json`); `MapResult.fast_map_terrain` records which. 1D, non-Max profiles, slopingPretty shear stress and unqualified render modes stay on RAS Mapper (`--fast-map-strict` raises for engine failures and non-Max profiles). `invalid_cells` (`--fast-map-invalid-cells`, ras-commander 0.110.2+) sets pixel ownership for cells whose faces do not form a valid polygon; the engine's `fim-invalid-cells/1` record lands in `MapResult.invalid_cells` and every fast-map manifest. Sloping WSE/Depth are written by the engine (terrio LZW, `--fast-map-writer auto`) when it advertises `native_geotiff_outputs`. New capabilities are detected from `RasFim`'s methods/kwargs. See *Mapping engines* below.
 - `scaffold.py` — Barebones project synthesis for `map-hdf`. `read_plan_hdf_metadata()` extracts project name, plan number, ShortID, units, and projection WKT from a plan HDF; `build_scaffold()` synthesizes `.prj`/`.pNN`/`.rasmap` stubs, hardlinks the HDF under its canonical name, and builds the HEC-RAS terrain from raw TIFFs (`RasTerrain.create_terrain_from_rasters`) or imports a pre-built terrain HDF sidecar set. The ESRI projection is written to `Terrain\Projection.prj` — never in the project root, where it would collide with the HEC-RAS `.prj`. Scaffolds carry a `.ras2cng-scaffold` marker and are reused across runs when the source HDF is unchanged.
 
-**HDF engine**: ras-commander ≥0.110.1 (floor 0.117.0, which requires fast-hdf ≥0.5.0,<0.6; its `[full]` extra brings fast-map ≥0.16,<0.17) reads HDF through the Rust `ras-commander-fast-hdf` engine by default (h5py fallback; `RAS_COMMANDER_FAST_HDF=auto|h5py|native`). ras2cng needs no code for this — `get_mesh_cell_polygons` alone is 4–19× faster.
+**HDF engine**: ras-commander ≥0.110.1 (floor 0.119.0, which requires fast-hdf ≥0.5.0,<0.6; its `[full]` extra brings fast-map ≥0.18,<0.19) reads HDF through the Rust `ras-commander-fast-hdf` engine by default (h5py fallback; `RAS_COMMANDER_FAST_HDF=auto|h5py|native`). ras2cng needs no code for this — `get_mesh_cell_polygons` alone is 4–19× faster.
 
 **Data flow**: HEC-RAS files → ras-commander → GeoDataFrame → GeoParquet (ZSTD compression, bbox columns, Hilbert sorted). Archive output uses `_write_geoparquet()` which adds `covering` metadata for spatial predicate pushdown.
 
@@ -91,13 +91,15 @@ Python >= 3.10 required (`.python-version` pins 3.12). Virtual environment is ma
 - **PyPI terrio:** every release up to 0.5.0 is yanked ("Superseded by 0.6.0"). The floor is
   `terrio>=0.5.0.1`, not `>=0.6`, so that the CLB builds still satisfy it; a plain install gets
   PyPI 0.6 or later (0.8.0 on 2026-11-10), which has none of the fork capabilities and keeps the Python and GDAL paths.
-- **PyPI, required:** `ras-commander[full]>=0.117.0` brings ras-commander-fast-hdf 0.5.0
+- **PyPI, required:** `ras-commander[full]>=0.119.0` (was 0.117.0 in 0.16.0) brings ras-commander-fast-hdf 0.5.0
   (2D summaries without a stored `Location` and HEC-RAS 5.0.x mesh inventories read natively;
-  HDF5 reader 0.12.1) and ras-commander-fast-map 0.16.0 (storage-area level pools, effective
+  HDF5 reader 0.12.1) and ras-commander-fast-map 0.18.0 (storage-area level pools, effective
   terrain, velocity, Max derived products, duration, Rust boundaries including the opt-in
   native-serial contract, the Rust Final n Values raster, and since 0.16.0 slopingPretty
   velocity and derived Max with the `.rasmap` options (`velocity_with_faces`) and Max shear
-  stress (`rasmapper-face-shear-max/1`)). Every one is still capability-detected, so an older
+  stress (`rasmapper-face-shear-max/1`); since 0.18.0 the effective terrain with terrain modifications,
+  `rasmapper-effective-terrain/2`, which 0.119.0 stages through the public
+  `RasFim.read_terrain_modifications`). Every one is still capability-detected, so an older
   engine keeps the behaviour described for it.
 - **Fork builds, optional** (GitHub Release assets: freestiler on the gpt-cmdr fork, terrio on
   CLB-Engineering-Corporation/terrio-clb; never PyPI, which
@@ -214,13 +216,33 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   staged kind/subtype/elevation type is in
   `effective_terrain.modifications.supported` and no form is one the engine
   refuses (`unqualified_modification_forms()`); the layers are readable and
-  stored in the HDF; the effective terrain is enabled and supported. Any
+  stored in the HDF; the effective terrain is enabled and supported; and
+  the one HEC-RAS release both routes use (`TerrainResolver.hecras_runtime()`:
+  `--ras-version`, else what `init_ras_project` detects from the plan files,
+  exactly as the export does) is supported by the export and is 6.6 or
+  7.0.1 (`QUALIFIED_MODIFICATION_RUNTIMES`). The export, the reader and
+  `build_effective_terrain` all take that release (recorded as
+  `hecras_runtime`); before, without `--ras-version`, the reader and build
+  used Commander's own guess (newest plan/geometry `Program Version`, else
+  7.0.1) while the export used the detected one (Middle Cahaba: 7.0 vs
+  7.0.1 rules; Bald Eagle: 5.03 vs 7.0.1). HDF layers RAS Mapper does not
+  apply (no `.rasmap` group named exactly `Modifications`; ras-commander
+  0.119 `top_priority_terrain_source` says `modified: False`) make the
+  terrain **unmodified** (`route: "unmodified"`, Commander's warning in
+  `rasmap_warnings`), as for the original Helena terrain. Any
   other case goes to the export as before, with the reason in
   `MapResult.fast_map_terrain_route` / `fast_map_terrain_route.json`; an
   engine refusal on the native route falls back to the export too
-  (`fallback`). **Not yet qualified through ras2cng**: check modified
-  terrains via the engine against repeat HEC-RAS exports before relying on
-  it. **Schema 1 values change with `/2`:** the engine runs the `/2` rule for
+  (`fallback`). **Qualified through `ras2cng map` (2026-11-12, ras-commander
+  0.119.0, Fast-Map 0.18.0, HEC-RAS 7.0.1 and 6.6, PR #53):** Bald Eagle
+  p08 with single-ring polygons and with 8 rotated ellipses routes native;
+  0 mask and 0 value differences in the modified window and in WSE/Depth/
+  Velocity (Max) against ras2cng's own repeat RAS Mapper exports; the only
+  whole-terrain differences (2-4 px) are base stitch-TIN pixels that the
+  unmodified native build shows too. Multi-ring polygons go to RAS Mapper
+  with `refusal_reason: multi_ring_polygon`. Helena (ESRI:102630) decides
+  the native route but Commander refuses the build (no EPSG code), so it
+  falls back to the export; fast-map cannot map it either. **Schema 1 values change with `/2`:** the engine runs the `/2` rule for
   unmodified terrains too, so effective-terrain results differ numerically
   from a `/1` engine's.
   `--no-fast-map-effective-terrain` skips it; `--fast-map-terrain` supplies
@@ -363,8 +385,9 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   Through `ras2cng map` on this host: bridges p05 4.7 s / 0.9 GB against RAS
   Mapper's 84.8 s / 0.8 GB; Davis p02 1.1 s against 40.6 s.
 - **Released engines.** Everything in this section is in the released
-  engines ras2cng requires: ras-commander 0.117.0 with ras-commander-fast-map
-  0.16.0 and ras-commander-fast-hdf 0.5.0. Capabilities are still detected at
+  engines ras2cng requires (ras-commander 0.117.0 with ras-commander-fast-map
+  0.16.0 and ras-commander-fast-hdf 0.5.0 when this was written; the floor is
+  now 0.119.0 with fast-map 0.18.0). Capabilities are still detected at
   run time, so an older engine keeps the previous behaviour: with fast-map
   0.15 slopingPretty velocity is opt-in and plain only, and slopingPretty
   derived Max and shear stress go to RAS Mapper.
