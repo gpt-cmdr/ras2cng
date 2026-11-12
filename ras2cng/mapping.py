@@ -583,7 +583,9 @@ def generate_result_maps(
                         # were passed over.
                         for note in terrain_resolver.notes[notes_before:]:
                             console.print(f"    fast-map {label}: {note}")
-                    route = terrain_resolver.modified_route(plan_hdf)
+                    # A snapshot per product group: a later group's fallback
+                    # must not change what this group's products record.
+                    route = terrain_resolver.record_product_group(plan_hdf, label, kind)
                     for map_type in produced:
                         map_result.fast_map_terrain[map_type] = kind
                         if route is not None:

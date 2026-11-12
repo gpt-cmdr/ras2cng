@@ -1308,6 +1308,14 @@ class TerrainResolver:
         self.notes: list[str] = []
         #: The engine's last refusal, which decides the next candidate.
         self.last_refusal: Optional[str] = None
+        # One resolver per run: a route manifest an earlier run left in this work
+        # directory does not describe this run (e.g. its terrain is now unmodified
+        # and no route is written). Routes for this run's plans are rewritten as
+        # they are decided (_write_routes).
+        try:
+            (self.work_dir / TERRAIN_ROUTE_MANIFEST).unlink(missing_ok=True)
+        except OSError as exc:
+            self.notes.append(f"could not remove the previous {TERRAIN_ROUTE_MANIFEST}: {exc}")
 
     def for_plan(self, plan_hdf: Path) -> Path:
         if self.terrain_path is not None:
@@ -1633,6 +1641,33 @@ class TerrainResolver:
             details["unqualified"] = problems
             return "; ".join(problems), details
         return None, details
+
+    def record_product_group(
+        self, plan_hdf: Path, label: str, kind: str
+    ) -> Optional[dict[str, Any]]:
+        """Snapshot the route of a product group that mapped on terrain ``kind``.
+
+        Returns an independent copy of :meth:`modified_route`'s record (``None``
+        for an unmodified terrain without a record) with ``product_group`` and
+        ``terrain`` set, for ``MapResult.fast_map_terrain_route``. A later group's
+        refusal appends to the shared record's ``fallback``; the copy keeps what
+        held when this group mapped. The same snapshot (terrain kind and the
+        ``fallback`` entries so far) is kept under the shared record's
+        ``product_groups[<plan HDF name>][label]`` in the route manifest.
+        """
+        import copy
+
+        route = self.modified_route(plan_hdf)
+        if route is None:
+            return None
+        fallback = list(route.get("fallback") or ())
+        route.setdefault("product_groups", {}).setdefault(Path(plan_hdf).name, {})[label] = {
+            "terrain": kind, "fallback": fallback,
+        }
+        self._write_routes()
+        snapshot = copy.deepcopy({k: v for k, v in route.items() if k != "product_groups"})
+        snapshot.update(product_group=label, terrain=kind)
+        return snapshot
 
     def _record_fallback(self, plan_hdf: Path, message: str) -> None:
         """Note on a native-routed modified terrain that the engine refused it."""

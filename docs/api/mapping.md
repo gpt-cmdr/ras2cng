@@ -256,6 +256,12 @@ or mapping time) also falls back to the export. The decision is kept in
 (`RasFim.read_terrain_modifications`,
 `ras_commander.fim._terrain_mods.read_layers` or `None`) and any `fallback`) and in
 `_fast_map_terrain/fast_map_terrain_route.json` under the output folder.
+Each product group's entry in `MapResult.fast_map_terrain_route` is its own
+snapshot, taken when that group mapped (`product_group`, and `terrain`, the
+terrain kind it used), so a later group's `fallback` never appears on an
+earlier group's products; the manifest keeps the same per-group snapshots
+under `product_groups[<plan HDF>][<group>]`. Each run starts a new manifest:
+one left in the folder by an earlier run is removed.
 
 **Modification layers RAS Mapper does not apply.** RAS Mapper (HEC-RAS 6.6,
 7.0.1) applies a terrain's HDF modification layers only when its `.rasmap`

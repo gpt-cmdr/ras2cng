@@ -640,6 +640,68 @@ def test_rasmap_unapplied_modifications(tmp_path, info, expected):
         assert fast_map.rasmap_unapplied_modifications(tmp_path / "T.hdf", None) is None
 
 
+# ---------------------------------------------------------------------------
+# The route manifest: one per run; a snapshot per product group
+# ---------------------------------------------------------------------------
+
+
+def test_a_new_run_clears_the_previous_runs_route_manifest(tmp_path, monkeypatch):
+    """A manifest an earlier run left in the work directory does not describe a
+    run whose terrain is now unmodified (no route is written)."""
+    work = tmp_path / "w"
+    work.mkdir()
+    stale = work / fast_map.TERRAIN_ROUTE_MANIFEST
+    stale.write_text(json.dumps({"schema": "ras2cng-terrain-route/1",
+                                 "routes": [{"route": "native-effective"}]}))
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
+    assert not stale.exists()
+    monkeypatch.setattr(resolver, "modifications", lambda plan: [])
+    assert resolver.modified_route(tmp_path / "a.p01.hdf") is None
+    assert not stale.exists()
+
+
+def test_routes_of_this_run_stay_in_the_manifest(tmp_path, monkeypatch):
+    """Clearing happens once per run; routes decided for this run's plans are kept."""
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
+    resolver.modified_route(tmp_path / "a.p01.hdf")
+    other = _terrain_h5(tmp_path / "U.hdf")
+    monkeypatch.setattr(resolver, "_terrain_hdf_for",
+                        lambda plan: other if plan.name == "a.p02.hdf" else tmp_path / "T.hdf")
+    resolver.modified_route(tmp_path / "a.p02.hdf")
+    hdfs = [r["terrain_hdf"] for r in _manifest(tmp_path)["routes"]]
+    assert hdfs == [str(tmp_path / "T.hdf"), str(other)]
+
+
+def test_each_product_group_keeps_its_own_route_snapshot(tmp_path, monkeypatch):
+    """WSE/Depth maps on the native terrain; velocity is then refused it and
+    falls back. WSE's record must not show velocity's fallback, in MapResult
+    (the returned snapshot) or in the manifest."""
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
+    plan = tmp_path / "a.p01.hdf"
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EFFECTIVE
+    wse = resolver.record_product_group(plan, "WSE/Depth", fast_map.TERRAIN_EFFECTIVE)
+    kind, _ = _run(resolver, tmp_path, refuse=(fast_map.TERRAIN_EFFECTIVE,))
+    assert kind == fast_map.TERRAIN_EXPORT
+    velocity = resolver.record_product_group(plan, "velocity", kind)
+    assert "fallback" not in wse and wse["terrain"] == "effective"
+    assert wse["product_group"] == "WSE/Depth" and "product_groups" not in wse
+    assert len(velocity["fallback"]) == 1 and velocity["terrain"] == "export"
+    # The snapshot is independent of the shared record.
+    resolver._record_fallback(plan, "a third refusal")
+    assert len(velocity["fallback"]) == 1
+    groups = _manifest(tmp_path)["routes"][0]["product_groups"]["a.p01.hdf"]
+    assert groups["WSE/Depth"] == {"terrain": "effective", "fallback": []}
+    assert groups["velocity"]["terrain"] == "export" and len(groups["velocity"]["fallback"]) == 1
+    assert len(_manifest(tmp_path)["routes"][0]["fallback"]) == 2
+
+
+def test_an_unmodified_terrain_has_no_product_group_snapshot(tmp_path, monkeypatch):
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
+    monkeypatch.setattr(resolver, "modifications", lambda plan: [])
+    assert resolver.record_product_group(tmp_path / "a.p01.hdf", "WSE/Depth", "source") is None
+    assert not (tmp_path / "w" / fast_map.TERRAIN_ROUTE_MANIFEST).exists()
+
+
 def test_an_engine_refusal_on_the_native_route_falls_back_to_the_export(tmp_path, monkeypatch):
     resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
     kind, kinds = _run(resolver, tmp_path, refuse=(fast_map.TERRAIN_EFFECTIVE,))
@@ -774,6 +836,8 @@ def test_map_result_records_the_route(tmp_path, monkeypatch, engine, layers, exp
     assert seen == [expected_kind]
     assert result.fast_map_terrain["wse"] == expected_kind
     assert result.fast_map_terrain_route["wse"]["route"] == expected_route
+    assert result.fast_map_terrain_route["wse"]["product_group"] == "WSE/Depth"
+    assert result.fast_map_terrain_route["wse"]["terrain"] == expected_kind
     assert (result.fast_map_terrain_route["depth"]["reason"] is None) == (
         expected_route == "native-effective"
     )
