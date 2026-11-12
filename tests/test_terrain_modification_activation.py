@@ -1,9 +1,10 @@
 """Stored vs active terrain modifications (``.rasmap`` activation).
 
 RAS Mapper applies a terrain HDF's modification layers only when the
-project's ``.rasmap`` lists them in the ``ElevationModificationGroup`` under
-the terrain layer. The fixtures are synthetic terrain HDFs and ``.rasmap``
-files.
+project's ``.rasmap`` terrain layer has an ``ElevationModificationGroup``
+named exactly ``Modifications``; with one it applies every stored layer,
+whatever the group lists. The fixtures are synthetic terrain HDFs and
+``.rasmap`` files.
 """
 
 from __future__ import annotations
@@ -31,8 +32,8 @@ def _terrain(path, modifications=LAYERS):
     return path
 
 
-def _rasmap(path, terrain_filename=r".\Terrain\T.hdf", listed=None):
-    """A .rasmap with one terrain layer; ``listed`` None = no Modifications group."""
+def _rasmap(path, terrain_filename=r".\Terrain\T.hdf", listed=None, group_name="Modifications"):
+    """A .rasmap with one terrain layer; ``listed`` None = no modification group."""
     group = ""
     if listed is not None:
         children = "".join(
@@ -40,7 +41,9 @@ def _rasmap(path, terrain_filename=r".\Terrain\T.hdf", listed=None):
             f'Filename="{terrain_filename}" />'
             for name in listed
         )
-        group = f'<Layer Name="Modifications" Type="ElevationModificationGroup">{children}</Layer>'
+        group = (
+            f'<Layer Name="{group_name}" Type="ElevationModificationGroup">{children}</Layer>'
+        )
     path.write_text(
         '<RASMapper><Terrains Checked="True">'
         f'<Layer Name="T" Type="TerrainLayer" Checked="True" Filename="{terrain_filename}">'
@@ -65,15 +68,56 @@ def test_rasmap_without_modifications_group_activates_nothing(tmp_path):
     assert terrain_modifications(hdf, rasmap) == ["hdf:Channels", "hdf:Round_Piers"]
 
 
-def test_listed_layers_are_active(tmp_path):
+def test_modifications_group_applies_every_stored_layer(tmp_path):
+    # RAS Mapper does not consult the group's per-layer entries: a partial
+    # listing still applies every stored layer.
     hdf = _terrain(tmp_path / "Terrain" / "T.hdf")
     rasmap = _rasmap(tmp_path / "m.rasmap", listed=["Channels"])
 
     status = terrain_modification_status(hdf, rasmap)
-    assert status.active == ["Channels"]
-    assert status.inactive == ["Round_Piers"]
-    assert active_terrain_modifications(hdf, rasmap) == ["hdf:Channels"]
-    assert status.to_dict()["inactive"] == ["Round_Piers"]
+    assert status.registered == ["Channels"]
+    assert status.active == LAYERS
+    assert status.inactive == []
+    assert active_terrain_modifications(hdf, rasmap) == ["hdf:Channels", "hdf:Round_Piers"]
+    assert status.to_dict()["inactive"] == []
+
+
+def test_misnamed_modification_group_activates_nothing(tmp_path):
+    hdf = _terrain(tmp_path / "Terrain" / "T.hdf")
+    rasmap = _rasmap(tmp_path / "m.rasmap", listed=LAYERS, group_name="Hydroconnectors")
+
+    status = terrain_modification_status(hdf, rasmap)
+    assert status.registered == LAYERS
+    assert status.active == []
+    assert status.inactive == LAYERS
+    # The inventory still lists what the HDF stores.
+    assert terrain_modifications(hdf, rasmap)[:2] == ["hdf:Channels", "hdf:Round_Piers"]
+
+
+def test_unreadable_rasmap_falls_back_to_the_hdf(tmp_path, monkeypatch):
+    import xml.etree.ElementTree as ET
+
+    hdf = _terrain(tmp_path / "Terrain" / "T.hdf")
+    rasmap = _rasmap(tmp_path / "m.rasmap", listed=None)
+
+    def unreadable(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(ET, "parse", unreadable)
+    status = terrain_modification_status(hdf, rasmap)
+    assert status.basis == "hdf"
+    assert status.active == LAYERS
+    assert any(problem.startswith("rasmap: unreadable") for problem in status.problems)
+
+
+def test_existing_terrain_with_the_same_file_name_is_not_matched(tmp_path):
+    # The .rasmap's terrain exists; another T.hdf elsewhere is a different terrain.
+    _terrain(tmp_path / "project" / "Terrain" / "T.hdf")
+    other = _terrain(tmp_path / "elsewhere" / "T.hdf")
+    rasmap = _rasmap(tmp_path / "project" / "m.rasmap", listed=None)
+    status = terrain_modification_status(other, rasmap)
+    assert status.basis == "hdf"
+    assert status.active == LAYERS
 
 
 def test_without_rasmap_every_stored_layer_counts(tmp_path):
@@ -97,10 +141,13 @@ def test_moved_project_matches_terrain_by_file_name(tmp_path):
     # The .rasmap points at the original location; the HDF was copied elsewhere.
     hdf = _terrain(tmp_path / "copy" / "T.hdf")
     (tmp_path / "project").mkdir()
-    rasmap = _rasmap(tmp_path / "project" / "m.rasmap", listed=[])
+    rasmap = _rasmap(tmp_path / "project" / "m.rasmap", listed=None)
     status = terrain_modification_status(hdf, rasmap)
     assert status.basis == "rasmap"
     assert status.active == []
+    # An empty Modifications group still applies every stored layer.
+    rasmap = _rasmap(tmp_path / "project" / "m.rasmap", listed=[])
+    assert terrain_modification_status(hdf, rasmap).active == LAYERS
 
 
 def test_listed_layer_missing_from_hdf_stays_active(tmp_path):

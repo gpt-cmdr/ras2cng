@@ -122,9 +122,10 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   which needs HEC-RAS (Windows or Wine). Each is built at most once per run.
   **Modified terrains** (:meth:`TerrainResolver.modified_route`): when
   :func:`ras2cng.terrain.active_terrain_modifications` finds any modification
-  RAS Mapper applies (a terrain-HDF layer the project's ``.rasmap`` lists
-  under the terrain; every stored layer when the ``.rasmap`` cannot tell), the unmodified source TIFF is skipped
-  and Rust boundaries are refused (RAS Mapper draws them). The terrain is
+  RAS Mapper applies (every terrain-HDF layer when the ``.rasmap`` terrain
+  layer has a ``Modifications`` group; every stored layer when the
+  ``.rasmap`` cannot tell), the unmodified source TIFF is skipped and Rust
+  boundaries are refused (RAS Mapper draws them). The terrain is
   built by the native effective terrain *with modifications* only when the
   engine advertises ``rasmapper-effective-terrain/2`` (Fast-Map 0.18+) with a
   ``modifications`` record, ras-commander's modification reader
@@ -1421,10 +1422,11 @@ class TerrainResolver:
     def modifications(self, plan_hdf: Path) -> list[str]:
         """The plan terrain's active modifications (cached), ``[]`` when unmodified.
 
-        Only active modifications count: terrain-HDF layers the project's
-        ``.rasmap`` lists under the terrain
-        (:func:`ras2cng.terrain.terrain_modification_status`); stored but
-        unlisted layers are noted and ignored. Any active modification skips
+        Only active modifications count
+        (:func:`ras2cng.terrain.terrain_modification_status`: every stored
+        layer when the ``.rasmap`` terrain layer has a ``Modifications``
+        group, none without one); stored but inactive layers are noted and
+        ignored. Any active modification skips
         the unmodified source TIFF and refuses Rust boundaries. The terrain goes to RAS Mapper's export unless
         :meth:`modified_route` qualifies the native effective terrain with
         modifications. A terrain whose HDF cannot be found or read counts as
@@ -1452,8 +1454,8 @@ class TerrainResolver:
                     )
                     found = status.active_labels()
                     if status.inactive:
-                        # Stored but not listed in the .rasmap: RAS Mapper does
-                        # not apply them, so they do not route the terrain.
+                        # No Modifications group under the terrain: RAS Mapper
+                        # applies none, so they do not route the terrain.
                         self.notes.append(
                             f"terrain {hdf.name} stores {len(status.stored)} modification "
                             f"layer(s); the .rasmap activates {len(status.active)} "

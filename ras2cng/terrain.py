@@ -317,6 +317,7 @@ def discover_terrains(project_path: Path) -> list[TerrainInfo]:
                     resolution=info.get("resolution"),
                     bounds=info.get("bounds"),
                     total_size_mb=sum(f.stat().st_size for f in tif_files if f.exists()) / (1024 * 1024),
+                    modifications=_modification_status_safe(hdf_f, project_dir, prj_file),
                 ))
             # Also check for standalone TIFs
             if not hdf_files:
@@ -1243,12 +1244,14 @@ def _stem_matches_name(stem: str, name: str) -> bool:
 class TerrainModificationStatus:
     """Stored vs active terrain modifications for one terrain in one project.
 
-    RAS Mapper applies a terrain HDF's modification layers only when the
-    project's ``.rasmap`` lists them in the ``ElevationModificationGroup``
-    under that terrain layer. A layer stored in the HDF but not listed is
-    not applied: a RAS Mapper export through a project whose ``.rasmap``
-    lists none was identical to the unmodified terrain. A listed layer is
-    applied whether or not it is ticked (T14).
+    RAS Mapper (HEC-RAS 6.6, 7.0.1) applies a terrain HDF's modification
+    layers only when the project's ``.rasmap`` terrain layer has an
+    ``ElevationModificationGroup`` named exactly ``Modifications``. With
+    one, it applies every layer the HDF stores: the group's per-layer
+    entries and their ``Checked`` state are not consulted (T14;
+    ras-commander ``RasFim.top_priority_terrain_source``). Without one (no
+    group, or only a group under another name) it applies none: a RAS Mapper
+    export through such a project was identical to the unmodified terrain.
 
     A modified terrain goes to RAS Mapper's export unless the engine
     advertises ``rasmapper-effective-terrain/2`` and every modification form
@@ -1258,11 +1261,13 @@ class TerrainModificationStatus:
         terrain_hdf: The terrain HDF.
         rasmap: The ``.rasmap`` read, or ``None``.
         stored: Layer names in the HDF's ``/Modifications`` group.
-        registered: Layer names the ``.rasmap`` lists under this terrain.
-        active: What RAS Mapper applies: ``registered`` when the
-            ``.rasmap`` has this terrain layer, else (no ``.rasmap``, or the
-            terrain is not in it) every ``stored`` layer, so an unknown
-            activation never reads as unmodified.
+        registered: Layer names the ``.rasmap`` lists under this terrain
+            (in any ``ElevationModificationGroup``; informational).
+        active: What RAS Mapper applies: every ``stored`` layer (plus any
+            listed layer the HDF lacks) when the terrain layer has a
+            ``Modifications`` group, none when it has not, and every
+            ``stored`` layer when there is no ``.rasmap`` or the terrain is
+            not in it, so an unknown activation never reads as unmodified.
         basis: ``"rasmap"`` or ``"hdf"`` (the fallback above).
         problems: An unreadable or linked ``/Modifications`` group, or an
             unreadable ``.rasmap``. A problem in the HDF counts as active.
@@ -1323,14 +1328,33 @@ def _stored_terrain_modifications(terrain_hdf: Path) -> tuple[list[str], list[st
     return names, problems
 
 
+#: The only ``ElevationModificationGroup`` name RAS Mapper applies.
+RASMAP_MODIFICATION_GROUP = "Modifications"
+
+
 def _rasmap_terrain_modifications(
     terrain_hdf: Path, rasmap: Path
 ) -> Optional[list[str]]:
     """Modification layers the ``.rasmap`` lists under this terrain.
 
-    ``None`` when the ``.rasmap`` has no terrain layer for this HDF (matched
-    by resolved path, else by a unique file name, for a project that was
-    moved). Raises ``xml.etree.ElementTree.ParseError`` for a bad file.
+    ``None`` when the ``.rasmap`` has no terrain layer for this HDF. Raises
+    ``xml.etree.ElementTree.ParseError`` for a bad file and ``OSError`` for
+    an unreadable one.
+    """
+    scope = _rasmap_terrain_scope(terrain_hdf, rasmap)
+    return None if scope is None else scope[0]
+
+
+def _rasmap_terrain_scope(
+    terrain_hdf: Path, rasmap: Path
+) -> Optional[tuple[list[str], bool]]:
+    """``(listed layer names, applied)`` for this terrain in the ``.rasmap``.
+
+    ``applied`` is True when the terrain layer has an
+    ``ElevationModificationGroup`` named exactly ``Modifications``. ``None``
+    when the ``.rasmap`` has no terrain layer for this HDF: matched by
+    resolved path, else, only when the referenced file does not exist (a
+    moved project), by a unique file name.
     """
     import xml.etree.ElementTree as ET
 
@@ -1345,19 +1369,23 @@ def _rasmap_terrain_modifications(
         path = (rasmap.parent / relative).resolve()
         if path == target:
             by_path.append(layer)
-        elif Path(relative).name.lower() == target.name.lower():
+        elif Path(relative).name.lower() == target.name.lower() and not path.exists():
+            # Only a reference that no longer resolves can be a moved project;
+            # an existing file of the same name is another terrain.
             by_name.append(layer)
     matches = by_path or (by_name if len(by_name) == 1 else [])
     if not matches:
         return None
     names: list[str] = []
+    applied = False
     for layer in matches:
         for group_layer in layer.findall("Layer"):
             if group_layer.get("Type") == "ElevationModificationGroup":
+                applied = applied or group_layer.get("Name") == RASMAP_MODIFICATION_GROUP
                 names.extend(
                     str(child.get("Name")) for child in group_layer.findall("Layer")
                 )
-    return names
+    return names, applied
 
 
 def terrain_modification_status(
@@ -1388,16 +1416,22 @@ def terrain_modification_status(
     if rasmap is None or not rasmap.is_file():
         return status
     try:
-        registered = _rasmap_terrain_modifications(terrain_hdf, rasmap)
-    except ET.ParseError as exc:
+        scope = _rasmap_terrain_scope(terrain_hdf, rasmap)
+    except (ET.ParseError, OSError) as exc:
         status.problems.append(f"rasmap: unreadable ({exc})")
         return status
-    if registered is None:
+    if scope is None:
         status.problems.append(f"rasmap: no terrain layer for {terrain_hdf.name}")
         return status
+    registered, applied = scope
     status.registered = registered
-    status.active = list(dict.fromkeys(registered))
     status.basis = "rasmap"
+    if applied:
+        # Every stored layer applies; a listed layer the HDF lacks stays
+        # visible (and keeps the terrain off the native route).
+        status.active = list(dict.fromkeys([*stored, *registered]))
+    else:
+        status.active = []
     return status
 
 

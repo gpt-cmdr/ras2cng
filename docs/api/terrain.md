@@ -38,10 +38,12 @@ has no footprint, so check `terrain_modification_lines` when every feature must 
 
 ## Stored vs Active Modifications
 
-A terrain HDF stores modification layers under `/Modifications`, but RAS Mapper applies only
-the layers the project's `.rasmap` lists in the `ElevationModificationGroup` under that
-terrain layer. Two projects can share one terrain HDF and still map on
-different terrains: a project whose `.rasmap` lists no modifications maps on the unmodified
+A terrain HDF stores modification layers under `/Modifications`. RAS Mapper (HEC-RAS 6.6,
+7.0.1) applies them only when the project's `.rasmap` terrain layer has an
+`ElevationModificationGroup` named exactly `Modifications`, and then applies every stored
+layer: the group's per-layer entries and `Checked` state are not consulted. Two projects can
+share one terrain HDF and still map on different terrains: a project whose terrain layer has
+no `Modifications` group (none, or only one under another name) maps on the unmodified
 terrain, and a RAS Mapper export through it is identical to the unmodified terrain.
 
 ```python
@@ -50,7 +52,8 @@ from ras2cng.terrain import terrain_modification_status, active_terrain_modifica
 status = terrain_modification_status("Terrain/T.hdf", "Model.rasmap")
 status.stored      # layers in the HDF
 status.active      # layers RAS Mapper applies in this project
-status.inactive    # stored but not listed: not applied
+status.inactive    # stored but not applied (no Modifications group)
+status.registered  # layers the .rasmap lists (informational)
 status.basis       # "rasmap", or "hdf" when the .rasmap has no entry for this terrain
 ```
 
