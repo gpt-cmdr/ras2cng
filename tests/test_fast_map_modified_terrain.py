@@ -133,15 +133,39 @@ def _readers(monkeypatch, private=None, public=None):
     monkeypatch.setattr(fast_map, "_private_modification_reader", lambda: private)
 
 
-def _setup(tmp_path, monkeypatch, engine, reader, *, effective=True, public=None):
+def _runtime(detected="7.0.1"):
+    """A fake resolve_hecras_runtime: --ras-version wins, else ``detected``
+    stands for the release init_ras_project finds in the project's plan files."""
+    calls = []
+
+    def resolve(prj_file, ras_version):
+        calls.append(ras_version)
+        if ras_version:
+            label, basis = str(ras_version), f"--ras-version {ras_version}"
+        elif detected is None:
+            return fast_map.HecRasRuntime(None, "project plan files", None, "no release found")
+        else:
+            label, basis = detected, f"detected from the project's plan files ({detected})"
+        if label in ("6.6", "6.5", "6.4.1", "7.0.1", "7.0.2"):
+            return fast_map.HecRasRuntime(label, basis, label)
+        return fast_map.HecRasRuntime(label, basis, None, f"HEC-RAS {label!r} is unsupported")
+
+    resolve.calls = calls
+    return resolve
+
+
+def _setup(tmp_path, monkeypatch, engine, reader, *, effective=True, public=None,
+           detected="7.0.1"):
     """A resolver over a modified terrain HDF with the given engine record and readers.
 
-    ``reader`` fakes the private module, ``public`` the public API.
+    ``reader`` fakes the private module, ``public`` the public API, ``detected``
+    the HEC-RAS release the export would detect from the project.
     """
     hdf = _terrain_h5(tmp_path / "T.hdf")
     resolver = fast_map.TerrainResolver(
         tmp_path / "a.prj", tmp_path / "w", terrain_name="T", effective=effective
     )
+    monkeypatch.setattr(fast_map, "resolve_hecras_runtime", _runtime(detected))
     monkeypatch.setattr(fast_map, "engine_method", lambda kind: dict(engine) if kind == "effective_terrain" else {})
     _readers(monkeypatch, private=reader, public=public)
     monkeypatch.setattr(fast_map, "effective_terrain_supported", lambda: True)
@@ -244,11 +268,14 @@ def test_the_public_reader_is_preferred_and_recorded(tmp_path, monkeypatch):
     assert kind == fast_map.TERRAIN_EFFECTIVE and len(built) == 1
     assert private.calls == [] and len(public.calls) == 1
     hdf, rasmap_path, hecras_version = public.calls[0]
-    assert hdf == tmp_path / "T.hdf" and rasmap_path is None and hecras_version is None
+    # The reader is given the export's release, never left to guess its own.
+    assert hdf == tmp_path / "T.hdf" and rasmap_path is None and hecras_version == "7.0.1"
     route = resolver.modified_route(tmp_path / "a.p01.hdf")
     assert route["modification_reader"] == fast_map.MODIFICATION_READER_PUBLIC
     assert route["modification_reader"] == "RasFim.read_terrain_modifications"
-    assert (route["hecras_version"], route["hecras_version_basis"]) == ("7.0.1", "default")
+    assert (route["hecras_version"], route["hecras_version_basis"]) == (
+        "7.0.1", "detected from the project's plan files (7.0.1)")
+    assert route["hecras_runtime"] == "7.0.1"
     assert route["length_units"] == "feet"
     assert [layer["name"] for layer in route["layers"]] == ["Levee A", "Pad"]
     assert _manifest(tmp_path)["routes"][0]["modification_reader"] == (
@@ -264,7 +291,8 @@ def test_the_public_reader_receives_ras_version(tmp_path, monkeypatch):
     assert public.calls[0][2] == "6.6"
     route = resolver.modified_route(tmp_path / "a.p01.hdf")
     assert route["hecras_version"] == "6.6"
-    assert route["hecras_version_basis"] == "ras_version 6.6"
+    assert route["hecras_version_basis"] == "--ras-version 6.6"
+    assert route["hecras_runtime"] == "6.6"
 
 
 def test_a_public_reader_refusal_goes_to_rasmapper_with_its_reason(tmp_path, monkeypatch):
@@ -425,9 +453,7 @@ def test_an_unreadable_modification_group_goes_to_rasmapper(tmp_path, monkeypatc
 def test_hecras_66_rules_need_the_engines_hecras_version_record(tmp_path, monkeypatch):
     engine = json.loads(json.dumps(ENGINE_V2))
     del engine["modifications"]["hecras_version"]
-    resolver, built = _setup(
-        tmp_path, monkeypatch, engine, _reader([LEVEE], version=("6.6", "Program Version 6.60"))
-    )
+    resolver, built = _setup(tmp_path, monkeypatch, engine, _reader([LEVEE]), detected="6.6")
     assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EXPORT and built == []
     assert "HEC-RAS 6.6" in resolver.modified_route(tmp_path / "a.p01.hdf")["reason"]
 
@@ -439,6 +465,179 @@ def test_ras_version_selects_the_modification_rules(tmp_path, monkeypatch):
     assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EFFECTIVE
     assert reader.calls[0][2] == "6.6"
     assert resolver.modified_route(tmp_path / "a.p01.hdf")["hecras_version"] == "6.6"
+
+
+# ---------------------------------------------------------------------------
+# One HEC-RAS release for the export and the native route
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("ras_version, detected, expected", [
+    (None, "6.6", "6.6"),       # no --ras-version: the release the export detects
+    (None, "7.0.1", "7.0.1"),
+    ("6.6", "7.0.1", "6.6"),    # --ras-version wins over the project's plan files
+    ("7.0.1", "6.6", "7.0.1"),
+])
+@patch("ras_commander.RasFim")
+def test_the_export_reader_and_native_build_use_one_release(
+    fim, tmp_path, monkeypatch, ras_version, detected, expected
+):
+    """Before, without --ras-version the export used the release init_ras_project
+    detects from the plan files while the reader and the native build used
+    Commander's own guess (newest plan/geometry Program Version, else 7.0.1):
+    Middle Cahaba (plans 7.00, geometry 7.01) exported with 7.0 but staged 7.0.1
+    rules. Now all three take the one resolved release."""
+    public = _public_reader([LEVEE])
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public, detected=detected)
+    resolver.ras_version = ras_version
+    monkeypatch.setattr(resolver, "_effective", fast_map.TerrainResolver._effective.__get__(resolver))
+    monkeypatch.setattr(resolver, "for_plan", fast_map.TerrainResolver.for_plan.__get__(resolver))
+    monkeypatch.setattr(fast_map, "_has_kwargs", lambda function, *names: True)
+    exported = []
+
+    def export(prj, target, **kwargs):
+        exported.append(kwargs["hecras_version"])
+        return target
+
+    monkeypatch.setattr("ras2cng.terrain.export_modified_terrain", export)
+    # The native build is refused, so the export runs too: both are recorded.
+    fim.build_effective_terrain.side_effect = RuntimeError("refused for the test")
+    kind, kinds = _run(resolver, tmp_path)
+    assert kinds == ["export"] and kind == fast_map.TERRAIN_EXPORT
+    assert public.calls[0][2] == expected
+    assert fim.build_effective_terrain.call_args.kwargs["hecras_version"] == expected
+    assert exported == [expected]
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_NATIVE and route["fallback"]
+    assert route["hecras_runtime"] == route["hecras_version"] == expected
+
+
+def test_an_unresolved_export_release_keeps_the_terrain_on_rasmapper(tmp_path, monkeypatch):
+    """No release can be resolved for the export: the native route does not guess one."""
+    public = _public_reader([LEVEE])
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public, detected=None)
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EXPORT and built == []
+    assert public.calls == []
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
+    assert "could not be resolved" in route["reason"] and "no release found" in route["reason"]
+
+
+@pytest.mark.parametrize("detected, fragment", [
+    ("7.0", "unsupported"),          # 7.0.0: the export refuses it (known modification defect)
+    ("6.5", "HEC-RAS 6.5"),          # exported by 6.5; the engine's rules are 6.6 and 7.0.1
+    ("7.0.2", "HEC-RAS 7.0.2"),
+])
+def test_an_unqualified_export_release_keeps_the_terrain_on_rasmapper(
+    tmp_path, monkeypatch, detected, fragment
+):
+    public = _public_reader([LEVEE])
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public, detected=detected)
+    assert _run(resolver, tmp_path)[0] == fast_map.TERRAIN_EXPORT and built == []
+    assert public.calls == []
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
+    assert fragment in route["reason"]
+    assert route["hecras_runtime"] == detected
+
+
+def test_resolve_hecras_runtime(monkeypatch):
+    """--ras-version, else init_ras_project's detection, checked as the export checks it."""
+    runtime = fast_map.resolve_hecras_runtime("x.prj", "7.0.1")
+    assert (runtime.label, runtime.canonical, runtime.problem) == ("7.0.1", "7.0.1", None)
+    assert runtime.basis == "--ras-version 7.0.1"
+    assert fast_map.resolve_hecras_runtime("x.prj", "6.6").canonical == "6.6"
+    refused = fast_map.resolve_hecras_runtime("x.prj", "7.0")
+    assert refused.canonical is None and "7.0.0" in refused.problem
+
+    import ras_commander
+
+    seen = []
+
+    def init(prj, **kwargs):
+        seen.append(kwargs)
+        return SimpleNamespace(ras_version="6.6")
+
+    monkeypatch.setattr(ras_commander, "init_ras_project", init)
+    detected = fast_map.resolve_hecras_runtime("x.prj", None)
+    assert (detected.label, detected.canonical) == ("6.6", "6.6")
+    assert "detected" in detected.basis and "ras_version" not in seen[0]
+    monkeypatch.setattr(ras_commander, "init_ras_project",
+                        lambda prj, **kw: SimpleNamespace(ras_version=None))
+    missing = fast_map.resolve_hecras_runtime("x.prj", None)
+    assert missing.canonical is None and "--ras-version" in missing.problem
+
+
+# ---------------------------------------------------------------------------
+# HDF layers RAS Mapper does not apply (no .rasmap group named "Modifications")
+# ---------------------------------------------------------------------------
+
+MISNAMED = {
+    "code": "modification_group_misnamed", "group": "Hydroconnectors",
+    "layers": ["HC-0230", "HC-0137"],
+    "message": "a.rasmap registers modification group 'Hydroconnectors' under terrain T.hdf; "
+               "RAS Mapper (HEC-RAS 6.6, 7.0.1) applies modifications only from a group named "
+               "exactly 'Modifications' and ignores this one",
+}
+
+
+def test_layers_rasmapper_does_not_apply_leave_the_terrain_unmodified(tmp_path, monkeypatch):
+    """The original Helena terrain: HDF layers under a misnamed .rasmap group.
+    ras-commander 0.119 says RAS Mapper applies none, so it is mapped as an
+    unmodified terrain (the source TIFF may be used) and the warning is recorded."""
+    public = _public_reader(refusal="modification layers share a Priority")
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public)
+    (tmp_path / "a.rasmap").write_text("<RASMapper />")
+    asked = []
+
+    def unapplied(hdf, rasmap):
+        asked.append((hdf, rasmap))
+        return [dict(MISNAMED)]
+
+    monkeypatch.setattr(fast_map, "rasmap_unapplied_modifications", unapplied)
+    monkeypatch.setattr(resolver, "_source", lambda plan: (tmp_path / "src.tif", tmp_path / "T.hdf"))
+    kind, kinds = _run(resolver, tmp_path)
+    assert kind == fast_map.TERRAIN_SOURCE and kinds == ["source"]
+    assert asked == [(tmp_path / "T.hdf", tmp_path / "a.rasmap")]
+    assert public.calls == [] and built == []
+    assert resolver.modifications(tmp_path / "a.p01.hdf") == []
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_UNAPPLIED == "unmodified"
+    assert route["modifications"] == ["hdf:Levee A"]
+    assert route["rasmap_warnings"][0]["code"] == "modification_group_misnamed"
+    assert "Hydroconnectors" in route["reason"]
+    assert _manifest(tmp_path)["routes"][0]["route"] == "unmodified"
+    assert any("does not apply" in note for note in resolver.notes)
+
+
+def test_applied_layers_without_a_rasmap_stay_modified(tmp_path, monkeypatch):
+    """No .rasmap: Commander is not asked, and the HDF layers count."""
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
+    with patch("ras_commander.RasFim") as fim:
+        assert resolver.modifications(tmp_path / "a.p01.hdf") == ["hdf:Levee A"]
+        fim.top_priority_terrain_source.assert_not_called()
+    assert resolver.modified_route(tmp_path / "a.p01.hdf")["route"] == fast_map.MODIFIED_ROUTE_NATIVE
+
+
+@pytest.mark.parametrize("info, expected", [
+    ({"modified": False, "rasmap_checked": True, "rasmap_warnings": [MISNAMED]}, [MISNAMED]),
+    ({"modified": False, "rasmap_checked": True,
+      "rasmap_warnings": [{**MISNAMED, "code": "modification_group_missing"}]},
+     [{**MISNAMED, "code": "modification_group_missing"}]),
+    ({"modified": True, "rasmap_checked": True, "rasmap_warnings": [MISNAMED]}, None),
+    ({"modified": False, "rasmap_checked": False, "rasmap_warnings": [MISNAMED]}, None),
+    ({"modified": False, "rasmap_checked": True,
+      "rasmap_warnings": [{**MISNAMED, "code": "rasmap_not_checked"}]}, None),
+    (RuntimeError("unproven priority"), None),
+])
+def test_rasmap_unapplied_modifications(tmp_path, info, expected):
+    with patch("ras_commander.RasFim") as fim:
+        if isinstance(info, Exception):
+            fim.top_priority_terrain_source.side_effect = info
+        else:
+            fim.top_priority_terrain_source.return_value = info
+        assert fast_map.rasmap_unapplied_modifications(tmp_path / "T.hdf", tmp_path / "a.rasmap") == expected
+        assert fast_map.rasmap_unapplied_modifications(tmp_path / "T.hdf", None) is None
 
 
 def test_an_engine_refusal_on_the_native_route_falls_back_to_the_export(tmp_path, monkeypatch):
@@ -548,6 +747,7 @@ def test_map_result_records_the_route(tmp_path, monkeypatch, engine, layers, exp
                                       expected_route):
     ras, project_dir = _fake_ras(tmp_path)
     hdf = _terrain_h5(tmp_path / "T.hdf")
+    monkeypatch.setattr(fast_map, "resolve_hecras_runtime", _runtime())
     monkeypatch.setattr(fast_map, "preflight", lambda plan, r, mode, **kw: {"mode": "sloping"})
     monkeypatch.setattr(fast_map, "engine_method",
                         lambda kind: dict(engine) if kind == "effective_terrain" else {})
