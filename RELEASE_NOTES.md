@@ -83,7 +83,13 @@ archive's `terrain/modifications/` layers and the web map's modification layers)
   polygon per feature for the terrain it can change. Lines are buffered by `max_extent`
   (RAS Mapper's *Max Reach*, the offset RAS Mapper itself indexes them by) or by half the top
   width when no max extent is stored (`footprint_basis`, `footprint_half_width`). Use it
-  instead of a centreline to decide whether a modification can affect a cell.
+  instead of a centreline to decide whether a modification can affect a cell. A line with
+  neither a positive max extent nor a positive width has no footprint; check the line layer
+  when every feature must be covered.
+- Per-feature attributes fall back to the layer's values only when the feature's row lacks
+  the field; a polygon's `boundary_elevation_min`/`max` come from its own points when the
+  layer stores one boundary elevation per point; a self-intersecting ring repaired by
+  `make_valid` keeps only its polygonal parts.
 
 ## Fix: modifications the `.rasmap` does not activate were treated as applied
 
