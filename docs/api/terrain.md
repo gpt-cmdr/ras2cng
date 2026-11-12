@@ -25,13 +25,15 @@ attributes (`feature_index`, `feature_name`).
 |---|---|
 | `terrain_modification_lines` | Line, levee and channel centrelines with `width` (top width), `left_slope`, `right_slope` and `max_extent` (RAS Mapper's *Max Reach*) |
 | `terrain_modification_polygons` | Polygon modifications (`shape_type="polygon"`) and the outlines of pier, rectangle, ellipse and triangle modifications (`shape_type`), built from their stored parameters |
-| `terrain_modification_footprints` | One polygon per feature covering the terrain it can change: lines buffered by `max_extent` (or half the top width when no max extent is stored; see `footprint_basis` and `footprint_half_width`), polygons and shapes as drawn. A line with neither a positive `max_extent` nor a positive `width` has no footprint |
+| `terrain_modification_footprints` | One polygon per feature covering the terrain it can change: lines buffered by `max_extent` (or, when no max extent is stored, half the top width, an estimate that can omit side-slope reach; see `footprint_basis` and `footprint_half_width`), polygons and shapes as drawn. A line with neither a positive `max_extent` nor a positive `width` has no footprint |
 | `terrain_modification_control_points` | Elevation control points |
 
 A centreline is not a footprint: a channel or levee changes the terrain across its top width
 and side slopes, up to *Max Reach* either side. Use `terrain_modification_footprints` to
-test whether a feature can affect a location. The footprint is an upper bound; how far the
-side slopes actually reach depends on the terrain. A line with no usable max extent or width
+test whether a feature can affect a location. A `max_extent` footprint is an upper bound; how
+far the side slopes actually reach depends on the terrain. A `top_width` footprint (no max
+extent stored) covers only the top width and can omit side-slope reach, so do not use it to
+rule out an effect at a location. A line with no usable max extent or width
 has no footprint, so check `terrain_modification_lines` when every feature must be covered.
 
 ## How Terrain Discovery Works
