@@ -78,6 +78,12 @@ class MapResult:
     # (e.g. storage areas without --fast-map-storage-areas, 1D elements, a
     # non-Max profile). Empty under --engine rasmapper.
     fast_map_skipped: dict[str, str] = field(default_factory=dict)
+    # For fast-map products on a modified terrain, the routing decision
+    # (fast_map.TerrainResolver.modified_route): ``route`` is
+    # "native-effective" (rasmapper-effective-terrain/2 with modifications)
+    # or "rasmapper-export", with the ``reason`` for the export and any
+    # engine ``fallback``. Absent for unmodified terrains.
+    fast_map_terrain_route: dict[str, dict] = field(default_factory=dict)
 
 
 # Map type names to RasProcess store_maps variable names
@@ -306,7 +312,10 @@ def generate_result_maps(
             checked against RAS Mapper's serial boundary export.
         fast_map_effective_terrain: Before exporting the terrain through RAS
             Mapper, try RAS Mapper's effective terrain rebuilt in Rust
-            (fast-map #19; unmodified terrains only). False skips it.
+            (fast-map #19). Modified terrains use it only with an engine
+            advertising ``rasmapper-effective-terrain/2`` and every
+            modification form qualified (see
+            ``MapResult.fast_map_terrain_route``). False skips it.
         fast_map_storage_areas: Map plans with storage areas in Rust, drawing
             them as RAS Mapper level pools (WSE/Depth, arrival time, percent
             inundated; qualified 0/0 on Bald Eagle p07/p04). **Opt-in**: it
@@ -597,8 +606,13 @@ def generate_result_maps(
                         # were passed over.
                         for note in terrain_resolver.notes[notes_before:]:
                             console.print(f"    fast-map {label}: {note}")
+                    # A snapshot per product group: a later group's fallback
+                    # must not change what this group's products record.
+                    route = terrain_resolver.record_product_group(plan_hdf, label, kind)
                     for map_type in produced:
                         map_result.fast_map_terrain[map_type] = kind
+                        if route is not None:
+                            map_result.fast_map_terrain_route[map_type] = route
                     return produced
 
                 def _skip(label, reason, *, strict=False, types=()):
