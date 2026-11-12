@@ -96,10 +96,21 @@ RAS Mapper.
   valid px), 2 (7.0.1) or 4 (6.6) values differ, all stitch-TIN pixels of the base terrain where
   the unmodified native build also differs from RAS Mapper's base export. Multi-ring polygons go
   to RAS Mapper with `refusal_reason: "multi_ring_polygon"`.
-- **Terrains whose CRS has no EPSG code stay on RAS Mapper.** ras-commander 0.119.0 refuses the
-  native effective terrain for such a CRS (for example ESRI:102630, Alabama West ftUS, the Helena
-  terrain), so the route is decided but the build falls back to the export (recorded as
-  `fallback`), and fast-map then refuses the export too, so RAS Mapper maps the plan.
+- **Terrains whose CRS has no EPSG code take the native route with `crs_any`.** A modified
+  terrain in a CRS such as ESRI:102630 (NAD83 / Alabama West, US survey feet; Helena) is built
+  natively only when the engine's `effective_terrain` and `sloping` records advertise `crs_any`
+  (ras-commander-fast-map 0.19 and later) and ras-commander passes it on
+  (`ras_commander.fim._engine.crs_any`, the release after 0.119.0). Those engines write the
+  CRS's GeoKey tags verbatim, so the products read back in exactly the terrain's CRS.
+  Otherwise the terrain now goes to the RAS Mapper export up front, with the reason recorded
+  (`fast_map.terrain_crs_route`), instead of after a Commander refusal. The route record gains
+  `terrain_crs` (`name`, `authority`, `epsg`, `request`: `epsg` or `geokeys`). Helena
+  (Middle Cahaba p01 results; HEC-RAS 7.0.1 and 6.6 rules) with the three branches: route
+  `native-effective` with no fallback; WSE/Depth and velocity mapped by fast-map on the
+  effective terrain; the effective terrain has 0 mask and 0 value differences (23,775,376 valid
+  px) against ras2cng's two RAS Mapper exports and Fast-Map's reference export; its GeoKey tags
+  are byte-identical to RAS Mapper's export (`is_exact_same`, US survey feet), and so are those
+  of every product.
 
 ## Fix: terrain-modification vectors missed piers, shapes and widths
 

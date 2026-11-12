@@ -306,8 +306,10 @@ modified area and in WSE, Depth and Velocity (Max) against two repeat RAS
 Mapper exports; the only whole-terrain differences are a few base-terrain
 stitch-TIN pixels that the unmodified native build shows too. Multi-ring
 polygons go to RAS Mapper with `refusal_reason: "multi_ring_polygon"`. A
-terrain whose CRS has no EPSG code (for example ESRI:102630) is refused by
-ras-commander's native build and falls back to the export (Fast-Map's own
+terrain whose CRS has no EPSG code (for example ESRI:102630) takes the native
+route only when the engine's `effective_terrain` and `sloping` records advertise
+`crs_any` (Fast-Map 0.19+) and ras-commander passes it on; otherwise it goes to
+the export with the reason recorded (`terrain_crs` in the route record; Fast-Map's own
 qualification is in its
 `feature_dev_notes/effective_terrain_modifications/modification_rules.md`).
 **Effective-terrain values change with `/2` for unmodified terrains too:**
