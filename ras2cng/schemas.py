@@ -4,7 +4,7 @@ The archive layers inherit many source-specific columns from ras-commander, so t
 describe the stable discriminator/join columns and mark the remaining surface as dynamic.
 """
 
-SCHEMA_VERSION = "1.3"
+SCHEMA_VERSION = "1.4"
 
 # Columns every archive GeoParquet file carries in addition to its DataFrame
 # contract (manifest schema 2.7+). Archives from manifest schema <= 2.6 carry
@@ -94,6 +94,32 @@ DATAFRAME_SCHEMAS = {
                 "description": "rasmap_df per-field extraction errors, written as Parquet MAP<string, string> (field -> error).",
             },
         ],
+    },
+    "terrain_modification_layers": {
+        "description": (
+            "Terrain-modification vectors read from a terrain HDF's /Modifications group: one "
+            "GeoDataFrame per layer (terrain_modification_lines, terrain_modification_polygons, "
+            "terrain_modification_footprints, terrain_modification_control_points), one row per "
+            "feature. Footprints with footprint_basis 'max_extent' bound what a line can change; "
+            "'top_width' footprints omit side-slope reach."
+        ),
+        "accessor": "ras2cng.extract_terrain_modification_layers(terrain_hdf) or "
+        "archive_project(...) terrain/modifications/ layers",
+        "source": "ras2cng.terrain.extract_terrain_modification_layers",
+        "extra_columns": True,
+        "dynamic": True,
+        "columns": [
+            {"name": "name", "dtype": "str", "description": "Modification layer name in the HDF."},
+            {"name": "feature_index", "dtype": "int", "description": "Zero-based feature index within the layer (lines, polygons, footprints)."},
+            {"name": "feature_name", "dtype": "str", "description": "Feature name from the layer's Attributes row, else the layer name."},
+            {"name": "width", "dtype": "float64", "description": "Line top width (nullable)."},
+            {"name": "max_extent", "dtype": "float64", "description": "RAS Mapper Max Reach either side of a line (nullable)."},
+            {"name": "shape_type", "dtype": "str", "description": "polygon, pier, rectangle, ellipse or triangle (polygons and footprints)."},
+            {"name": "footprint_basis", "dtype": "str", "description": "Footprints only: max_extent, top_width, polygon or the shape type."},
+            {"name": "footprint_half_width", "dtype": "float64", "description": "Footprints only: line buffer distance (null for polygons and shapes)."},
+            {"name": "geometry", "dtype": "GeoSeries", "description": "Feature geometry in the terrain CRS."},
+        ],
+        "archive_columns": ARCHIVE_GEOPARQUET_COLUMNS,
     },
     "duckdb_query_results": {
         "description": "Arbitrary tabular result returned by query_parquet() or DuckSession.query().",
