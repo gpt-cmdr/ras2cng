@@ -657,11 +657,12 @@ def _collect_modification_group(name: str, group, metadata: dict, rows: dict) ->
         props = {**base, "feature_index": index}
         props["feature_name"] = str(row.get("Name") or row.get("System Name") or name)
         for key, names in _FEATURE_FLOAT_ATTRIBUTES.items():
-            value = _first_float(row, names)
-            if value is not None:
-                props[key] = value
+            if any(field in row for field in names):
+                # The feature's own field wins; present but invalid is None.
+                props[key] = _first_float(row, names)
             else:
-                props[key] = _finite_or_none(props.get(key)) if not row else None
+                # Absent from the feature's row: keep the layer-level value.
+                props[key] = _finite_or_none(props.get(key))
         elevation_type = row.get("Elevation Type")
         props["elevation_type"] = (
             None if elevation_type is None else str(_decode_hdf_value(elevation_type))
@@ -679,12 +680,12 @@ def _collect_modification_group(name: str, group, metadata: dict, rows: dict) ->
             if footprint is not None:
                 rows["terrain_modification_footprints"].append(footprint)
     elif "Polygon Points" in group:
-        boundary_min = _finite_dataset_stat(group, "Boundary Elevations", "min")
-        boundary_max = _finite_dataset_stat(group, "Boundary Elevations", "max")
+        boundary_stats = _per_feature_boundary_stats(group)
         for index, parts in enumerate(_poly_feature_parts(group, "Polygon")):
             geometry = _polygon_geometry(parts)
             if geometry is None or geometry.is_empty:
                 continue
+            boundary_min, boundary_max = boundary_stats(index)
             props = {
                 **feature_properties(index),
                 "shape_type": "polygon",
@@ -774,6 +775,39 @@ def _first_float(row: dict, names) -> Optional[float]:
     return None
 
 
+def _per_feature_boundary_stats(group):
+    """``index -> (min, max)`` of a polygon feature's ``Boundary Elevations``.
+
+    When the dataset has one value per polygon point, each feature's values
+    are its ``Polygon Info`` point span. Otherwise (another layout, or no
+    ``Info``) every feature gets the statistics of the whole dataset.
+    """
+    import numpy as np
+
+    whole = (
+        _finite_dataset_stat(group, "Boundary Elevations", "min"),
+        _finite_dataset_stat(group, "Boundary Elevations", "max"),
+    )
+    if "Boundary Elevations" not in group or "Polygon Info" not in group:
+        return lambda index: whole
+    values = np.asarray(group["Boundary Elevations"][:], dtype="float64").reshape(-1)
+    if len(values) != len(group["Polygon Points"]):
+        return lambda index: whole
+    info = np.asarray(group["Polygon Info"][:], dtype="int64").reshape(-1, 4)
+
+    def stats(index: int):
+        if index >= len(info):
+            return whole
+        start, count = int(info[index][0]), int(info[index][1])
+        span = values[start:start + count]
+        span = span[np.isfinite(span)]
+        if not len(span):
+            return (None, None)
+        return (float(span.min()), float(span.max()))
+
+    return stats
+
+
 def _poly_feature_parts(group, prefix: str) -> list[list]:
     """Per-feature point parts of a RAS Mapper poly feature set.
 
@@ -832,9 +866,33 @@ def _polygon_geometry(parts):
             continue
         ring = Polygon(part)
         if not ring.is_valid:
-            ring = make_valid(ring)
+            ring = _polygonal_part(make_valid(ring))
+            if ring is None:
+                continue
         geometry = ring if geometry is None else geometry.symmetric_difference(ring)
     return geometry
+
+
+def _polygonal_part(geometry):
+    """The polygonal components of a repaired geometry, or ``None``.
+
+    ``make_valid`` can return a ``GeometryCollection`` mixing a polygon with
+    lines or points; only the area belongs in a polygon layer.
+    """
+    from shapely.geometry import MultiPolygon, Polygon
+
+    if isinstance(geometry, (Polygon, MultiPolygon)):
+        return None if geometry.is_empty else geometry
+    polygons = []
+    for part in getattr(geometry, "geoms", ()):
+        if isinstance(part, Polygon):
+            polygons.append(part)
+        elif isinstance(part, MultiPolygon):
+            polygons.extend(part.geoms)
+    polygons = [p for p in polygons if not p.is_empty]
+    if not polygons:
+        return None
+    return polygons[0] if len(polygons) == 1 else MultiPolygon(polygons)
 
 
 def _line_footprint(geometry, props: dict) -> Optional[dict]:

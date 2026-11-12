@@ -182,3 +182,70 @@ def test_polygon_layer_with_two_features_and_a_hole(tmp_path):
     assert list(polygons["feature_index"]) == [0, 1]
     assert polygons.geometry.iloc[0].area == pytest.approx(100.0 - 4.0)
     assert polygons.geometry.iloc[1].area == pytest.approx(50.0)
+
+
+def _collect(group, metadata):
+    from ras2cng.terrain import TERRAIN_MODIFICATION_LAYERS, _collect_modification_group
+
+    rows = {name: [] for name in TERRAIN_MODIFICATION_LAYERS}
+    _collect_modification_group("Layer", group, metadata, rows)
+    return rows
+
+
+def test_feature_rows_without_a_field_keep_the_layer_value(tmp_path):
+    # An Attributes row with a name but no Max Reach / Top Width field must not
+    # drop the layer-level values (and with them the footprint).
+    with h5py.File(tmp_path / "t.hdf", "w") as hdf:
+        group = hdf.create_group("Modifications/Layer")
+        group.create_dataset("Polyline Points", data=np.array([[0.0, 0.0], [100.0, 0.0]]))
+        group.create_dataset("Attributes", data=np.array(
+            [(b"Line 1",)], dtype=np.dtype([("Name", "S32")])))
+        rows = _collect(group, {"width": 30.0, "max_extent": 45.0})
+    (line,) = rows["terrain_modification_lines"]
+    assert line["feature_name"] == "Line 1"
+    assert line["width"] == 30.0 and line["max_extent"] == 45.0
+    (footprint,) = rows["terrain_modification_footprints"]
+    assert footprint["footprint_basis"] == "max_extent"
+
+
+def test_feature_field_present_but_invalid_is_none(tmp_path):
+    with h5py.File(tmp_path / "t.hdf", "w") as hdf:
+        group = hdf.create_group("Modifications/Layer")
+        group.create_dataset("Polyline Points", data=np.array([[0.0, 0.0], [100.0, 0.0]]))
+        group.create_dataset("Attributes", data=_ground_line_attributes([
+            (b"L", b"L", b"Replace", 10.0, 40.0, 3.0, -3.0, np.nan),
+        ]))
+        rows = _collect(group, {"max_extent": 45.0})
+    (line,) = rows["terrain_modification_lines"]
+    assert line["max_extent"] is None
+    assert rows["terrain_modification_footprints"][0]["footprint_basis"] == "top_width"
+
+
+def test_boundary_elevations_are_per_polygon_feature(tmp_path):
+    with h5py.File(tmp_path / "t.hdf", "w") as hdf:
+        group = hdf.create_group("Modifications/Layer")
+        group.create_dataset("Polygon Info", data=np.array(
+            [[0, 3, 0, 1], [3, 3, 1, 1]], dtype="int32"))
+        group.create_dataset("Polygon Parts", data=np.array([[0, 3], [0, 3]], dtype="int32"))
+        group.create_dataset("Polygon Points", data=np.array(
+            [[0, 0], [10, 0], [0, 10], [100, 100], [110, 100], [100, 110]], dtype="float64"))
+        group.create_dataset("Boundary Elevations", data=np.array(
+            [1.0, 2.0, 3.0, 10.0, 20.0, 30.0]))
+        rows = _collect(group, {})
+    polygons = rows["terrain_modification_polygons"]
+    assert [(p["boundary_elevation_min"], p["boundary_elevation_max"]) for p in polygons] == [
+        (1.0, 3.0), (10.0, 30.0)
+    ]
+
+
+def test_repaired_ring_keeps_only_polygonal_parts():
+    from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Polygon
+
+    from ras2cng.terrain import _polygonal_part
+
+    square = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    mixed = GeometryCollection([square, LineString([(2, 2), (3, 3)])])
+    assert _polygonal_part(mixed).equals(square)
+    assert _polygonal_part(GeometryCollection([LineString([(0, 0), (1, 1)])])) is None
+    two = GeometryCollection([square, Polygon([(5, 5), (6, 5), (6, 6)])])
+    assert isinstance(_polygonal_part(two), MultiPolygon)
