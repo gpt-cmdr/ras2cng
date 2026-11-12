@@ -910,3 +910,87 @@ def test_map_result_records_the_route(tmp_path, monkeypatch, engine, layers, exp
         assert result.fast_map_terrain_route["wse"]["modification_reader"] == (
             fast_map.MODIFICATION_READER_PUBLIC
         )
+
+
+# ---------------------------------------------------------------------------
+# Effective-terrain basis (stored-map basis for modified single-source terrains)
+# ---------------------------------------------------------------------------
+
+
+class _FakeFim:
+    """RasFim with the ``basis`` keyword (ras-commander with the stored-map basis)."""
+
+    def __init__(self, sources=1, supports=True, refuse_stored_map=None):
+        self.calls, self.sources, self.supports = [], sources, supports
+        self.refuse_stored_map = refuse_stored_map
+
+    def build_effective_terrain(self, terrain_hdf, output_path, *, rasmap_path=None, threads=1,
+                                max_working_mib=4096, hecras_version=None, basis="export"):
+        self.calls.append(basis)
+        if basis == "stored_map" and self.refuse_stored_map:
+            raise RuntimeError(self.refuse_stored_map)
+        return {"basis": basis}
+
+    def supports_effective_terrain_basis(self, basis, engine_path=None):
+        return self.supports
+
+    def top_priority_terrain_source(self, terrain_hdf, rasmap_path=None):
+        return {"source_count": self.sources}
+
+
+class _OldFim(_FakeFim):
+    """RasFim before the ``basis`` keyword."""
+
+    supports_effective_terrain_basis = None
+
+    def build_effective_terrain(self, terrain_hdf, output_path, *, rasmap_path=None, threads=1,
+                                max_working_mib=4096, hecras_version=None):
+        self.calls.append(None)
+        return {}
+
+
+def _basis_run(tmp_path, monkeypatch, fim, **resolver_kwargs):
+    resolver, _ = _setup(tmp_path, monkeypatch, ENGINE_V2, _reader([LEVEE]))
+    for k, v in resolver_kwargs.items():
+        setattr(resolver, k, v)
+    monkeypatch.setattr(resolver, "_effective", fast_map.TerrainResolver._effective.__get__(resolver))
+    import ras_commander
+
+    monkeypatch.setattr(ras_commander, "RasFim", fim)
+    kind, kinds = _run(resolver, tmp_path)
+    return resolver, kind, resolver.modified_route(tmp_path / "a.p01.hdf")
+
+
+def test_a_modified_single_source_terrain_uses_the_stored_map_basis(tmp_path, monkeypatch):
+    fim = _FakeFim()
+    resolver, kind, route = _basis_run(tmp_path, monkeypatch, fim)
+    assert kind == fast_map.TERRAIN_EFFECTIVE
+    assert fim.calls == ["stored_map"]
+    assert route["effective_terrain_basis"] == fast_map.EFFECTIVE_BASIS_STORED_MAP
+    assert route["effective_terrain_basis_reason"] == "modified single-source terrain"
+    assert _manifest(tmp_path)["routes"][0]["effective_terrain_basis"] == "stored_map"
+
+
+@pytest.mark.parametrize("fim, kwargs, reason", [
+    (_FakeFim(sources=2), {}, "needs one terrain source, not 2"),
+    (_FakeFim(supports=False), {}, "does not advertise the stored-map basis"),
+    (_OldFim(), {}, "ras-commander has no effective-terrain basis"),
+    (_FakeFim(), {"stored_map_basis": False}, "stored-map basis disabled"),
+])
+def test_the_export_basis_otherwise(tmp_path, monkeypatch, fim, kwargs, reason):
+    resolver, kind, route = _basis_run(tmp_path, monkeypatch, fim, **kwargs)
+    assert kind == fast_map.TERRAIN_EFFECTIVE
+    assert fim.calls == [None if isinstance(fim, _OldFim) else "export"]
+    assert route["effective_terrain_basis"] == fast_map.EFFECTIVE_BASIS_EXPORT
+    assert reason in route["effective_terrain_basis_reason"]
+
+
+def test_a_stored_map_refusal_builds_the_export_basis(tmp_path, monkeypatch):
+    fim = _FakeFim(refuse_stored_map="basis 'stored_map': the export lattice does not cover the source")
+    resolver, kind, route = _basis_run(tmp_path, monkeypatch, fim)
+    assert kind == fast_map.TERRAIN_EFFECTIVE
+    assert fim.calls == ["stored_map", "export"]
+    assert route["effective_terrain_basis"] == "export"
+    assert "stored-map basis refused" in route["effective_terrain_basis_reason"]
+    assert any("stored-map basis refused" in n for n in resolver.notes)
+    assert "fallback" not in route

@@ -242,6 +242,13 @@ TERRAIN_EXPORT_CANONICAL = "export-canonical"
 # terrain with modifications needs this method and request schema; see
 # TerrainResolver.modified_route(). Fast-Map 0.17.0 advertises only /1.
 EFFECTIVE_TERRAIN_V2 = "rasmapper-effective-terrain/2"
+# The effective terrain's stored-map basis (ras-commander-fast-map
+# ``effective_terrain.bases``; Commander ``build_effective_terrain(basis=)``):
+# the terrain RAS Mapper's stored maps read, which differs from the export in
+# RAS Mapper itself (the export drops the source's last cell row and column and
+# rounds to 1/32). Used for modified single-source terrains on the native route.
+EFFECTIVE_BASIS_EXPORT = "export"
+EFFECTIVE_BASIS_STORED_MAP = "stored_map"
 EFFECTIVE_TERRAIN_SCHEMA_V2 = "ras-commander-effective-terrain-request/2"
 # Routing decision for a modified terrain, kept in MapResult.fast_map_terrain_route
 # and in TERRAIN_ROUTE_MANIFEST beside the terrain work files.
@@ -1493,10 +1500,15 @@ class TerrainResolver:
         effective: bool = True,
         threads: Optional[int] = None,
         max_working_mib: Optional[int] = None,
+        stored_map_basis: bool = True,
     ) -> None:
         self.prj_file = Path(prj_file)
         #: Try the native effective terrain before the RAS Mapper export.
         self.effective = bool(effective)
+        #: For a modified single-source terrain on the native route, build the
+        #: effective terrain on the stored-map basis when the engine and
+        #: Commander offer it (see :meth:`_effective_basis`).
+        self.stored_map_basis = bool(stored_map_basis)
         self.threads = threads
         self.max_working_mib = max_working_mib
         self.ras_version = ras_version
@@ -2055,24 +2067,81 @@ class TerrainResolver:
                 version = modification_hecras_version(self.hecras_runtime().release)
                 if version is not None:
                     kwargs["hecras_version"] = version
+            basis, why = self._effective_basis(plan_hdf, hdf, rasmap)
+            build = dict(
+                rasmap_path=rasmap if rasmap.is_file() else None,
+                threads=default_threads() if self.threads is None else int(self.threads),
+                max_working_mib=(
+                    default_working_mib() if self.max_working_mib is None
+                    else int(self.max_working_mib)
+                ),
+                **kwargs,
+            )
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                RasFim.build_effective_terrain(
-                    hdf, target,
-                    rasmap_path=rasmap if rasmap.is_file() else None,
-                    threads=default_threads() if self.threads is None else int(self.threads),
-                    max_working_mib=(
-                        default_working_mib() if self.max_working_mib is None
-                        else int(self.max_working_mib)
-                    ),
-                    **kwargs,
-                )
+                if basis == EFFECTIVE_BASIS_STORED_MAP:
+                    try:
+                        RasFim.build_effective_terrain(hdf, target, basis=basis, **build)
+                    except Exception as exc:
+                        # The export basis is the qualified fallback.
+                        basis, why = EFFECTIVE_BASIS_EXPORT, f"stored-map basis refused: {exc}"
+                        self.notes.append(f"native effective terrain: {why}")
+                if basis == EFFECTIVE_BASIS_EXPORT:
+                    RasFim.build_effective_terrain(hdf, target, **build)
                 self._sources[key] = target
+                self._record_route_fields(plan_hdf, {
+                    "effective_terrain_basis": basis, "effective_terrain_basis_reason": why})
             except Exception as exc:
                 self.notes.append(f"native effective terrain unavailable: {exc}")
                 self._record_fallback(plan_hdf, f"effective terrain build refused: {exc}")
                 self._sources[key] = None
         return self._sources[key]
+
+    def _effective_basis(self, plan_hdf: Path, hdf: Path, rasmap: Path) -> tuple[str, str]:
+        """``(basis, reason)`` for the effective terrain of ``plan_hdf``.
+
+        The stored-map basis (``rasmapper-stored-map-terrain/1``) is the
+        terrain RAS Mapper's stored maps read: on a single-source terrain the
+        source's own cells on its own grid, with the modifications unrounded.
+        The export basis drops the source's last cell row and column and rounds
+        to 1/32, so maps on it differ from RAS Mapper's stored maps there. It is
+        used for a modified single-source terrain when Commander takes
+        ``basis`` and the engine advertises it; otherwise the export basis (the
+        terrain before this option).
+        """
+        if not self.stored_map_basis:
+            return EFFECTIVE_BASIS_EXPORT, "stored-map basis disabled"
+        if not self.modifications(plan_hdf):
+            # Unmodified terrains map on the source TIFF itself when they can;
+            # the effective terrain is their fallback and stays the export.
+            return EFFECTIVE_BASIS_EXPORT, "unmodified terrain"
+        from ras_commander import RasFim
+
+        supports = getattr(RasFim, "supports_effective_terrain_basis", None)
+        if not callable(supports) or not _has_kwargs(RasFim.build_effective_terrain, "basis"):
+            return EFFECTIVE_BASIS_EXPORT, "ras-commander has no effective-terrain basis"
+        try:
+            if not supports(EFFECTIVE_BASIS_STORED_MAP):
+                return EFFECTIVE_BASIS_EXPORT, "engine does not advertise the stored-map basis"
+            info = RasFim.top_priority_terrain_source(
+                hdf, rasmap_path=rasmap if rasmap.is_file() else None)
+        except Exception as exc:
+            return EFFECTIVE_BASIS_EXPORT, f"stored-map basis not checked: {exc}"
+        count = info.get("source_count")
+        if count != 1:
+            return EFFECTIVE_BASIS_EXPORT, f"stored-map basis needs one terrain source, not {count}"
+        return EFFECTIVE_BASIS_STORED_MAP, "modified single-source terrain"
+
+    def _record_route_fields(self, plan_hdf: Path, fields: dict[str, Any]) -> None:
+        """Add ``fields`` to a native-routed modified terrain's route record."""
+        try:
+            hdf = self._terrain_hdf_for(plan_hdf)
+        except Exception:
+            return
+        record = self._sources.get(("route", str(hdf)))
+        if isinstance(record, dict) and record.get("route") == MODIFIED_ROUTE_NATIVE:
+            record.update(fields)
+            self._write_routes()
 
     def _terrain_hdf_for(self, plan_hdf: Path) -> Optional[Path]:
         from ras2cng.terrain import discover_terrains
