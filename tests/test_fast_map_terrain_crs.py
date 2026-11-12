@@ -103,3 +103,28 @@ def test_commander_crs_any_reflects_the_installed_ras_commander():
     from ras_commander.fim import _engine
 
     assert fast_map.commander_crs_any() is callable(getattr(_engine, "crs_any", None))
+
+
+def test_unmodified_untagged_terrain_goes_to_commander_for_boundaries(tmp_path, monkeypatch):
+    """Unmodified Helena: RAS Mapper's source TIFF carries no CRS (ESRI:102630 has
+    no EPSG code). ras2cng applies no CRS gate of its own: the source goes to
+    ras-commander, which takes the terrain HDF Projection for crs_any engines
+    and refuses otherwise (then RAS Mapper maps the boundary)."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+    from test_fast_map import _terrain_h5
+
+    terrain = tmp_path / "Terrain"
+    terrain.mkdir()
+    hdf = _terrain_h5(terrain / "Helena.hdf")
+    with h5py.File(hdf, "a") as handle:
+        handle.attrs["Projection"] = CRS.from_user_input(ESRI).to_wkt().encode()
+    tif = terrain / "Helena.a.tif"
+    with rasterio.open(tif, "w", driver="GTiff", width=2, height=2, count=1, dtype="float32",
+                       transform=from_origin(0, 2, 1, 1), nodata=-9999) as dst:
+        dst.write(np.zeros((1, 2, 2), "float32"))
+    monkeypatch.setattr(fast_map, "terrain_crs_route",
+                        lambda *a: pytest.fail("the CRS route gates modified terrains only"))
+    resolver = fast_map.TerrainResolver(tmp_path / "m.prj", tmp_path / "w", terrain_hdf=hdf)
+    assert resolver.boundary_terrain(tmp_path / "m.p01.hdf") == (tif, hdf)

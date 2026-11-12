@@ -245,7 +245,10 @@ ras2cng map <project> <out> --engine rasmapper                            # nati
   with `refusal_reason: multi_ring_polygon`. Helena (ESRI:102630) takes
   the native route only with an engine that advertises `crs_any` (Fast-Map
   0.19+) and a ras-commander that passes it on (`terrain_crs_route`);
-  otherwise it goes to the export up front with the reason recorded. **Schema 1 values change with `/2`:** the engine runs the `/2` rule for
+  otherwise it goes to the export up front with the reason recorded. Unmodified Helena
+  (untagged source TIFF) maps in Rust, boundaries included, with the same engine and
+  Commander: Commander reads the terrain HDF `Projection`; ras2cng adds no CRS gate.
+  Modified terrains still take RAS Mapper's boundary. **Schema 1 values change with `/2`:** the engine runs the `/2` rule for
   unmodified terrains too, so effective-terrain results differ numerically
   from a `/1` engine's.
   `--no-fast-map-effective-terrain` skips it; `--fast-map-terrain` supplies
