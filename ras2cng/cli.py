@@ -1491,7 +1491,9 @@ def map_command(
         True, "--fast-map-effective-terrain/--no-fast-map-effective-terrain",
         help=(
             "With --engine fast-map, try RAS Mapper's effective terrain rebuilt in Rust "
-            "before exporting the terrain through HEC-RAS (unmodified terrains only)"
+            "before exporting the terrain through HEC-RAS (modified terrains only with an "
+            "engine advertising rasmapper-effective-terrain/2 and every modification form "
+            "qualified)"
         ),
     ),
     fast_map_storage_areas: Optional[bool] = typer.Option(
@@ -1786,7 +1788,9 @@ def map_hdf_command(
         True, "--fast-map-effective-terrain/--no-fast-map-effective-terrain",
         help=(
             "With --engine fast-map, try RAS Mapper's effective terrain rebuilt in Rust "
-            "before exporting the terrain through HEC-RAS (unmodified terrains only)"
+            "before exporting the terrain through HEC-RAS (modified terrains only with an "
+            "engine advertising rasmapper-effective-terrain/2 and every modification form "
+            "qualified)"
         ),
     ),
     fast_map_storage_areas: Optional[bool] = typer.Option(

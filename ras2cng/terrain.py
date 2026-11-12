@@ -1173,8 +1173,9 @@ def terrain_modifications(
     read is reported as a modification, so an unreadable terrain is never
     treated as unmodified.
 
-    ras2cng uses Rust terrain operations only when this is empty; any
-    modified terrain goes to RAS Mapper (see ``fast_map.TerrainResolver``).
+    A modified terrain goes to RAS Mapper's export unless the engine
+    advertises ``rasmapper-effective-terrain/2`` and every modification form
+    is qualified (see ``fast_map.TerrainResolver.modified_route``).
     """
     import xml.etree.ElementTree as ET
 

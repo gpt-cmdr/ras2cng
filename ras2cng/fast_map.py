@@ -120,13 +120,20 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   in stitch-TIN corners where RAS Mapper's own exports are unstable; ~7 s
   against ~190 s). Any other refusal falls back to the RAS Mapper export,
   which needs HEC-RAS (Windows or Wine). Each is built at most once per run.
-  **Rust terrain operations are used only on unmodified terrains** (user
-  decision 2026-10-30): when :func:`ras2cng.terrain.terrain_modifications`
-  finds any modification in the terrain HDF or the ``.rasmap``, the source
-  TIFF and the effective terrain are skipped and RAS Mapper's export builds
-  the terrain, and Rust boundaries are refused (RAS Mapper draws them). This
-  holds even with an engine that accepts modifications (fast-map #21, parked:
-  it is not exact on real modified terrains).
+  **Modified terrains** (:meth:`TerrainResolver.modified_route`): when
+  :func:`ras2cng.terrain.terrain_modifications` finds any modification in
+  the terrain HDF or the ``.rasmap``, the unmodified source TIFF is skipped
+  and Rust boundaries are refused (RAS Mapper draws them). The terrain is
+  built by the native effective terrain *with modifications* only when the
+  engine advertises ``rasmapper-effective-terrain/2`` (Fast-Map 0.18+) with a
+  ``modifications`` record, ras-commander's modification reader
+  (``RasFim.read_terrain_modifications``, 0.119+, else the private
+  ``_terrain_mods.read_layers``; recorded as ``modification_reader``)
+  stages every layer and every staged form is in the engine's qualified
+  list; otherwise RAS Mapper's export builds it, as before, and the reason
+  is recorded in ``MapResult.fast_map_terrain_route`` and
+  :data:`TERRAIN_ROUTE_MANIFEST`. With Fast-Map 0.17.0 (``/1`` only) every
+  modified terrain still goes to the export.
 * **Invalid cell polygons** (ras-commander 0.110.2+). ``invalid_cells``
   (:data:`INVALID_CELL_POLICIES`) sets pixel ownership for cells whose face
   polylines cross; the engine default ``repair`` maps such meshes instead of
@@ -148,8 +155,9 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 RASMAPPER = "rasmapper"
 FAST_MAP = "fast-map"
@@ -218,6 +226,33 @@ TERRAIN_EXPORT = "export"
 # after the engine refuses the export's CRS identity (Davis, where the source
 # terrain is refused outside plain sloping).
 TERRAIN_EXPORT_CANONICAL = "export-canonical"
+# Modified terrains (fast-map 0.18 / ras-commander 0.119): the native effective
+# terrain with modifications needs this method and request schema; see
+# TerrainResolver.modified_route(). Fast-Map 0.17.0 advertises only /1.
+EFFECTIVE_TERRAIN_V2 = "rasmapper-effective-terrain/2"
+EFFECTIVE_TERRAIN_SCHEMA_V2 = "ras-commander-effective-terrain-request/2"
+# Routing decision for a modified terrain, kept in MapResult.fast_map_terrain_route
+# and in TERRAIN_ROUTE_MANIFEST beside the terrain work files.
+MODIFIED_ROUTE_NATIVE = "native-effective"
+MODIFIED_ROUTE_RASMAPPER = "rasmapper-export"
+TERRAIN_ROUTE_MANIFEST = "fast_map_terrain_route.json"
+# Commander's modification reader recorded on the route (``modification_reader``):
+# the public API (ras-commander 0.119+), else the private module it wraps.
+MODIFICATION_READER_PUBLIC = "RasFim.read_terrain_modifications"
+MODIFICATION_READER_PRIVATE = "ras_commander.fim._terrain_mods.read_layers"
+# Reader refusal code for a polygon with more than one ring (holes or separate
+# parts; ras-commander #837, Fast-Map #42): always the RAS Mapper export.
+MULTI_RING_POLYGON = "multi_ring_polygon"
+# HEC-RAS releases whose RAS Mapper terrain exports the engine's modification
+# rules reproduce (Fast-Map 0.18.0 is qualified against 6.6 and 7.0.1 exports).
+# The native route and the export use one resolved release (resolve_hecras_runtime);
+# a modified terrain whose export runs on any other release stays on the export.
+QUALIFIED_MODIFICATION_RUNTIMES = ("6.6", "7.0.1")
+# A terrain whose HDF stores modification layers that RAS Mapper does not apply
+# (no .rasmap group named exactly "Modifications"; ras-commander 0.119) is mapped
+# as unmodified; its route record says so (route MODIFIED_ROUTE_UNAPPLIED).
+MODIFIED_ROUTE_UNAPPLIED = "unmodified"
+RASMAP_UNAPPLIED_CODES = ("modification_group_misnamed", "modification_group_missing")
 FAST_MAP_RENDER_MODES = ("horizontal", "sloping", "slopingPretty")
 # Deterministic contours support horizontal and plain cell-corner sloping only.
 FAST_MAP_BOUNDARY_RENDER_MODES = ("horizontal", "sloping")
@@ -728,6 +763,308 @@ def effective_terrain_supported() -> bool:
         return False
 
 
+def modified_terrain_capability() -> tuple[Optional[dict], Optional[str]]:
+    """The engine's terrain-modification record, or ``(None, reason)``.
+
+    A modified terrain may be built natively only by an engine whose
+    ``effective_terrain`` record advertises :data:`EFFECTIVE_TERRAIN_V2` (as
+    its ``method_id`` or a ``compatible_method_ids`` entry) with a
+    ``modifications`` record, and, when it lists ``request_schemas``,
+    :data:`EFFECTIVE_TERRAIN_SCHEMA_V2`. Fast-Map 0.17.0 and older advertise
+    only ``/1``. Never raises.
+    """
+    record = engine_method("effective_terrain")
+    if not record:
+        return None, "the engine advertises no effective_terrain method"
+    ids = {record.get("method_id"), *(record.get("compatible_method_ids") or ())}
+    ids.discard(None)
+    if EFFECTIVE_TERRAIN_V2 not in ids:
+        shown = ", ".join(sorted(str(i) for i in ids)) or "no method ID"
+        return None, (
+            f"the engine advertises {shown}; modified terrains need {EFFECTIVE_TERRAIN_V2}"
+        )
+    schemas = record.get("request_schemas")
+    if schemas is not None and EFFECTIVE_TERRAIN_SCHEMA_V2 not in schemas:
+        return None, f"the engine does not accept {EFFECTIVE_TERRAIN_SCHEMA_V2}"
+    modifications = record.get("modifications")
+    if not isinstance(modifications, dict) or not isinstance(
+        modifications.get("supported"), dict
+    ):
+        return None, (
+            f"the engine's {EFFECTIVE_TERRAIN_V2} record lists no qualified modification forms"
+        )
+    return modifications, None
+
+
+def unqualified_modification_forms(layers: list, record: dict) -> list[str]:
+    """Forms in Commander's staged ``layers`` the engine does not qualify.
+
+    ``layers`` is the output of Commander's modification reader (the
+    engine's ``modification_layers`` request field); ``record`` is the
+    engine's ``effective_terrain.modifications`` record. A layer kind, ground
+    line subtype or elevation type missing from ``record["supported"]`` is
+    unqualified, as are the forms the engine lists as refused and refuses
+    when it validates a request: shape-Z polygons without boundary
+    elevations and multi-part polygons that need a TIN. ``[]`` means every
+    form is qualified. Pure: reads nothing.
+    """
+    supported = record.get("supported") if isinstance(record, dict) else None
+    supported = supported if isinstance(supported, dict) else {}
+    problems: list[str] = []
+    for layer in layers:
+        kind = layer.get("kind")
+        name = layer.get("name", "?")
+        form = supported.get(kind)
+        if not isinstance(form, dict):
+            problems.append(f"layer {name!r}: {kind!r} layers are not qualified by the engine")
+            continue
+        subtypes = form.get("subtypes")
+        subtype = layer.get("subtype")
+        if subtypes is not None and subtype is not None and subtype not in subtypes:
+            problems.append(f"layer {name!r}: {kind} subtype {subtype!r} is not qualified")
+        elevation_types = form.get("elevation_types")
+        for feature in layer.get("features") or ():
+            et = feature.get("elevation_type")
+            if elevation_types is not None and et not in elevation_types:
+                problems.append(f"layer {name!r}: {kind} elevation type {et!r} is not qualified")
+                break
+            if kind == "polygon":
+                if feature.get("use_shape_z") and not feature.get("generate_boundary"):
+                    problems.append(f"layer {name!r}: shape-Z polygons are refused by the engine")
+                    break
+                needs_tin = feature.get("generate_boundary") or layer.get("control_points")
+                if needs_tin and len(feature.get("rings") or ()) > 1:
+                    problems.append(
+                        f"layer {name!r}: multi-part polygons needing a TIN are refused by the engine"
+                    )
+                    break
+    return problems
+
+
+def _public_modification_reader():
+    """``RasFim.read_terrain_modifications`` (ras-commander 0.119+), or None."""
+    try:
+        from ras_commander.fim import RasFim
+    except ImportError:
+        return None
+    read = getattr(RasFim, "read_terrain_modifications", None)
+    return read if callable(read) else None
+
+
+def _private_modification_reader():
+    """The private ``ras_commander.fim._terrain_mods`` module, or None.
+
+    Fallback for a ras-commander that stages modifications but has no public
+    reader yet.
+    """
+    try:
+        from ras_commander.fim import _terrain_mods
+    except ImportError:
+        return None
+    needed = ("read_layers", "project_length_units", "project_hecras_version", "hecras_version_for")
+    if not all(callable(getattr(_terrain_mods, name, None)) for name in needed):
+        return None
+    return _terrain_mods
+
+
+@dataclass(frozen=True)
+class ModificationReader:
+    """Commander's terrain-modification reader, public or private.
+
+    ``read(terrain_hdf, rasmap_path, ras_version)`` returns a record shaped
+    like ``RasFim.read_terrain_modifications``: ``status`` (``staged``,
+    ``none`` or ``refused``), ``refusal``, ``hecras_version``,
+    ``hecras_version_basis``, ``length_units`` (``None`` when the version or
+    units could not be resolved) and ``layers``.
+    """
+
+    name: str
+    read: Callable[[Path, Optional[Path], Optional[str]], dict]
+
+
+def modification_refusal_reason(code: Any, message: Optional[str]) -> Optional[str]:
+    """Stable reason code of a modification-reader refusal, or None.
+
+    Uses the code Commander attaches (``FimUnsupportedError.reason``, or
+    ``refusal_reason`` on the public record) when present; for an older
+    Commander without codes, recognises a multi-ring polygon from the message.
+    """
+    if code:
+        return str(code)
+    text = (message or "").lower()
+    if MULTI_RING_POLYGON in text or "multi-ring polygon" in text:
+        return MULTI_RING_POLYGON
+    return None
+
+
+def _read_public(read: Callable) -> Callable:
+    def run(hdf: Path, rasmap_path: Optional[Path], ras_version: Optional[str]) -> dict:
+        record = dict(read(hdf, rasmap_path=rasmap_path, hecras_version=ras_version))
+        if ras_version is not None and record.get("hecras_version_basis") == "argument":
+            record["hecras_version_basis"] = f"ras_version {ras_version}"
+        return record
+
+    return run
+
+
+def _read_private(module: Any) -> Callable:
+    def run(hdf: Path, rasmap_path: Optional[Path], ras_version: Optional[str]) -> dict:
+        record: dict[str, Any] = {
+            "status": "refused", "refusal": None, "hecras_version": None,
+            "hecras_version_basis": None, "length_units": None, "layers": [],
+        }
+        try:
+            if ras_version is not None:
+                version = module.hecras_version_for(ras_version)
+                basis = f"ras_version {ras_version}"
+            else:
+                version, basis = module.project_hecras_version(hdf, rasmap_path, None)
+            record.update(hecras_version=version, hecras_version_basis=basis)
+            units = module.project_length_units(hdf, rasmap_path, None)
+        except Exception as exc:
+            record["refusal"] = str(exc)
+            return record
+        record["length_units"] = units
+        try:
+            layers = module.read_layers(hdf, length_units=units, hecras_version=version)
+        except Exception as exc:  # FimUnsupportedError: an unqualified form
+            record["refusal"] = str(exc)
+            record["refusal_reason"] = getattr(exc, "reason", None)
+            return record
+        record.update(status="staged" if layers else "none", layers=layers)
+        return record
+
+    return run
+
+
+def _modification_reader() -> Optional[ModificationReader]:
+    """Commander's modification reader: the public API, else the private module.
+
+    ``None`` when the installed ras-commander has neither (before 0.119);
+    such terrains stay on the RAS Mapper export.
+    """
+    read = _public_modification_reader()
+    if read is not None:
+        return ModificationReader(MODIFICATION_READER_PUBLIC, _read_public(read))
+    module = _private_modification_reader()
+    if module is not None:
+        return ModificationReader(MODIFICATION_READER_PRIVATE, _read_private(module))
+    return None
+
+
+@dataclass(frozen=True)
+class HecRasRuntime:
+    """The one HEC-RAS release a terrain's export and native route both use.
+
+    ``label`` is what ras2cng passes as ``hecras_version`` to the RAS Mapper
+    terrain export: ``--ras-version`` when given, else the version
+    ras-commander detects from the project's plan files (``init_ras_project``,
+    exactly as the export detects it). ``canonical`` is the export's
+    canonical release (``"7.0.1"``, ``"6.6"``), or ``None`` when the version
+    could not be resolved or the export does not support it, with the reason
+    in ``problem``. The native route stages the modifications for
+    ``canonical`` and builds with it, so both terrains follow one release.
+    """
+
+    label: Optional[str]
+    basis: str
+    canonical: Optional[str]
+    problem: Optional[str] = None
+
+
+def _runtime_release(label: str) -> Optional[str]:
+    """``"7.0.1"`` / ``"6.6"`` from a version label, without ras-commander's table."""
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", str(label))
+    if match is None:
+        return None
+    major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+    return f"{major}.{minor}" if patch == 0 else f"{major}.{minor}.{patch}"
+
+
+def resolve_hecras_runtime(prj_file: Path, ras_version: Optional[str]) -> HecRasRuntime:
+    """Resolve the HEC-RAS release the RAS Mapper terrain export will use.
+
+    ``ras_version`` (``--ras-version``) wins; otherwise the release
+    ras-commander's ``init_ras_project`` detects from the project's plan files,
+    which is what :func:`ras2cng.terrain.export_modified_terrain` uses when it
+    is given no version. The release is then checked as the export checks it
+    (``resolve_supported_hecras_version``: 6.4.1, 6.5, 6.6, 7.0.1, 7.0.2,
+    7.1). Never raises.
+    """
+    if ras_version:
+        label, basis = str(ras_version), f"--ras-version {ras_version}"
+    else:
+        try:
+            from ras_commander import init_ras_project
+
+            ras = init_ras_project(Path(prj_file), ras_object="new", load_results_summary=False)
+            detected = getattr(ras, "ras_version", None)
+        except Exception as exc:
+            return HecRasRuntime(
+                None, "project plan files", None,
+                f"could not open the project to detect its HEC-RAS version: {exc}",
+            )
+        if not detected:
+            return HecRasRuntime(
+                None, "project plan files", None,
+                "no installed HEC-RAS release matches the project's plan files "
+                "(pass --ras-version)",
+            )
+        label = str(detected)
+        basis = f"detected from the project's plan files ({label})"
+    try:
+        from ras_commander.native.terrain_export_host import resolve_supported_hecras_version
+    except ImportError:
+        return HecRasRuntime(label, basis, _runtime_release(label))
+    try:
+        canonical = resolve_supported_hecras_version(label, None)
+    except (ValueError, TypeError) as exc:
+        return HecRasRuntime(label, basis, None, str(exc))
+    return HecRasRuntime(label, basis, str(canonical))
+
+
+def rasmap_unapplied_modifications(
+    terrain_hdf: Path, rasmap_path: Optional[Path]
+) -> Optional[list[dict]]:
+    """Commander's warnings when RAS Mapper applies none of a terrain's HDF layers.
+
+    RAS Mapper (HEC-RAS 6.6, 7.0.1) applies modifications only from a
+    ``.rasmap`` ``ElevationModificationGroup`` named exactly
+    ``Modifications``; with none (missing, or only a misnamed group) it
+    applies none of the layers stored in the terrain HDF. ras-commander 0.119
+    reports this from ``RasFim.top_priority_terrain_source(...,
+    rasmap_path=...)`` as ``modified: False`` with ``rasmap_warnings``
+    (:data:`RASMAP_UNAPPLIED_CODES`). Returns those warnings, or ``None``
+    when the layers are applied, there is no rasmap, or Commander cannot
+    tell (an older Commander, an unreadable terrain): such a terrain stays
+    modified. Never raises.
+    """
+    if rasmap_path is None:
+        return None
+    try:
+        from ras_commander import RasFim
+    except ImportError:
+        return None
+    check = getattr(RasFim, "top_priority_terrain_source", None)
+    if not callable(check):
+        return None
+    try:
+        info = check(Path(terrain_hdf), rasmap_path=Path(rasmap_path))
+    except Exception:
+        return None
+    if (
+        not isinstance(info, dict)
+        or info.get("modified") is not False
+        or not info.get("rasmap_checked")
+    ):
+        return None
+    warnings = [
+        dict(warning) for warning in info.get("rasmap_warnings") or ()
+        if isinstance(warning, dict) and warning.get("code") in RASMAP_UNAPPLIED_CODES
+    ]
+    return warnings or None
+
+
 def normalize_invalid_cells(policy: Optional[str]) -> Optional[str]:
     """Validate an ``invalid_cells`` policy; ``None`` keeps the engine default."""
     if policy is None:
@@ -971,6 +1308,14 @@ class TerrainResolver:
         self.notes: list[str] = []
         #: The engine's last refusal, which decides the next candidate.
         self.last_refusal: Optional[str] = None
+        # One resolver per run: a route manifest an earlier run left in this work
+        # directory does not describe this run (e.g. its terrain is now unmodified
+        # and no route is written). Routes for this run's plans are rewritten as
+        # they are decided (_write_routes).
+        try:
+            (self.work_dir / TERRAIN_ROUTE_MANIFEST).unlink(missing_ok=True)
+        except OSError as exc:
+            self.notes.append(f"could not remove the previous {TERRAIN_ROUTE_MANIFEST}: {exc}")
 
     def for_plan(self, plan_hdf: Path) -> Path:
         if self.terrain_path is not None:
@@ -983,10 +1328,13 @@ class TerrainResolver:
         from ras2cng.terrain import export_modified_terrain
 
         target = self.work_dir / f"{_slug(name or 'terrain')}.tif"
+        # The release the native route also uses (hecras_runtime); without
+        # --ras-version it is the one the export would detect itself.
+        runtime = self.hecras_runtime()
         try:
             exported = export_modified_terrain(
                 self.prj_file, target, terrain_name=name, overwrite=True,
-                hecras_version=self.ras_version,
+                hecras_version=runtime.label,
             )
         except Exception as exc:
             raise FastMapUnavailable(
@@ -996,6 +1344,20 @@ class TerrainResolver:
         self._exported[name] = Path(exported)
         return self._exported[name]
 
+    def hecras_runtime(self) -> HecRasRuntime:
+        """The HEC-RAS release of this run's terrain export and native route.
+
+        Resolved once (:func:`resolve_hecras_runtime`): ``--ras-version``,
+        else what the export detects from the project. The RAS Mapper export,
+        Commander's modification reader and the native effective terrain all
+        take it, so a modified terrain follows one release whichever route
+        builds it.
+        """
+        key = ("runtime", None)
+        if key not in self._sources:
+            self._sources[key] = resolve_hecras_runtime(self.prj_file, self.ras_version)
+        return self._sources[key]
+
     def candidates(self, plan_hdf: Path, *, use_source: bool = True):
         """Yield ``(kind, terrain_tif, terrain_hdf_or_None)`` cheapest first.
 
@@ -1003,8 +1365,10 @@ class TerrainResolver:
         map on the priority-1 source TIFF: that TIFF, then its CRS-canonical
         copy (the engine refuses some original CRS definitions, e.g. Davis).
         The copy is only tried after a CRS refusal (``last_refusal``). Then
-        the native effective terrain when the engine builds it and the
-        terrain has no modifications, and last the RAS Mapper export, with
+        the native effective terrain when the engine builds it (for a
+        modified terrain only when :meth:`modified_route` chose the native
+        route; the source TIFF is never used for one), and last the RAS
+        Mapper export, with
         its own CRS-canonical copy after a CRS refusal (the same pixels with
         EPSG GeoTIFF keys; ``RasFim.canonicalize_terrain_crs`` verifies every
         pixel bit). Each later candidate is only built when the caller asks
@@ -1014,9 +1378,16 @@ class TerrainResolver:
             yield TERRAIN_SUPPLIED, self.for_plan(plan_hdf), None
             return
         if self.modifications(plan_hdf):
-            # Policy (user decision 2026-10-30): Rust terrain operations only
-            # for unmodified terrains. A modified terrain is built by RAS
-            # Mapper's export, whatever the installed engine advertises.
+            # A modified terrain is built by RAS Mapper's export unless every
+            # gate in modified_route() passes (engine /2, every modification
+            # form qualified, effective terrain enabled and supported); then
+            # the native effective terrain with modifications is tried first.
+            # The unmodified source TIFF is never used for a modified terrain.
+            route = self.modified_route(plan_hdf)
+            if route is not None and route.get("route") == MODIFIED_ROUTE_NATIVE:
+                effective = self._effective(plan_hdf)
+                if effective is not None:
+                    yield TERRAIN_EFFECTIVE, effective, None
             yield from self._export_candidates(plan_hdf)
             return
         if use_source and source_terrain_supported():
@@ -1049,10 +1420,15 @@ class TerrainResolver:
     def modifications(self, plan_hdf: Path) -> list[str]:
         """The plan terrain's modifications (cached), ``[]`` when unmodified.
 
-        Any modification sends terrain work to RAS Mapper: the source TIFF and
-        the native effective terrain are skipped, and boundaries are refused.
-        A terrain whose HDF cannot be found or read counts as unknown, which
-        also skips the Rust terrain steps.
+        Any modification skips the unmodified source TIFF and refuses Rust
+        boundaries. The terrain goes to RAS Mapper's export unless
+        :meth:`modified_route` qualifies the native effective terrain with
+        modifications. A terrain whose HDF cannot be found or read counts as
+        unknown, which also keeps it on RAS Mapper. A terrain whose HDF layers
+        RAS Mapper does not apply (no ``.rasmap`` group named exactly
+        ``Modifications``, :func:`rasmap_unapplied_modifications`) is
+        unmodified, as in ras-commander 0.119; its route record
+        (:data:`MODIFIED_ROUTE_UNAPPLIED`) keeps Commander's warning.
         """
         try:
             hdf = self._terrain_hdf_for(plan_hdf)
@@ -1072,20 +1448,257 @@ class TerrainResolver:
                     )
                 except Exception as exc:  # unreadable: do not assume unmodified
                     found = [f"unreadable terrain HDF ({exc})"]
+                unapplied = (
+                    rasmap_unapplied_modifications(hdf, rasmap if rasmap.is_file() else None)
+                    if found else None
+                )
+                if unapplied:
+                    # RAS Mapper applies none of these layers (no .rasmap group
+                    # named "Modifications"): an unmodified terrain, as in
+                    # ras-commander 0.119. Recorded, with Commander's warning.
+                    message = "; ".join(str(w.get("message") or w.get("code")) for w in unapplied)
+                    self.notes.append(
+                        f"terrain {hdf.name} stores {len(found)} modification layer(s) that "
+                        f"RAS Mapper does not apply; mapped as unmodified ({message})"
+                    )
+                    self._sources[("route", str(hdf))] = {
+                        "terrain_hdf": str(hdf),
+                        "modifications": list(found),
+                        "route": MODIFIED_ROUTE_UNAPPLIED,
+                        "reason": f"RAS Mapper applies none of the terrain's modifications: {message}",
+                        "rasmap_warnings": unapplied,
+                    }
+                    self._write_routes()
+                    found = []
             if found:
                 shown = ", ".join(found[:5]) + (" ..." if len(found) > 5 else "")
                 self.notes.append(
                     f"terrain {hdf.name if hdf else '?'} has {len(found)} modification(s) "
-                    f"({shown}): Rust terrain operations are not used; RAS Mapper builds it"
+                    f"({shown})"
                 )
             self._sources[key] = found
         return self._sources[key]
 
+    def modified_route(self, plan_hdf: Path) -> Optional[dict[str, Any]]:
+        """Decide, once per terrain HDF, how a modified terrain is built.
+
+        ``None`` for an unmodified terrain, or the
+        :data:`MODIFIED_ROUTE_UNAPPLIED` record when its HDF layers are not
+        applied by RAS Mapper (see :meth:`modifications`). Otherwise a record
+        with ``route`` :data:`MODIFIED_ROUTE_NATIVE` (the native effective
+        terrain with modifications, ``rasmapper-effective-terrain/2``) or
+        :data:`MODIFIED_ROUTE_RASMAPPER` (RAS Mapper's export, as before) and
+        the ``reason`` for the RAS Mapper route. The native route needs all
+        of: the modification names readable and stored in the terrain HDF;
+        the effective terrain enabled and built by RasFim; an engine that
+        advertises ``/2`` with a ``modifications`` record
+        (:func:`modified_terrain_capability`); Commander's modification
+        reader (ras-commander 0.119+), which refuses the forms it knows the
+        engine refuses; the RAS Mapper export's own HEC-RAS release
+        (:meth:`hecras_runtime`, recorded as ``hecras_runtime``) resolved and
+        in :data:`QUALIFIED_MODIFICATION_RUNTIMES`, the release both routes
+        then use; and every staged layer form in the engine's qualified
+        list (:func:`unqualified_modification_forms`). An engine refusal at
+        build or mapping time still falls back to the export and is added to
+        the record as ``fallback``. Every record is written to
+        :data:`TERRAIN_ROUTE_MANIFEST` in the work directory. ``None`` too
+        when the caller supplied the terrain (``--fast-map-terrain``).
+        """
+        if self.terrain_path is not None:
+            return None
+        found = self.modifications(plan_hdf)
+        try:
+            hdf = self._terrain_hdf_for(plan_hdf)
+        except Exception:
+            hdf = None
+        key = ("route", str(hdf))
+        if not found:
+            # Unmodified; the record of layers RAS Mapper does not apply, if any.
+            return self._sources.get(key)
+        if key in self._sources:
+            return self._sources[key]
+        record: dict[str, Any] = {
+            "terrain_hdf": str(hdf) if hdf is not None else None,
+            "modifications": list(found),
+        }
+        reason, details = self._modified_route_reason(hdf, found)
+        record.update(details)
+        if reason is None:
+            record.update(route=MODIFIED_ROUTE_NATIVE, reason=None)
+            self.notes.append(
+                f"modified terrain qualified for the native effective terrain "
+                f"({EFFECTIVE_TERRAIN_V2}; {len(details.get('layers') or [])} layer(s))"
+            )
+        else:
+            record.update(route=MODIFIED_ROUTE_RASMAPPER, reason=reason)
+            self.notes.append(f"modified terrain goes to the RAS Mapper export: {reason}")
+        self._sources[key] = record
+        self._write_routes()
+        return record
+
+    def _modified_route_reason(
+        self, hdf: Optional[Path], found: list[str]
+    ) -> tuple[Optional[str], dict[str, Any]]:
+        """``(reason for the RAS Mapper route or None, details)``."""
+        if hdf is None:
+            return "the terrain HDF was not found", {}
+        unreadable = [
+            name for name in found
+            if not (name.startswith("hdf:") or name.startswith("rasmap:"))
+            or name.startswith("hdf:/")
+        ]
+        if unreadable:
+            return f"the terrain's modifications could not be read ({unreadable[0]})", {}
+        stored = {name[4:] for name in found if name.startswith("hdf:")}
+        rasmap_only = sorted(
+            name[7:] for name in found
+            if name.startswith("rasmap:") and name[7:] not in stored
+        )
+        if rasmap_only:
+            return (
+                f"rasmap modification layer(s) {rasmap_only} are not stored in {hdf.name}", {}
+            )
+        if not self.effective:
+            return "the native effective terrain is turned off (--no-fast-map-effective-terrain)", {}
+        if not effective_terrain_supported():
+            return "RasFim or the engine cannot build the native effective terrain", {}
+        record, reason = modified_terrain_capability()
+        if record is None:
+            return reason, {}
+        reader = _modification_reader()
+        if reader is None:
+            return (
+                "ras-commander has no terrain-modification reader (needs ras-commander 0.119.0 "
+                "or later)", {"method_id": EFFECTIVE_TERRAIN_V2, "modification_reader": None},
+            )
+        rasmap = self.prj_file.with_suffix(".rasmap")
+        rasmap_path = rasmap if rasmap.is_file() else None
+        details: dict[str, Any] = {
+            "method_id": EFFECTIVE_TERRAIN_V2, "modification_reader": reader.name,
+        }
+        # One release for both routes: the one the RAS Mapper export uses.
+        runtime = self.hecras_runtime()
+        details.update(
+            hecras_runtime=runtime.canonical or runtime.label,
+            hecras_runtime_basis=runtime.basis,
+        )
+        if runtime.problem is not None or runtime.canonical is None:
+            return (
+                "the HEC-RAS release of the RAS Mapper export could not be resolved, so the "
+                f"native terrain cannot follow it: {runtime.problem}", details,
+            )
+        if runtime.canonical not in QUALIFIED_MODIFICATION_RUNTIMES:
+            return (
+                f"the RAS Mapper export runs on HEC-RAS {runtime.canonical}; the engine's "
+                "modification rules are qualified against HEC-RAS "
+                f"{' and '.join(QUALIFIED_MODIFICATION_RUNTIMES)} exports only", details,
+            )
+        try:
+            staged = reader.read(hdf, rasmap_path, runtime.canonical)
+        except Exception as exc:
+            return f"Commander's modification reader failed: {exc}", details
+        version = staged.get("hecras_version")
+        units = staged.get("length_units")
+        if version is None or units is None:
+            return (
+                "could not resolve the project's HEC-RAS version or units: "
+                f"{staged.get('refusal')}", details,
+            )
+        details.update(
+            hecras_version=version,
+            hecras_version_basis=runtime.basis,
+            length_units=units,
+        )
+        if version != "7.0.1" and "hecras_version" not in record:
+            return (
+                f"the engine does not advertise hecras_version; HEC-RAS {version} "
+                "modification rules are not available", details,
+            )
+        if staged.get("status") == "refused":
+            code = modification_refusal_reason(staged.get("refusal_reason"), staged.get("refusal"))
+            if code is not None:
+                details["refusal_reason"] = code
+            return (
+                f"Commander's modification reader refused the terrain: {staged.get('refusal')}",
+                details,
+            )
+        layers = list(staged.get("layers") or ())
+        details["layers"] = [
+            {
+                "name": layer.get("name"),
+                "kind": layer.get("kind"),
+                "subtype": layer.get("subtype"),
+                "priority": layer.get("priority"),
+                "features": len(layer.get("features") or ()),
+                "elevation_types": sorted(
+                    {str(f.get("elevation_type")) for f in layer.get("features") or ()}
+                ),
+            }
+            for layer in layers
+        ]
+        problems = unqualified_modification_forms(layers, record)
+        if problems:
+            details["unqualified"] = problems
+            return "; ".join(problems), details
+        return None, details
+
+    def record_product_group(
+        self, plan_hdf: Path, label: str, kind: str
+    ) -> Optional[dict[str, Any]]:
+        """Snapshot the route of a product group that mapped on terrain ``kind``.
+
+        Returns an independent copy of :meth:`modified_route`'s record (``None``
+        for an unmodified terrain without a record) with ``product_group`` and
+        ``terrain`` set, for ``MapResult.fast_map_terrain_route``. A later group's
+        refusal appends to the shared record's ``fallback``; the copy keeps what
+        held when this group mapped. The same snapshot (terrain kind and the
+        ``fallback`` entries so far) is kept under the shared record's
+        ``product_groups[<plan HDF name>][label]`` in the route manifest.
+        """
+        import copy
+
+        route = self.modified_route(plan_hdf)
+        if route is None:
+            return None
+        fallback = list(route.get("fallback") or ())
+        route.setdefault("product_groups", {}).setdefault(Path(plan_hdf).name, {})[label] = {
+            "terrain": kind, "fallback": fallback,
+        }
+        self._write_routes()
+        snapshot = copy.deepcopy({k: v for k, v in route.items() if k != "product_groups"})
+        snapshot.update(product_group=label, terrain=kind)
+        return snapshot
+
+    def _record_fallback(self, plan_hdf: Path, message: str) -> None:
+        """Note on a native-routed modified terrain that the engine refused it."""
+        try:
+            hdf = self._terrain_hdf_for(plan_hdf)
+        except Exception:
+            return
+        record = self._sources.get(("route", str(hdf)))
+        if isinstance(record, dict) and record.get("route") == MODIFIED_ROUTE_NATIVE:
+            record.setdefault("fallback", []).append(message)
+            self._write_routes()
+
+    def _write_routes(self) -> None:
+        routes = [v for k, v in self._sources.items() if k[0] == "route"]
+        try:
+            self.work_dir.mkdir(parents=True, exist_ok=True)
+            (self.work_dir / TERRAIN_ROUTE_MANIFEST).write_text(
+                json.dumps({"schema": "ras2cng-terrain-route/1", "routes": routes},
+                           indent=2, default=str),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            self.notes.append(f"could not write {TERRAIN_ROUTE_MANIFEST}: {exc}")
+
     def _effective(self, plan_hdf: Path) -> Optional[Path]:
         """RAS Mapper's effective terrain built in Rust, or None (with a note).
 
-        Built once per terrain HDF per run. Refused for terrains with
-        modifications (which only the RAS Mapper export rasterizes).
+        Built once per terrain HDF per run. For a modified terrain it is
+        only called when :meth:`modified_route` chose the native route; the
+        engine then applies the modifications (``/2``). A refusal leaves the
+        terrain to the RAS Mapper export and is recorded on the route.
         """
         hdf = self._terrain_hdf_for(plan_hdf)
         if hdf is None:
@@ -1096,6 +1709,15 @@ class TerrainResolver:
 
             rasmap = self.prj_file.with_suffix(".rasmap")
             target = self.work_dir / f"{_slug(hdf.stem)}.effective.tif"
+            kwargs: dict[str, Any] = {}
+            if self.modifications(plan_hdf) and _has_kwargs(
+                RasFim.build_effective_terrain, "hecras_version"
+            ):
+                # The release the RAS Mapper export uses (hecras_runtime), with
+                # or without --ras-version; never Commander's own guess.
+                runtime = self.hecras_runtime()
+                if runtime.canonical is not None:
+                    kwargs["hecras_version"] = runtime.canonical
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 RasFim.build_effective_terrain(
@@ -1106,10 +1728,12 @@ class TerrainResolver:
                         default_working_mib() if self.max_working_mib is None
                         else int(self.max_working_mib)
                     ),
+                    **kwargs,
                 )
                 self._sources[key] = target
             except Exception as exc:
                 self.notes.append(f"native effective terrain unavailable: {exc}")
+                self._record_fallback(plan_hdf, f"effective terrain build refused: {exc}")
                 self._sources[key] = None
         return self._sources[key]
 
@@ -1290,6 +1914,8 @@ def with_terrain(
         except FastMapUnavailable as exc:
             resolver.notes.append(f"{kind} terrain refused: {exc}")
             resolver.last_refusal = str(exc)
+            if kind == TERRAIN_EFFECTIVE:
+                resolver._record_fallback(plan_hdf, f"effective terrain refused when mapping: {exc}")
             last = exc
     raise last or FastMapUnavailable("no terrain available for fast-map")
 
