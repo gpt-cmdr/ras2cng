@@ -978,6 +978,7 @@ def test_a_modified_single_source_terrain_uses_the_stored_map_basis(tmp_path, mo
     (_FakeFim(), {"stored_map_basis": False}, "stored-map basis disabled"),
 ])
 def test_the_export_basis_otherwise(tmp_path, monkeypatch, fim, kwargs, reason):
+    monkeypatch.setattr(fast_map, "commander_composes_stored_map_sources", lambda *a: False)
     resolver, kind, route = _basis_run(tmp_path, monkeypatch, fim, **kwargs)
     assert kind == fast_map.TERRAIN_EFFECTIVE
     assert fim.calls == [None if isinstance(fim, _OldFim) else "export"]
@@ -994,3 +995,34 @@ def test_a_stored_map_refusal_builds_the_export_basis(tmp_path, monkeypatch):
     assert "stored-map basis refused" in route["effective_terrain_basis_reason"]
     assert any("stored-map basis refused" in n for n in resolver.notes)
     assert "fallback" not in route
+
+
+def test_a_modified_multi_source_terrain_uses_the_stored_map_composition(tmp_path, monkeypatch):
+    """Several sources take the stored-map basis when ras-commander and the
+    engine compose them (rasmapper-stored-map-composition/1)."""
+    monkeypatch.setattr(fast_map, "commander_composes_stored_map_sources", lambda *a: True)
+    fim = _FakeFim(sources=3)
+    resolver, kind, route = _basis_run(tmp_path, monkeypatch, fim)
+    assert kind == fast_map.TERRAIN_EFFECTIVE
+    assert fim.calls == ["stored_map"]
+    assert route["effective_terrain_basis"] == fast_map.EFFECTIVE_BASIS_STORED_MAP
+    assert "3-source" in route["effective_terrain_basis_reason"]
+
+
+def test_a_refused_composition_builds_the_export_basis(tmp_path, monkeypatch):
+    """Sources off one lattice: the engine refuses and the export basis is built."""
+    monkeypatch.setattr(fast_map, "commander_composes_stored_map_sources", lambda *a: True)
+    fim = _FakeFim(sources=2, refuse_stored_map="basis 'stored_map': b.tif: cell size 20 differs")
+    resolver, kind, route = _basis_run(tmp_path, monkeypatch, fim)
+    assert fim.calls == ["stored_map", "export"]
+    assert route["effective_terrain_basis"] == "export"
+
+
+def test_commander_composes_stored_map_sources_probe(monkeypatch):
+    from ras_commander.fim import _effective_terrain, _engine
+    monkeypatch.setattr(_engine, "find_engine", lambda path=None: "engine")
+    monkeypatch.setattr(_effective_terrain, "engine_composes_stored_map_sources",
+                        lambda engine: engine == "engine", raising=False)
+    assert fast_map.commander_composes_stored_map_sources() is True
+    monkeypatch.delattr(_effective_terrain, "engine_composes_stored_map_sources")
+    assert fast_map.commander_composes_stored_map_sources() is False
