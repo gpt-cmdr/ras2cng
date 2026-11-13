@@ -753,8 +753,8 @@ def duration_supported() -> bool:
 def storage_area_duration_supported() -> bool:
     """True when the engine maps duration on storage-area level pools too
     (``duration`` in its whole-simulation ``storage_area_products``)."""
-    products = engine_method("whole_simulation").get("storage_area_products") or ()
-    return FAST_MAP_DURATION in products
+    products = engine_method("whole_simulation").get("storage_area_products")
+    return isinstance(products, (list, tuple)) and FAST_MAP_DURATION in products
 
 
 def resolve_storage_areas(value: Optional[bool] = None) -> bool:
