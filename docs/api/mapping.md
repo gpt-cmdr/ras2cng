@@ -271,7 +271,9 @@ Otherwise RAS Mapper's export builds the terrain (step 3), exactly as before,
 and the reason is recorded. An engine refusal on the native route (at build
 or mapping time) also falls back to the export. The decision is kept in
 `MapResult.fast_map_terrain_route` (per product: `route` is
-`native-effective`, `rasmapper-export` or `unmodified` (below), with
+`native-effective`, `rasmapper-export` or `unmodified` (below; a `native-effective` route also
+records `effective_terrain_basis`, `stored_map` for a modified single-source terrain when the
+engine and ras-commander offer it, else `export`, and `effective_terrain_basis_reason`), with
 `reason`, the staged `layers`, `hecras_runtime` and `hecras_runtime_basis`
 (the one release both routes use, and where it came from), `hecras_version`
 (the engine rules), any `refusal_reason`, `modification_reader`

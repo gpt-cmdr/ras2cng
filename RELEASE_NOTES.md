@@ -36,6 +36,22 @@
   control-point lines, writer-authored perimeter polygons) and notebook-321 Terrain50 cases
   route natively and match both RAS Mapper exports of each release with 0 mask and 0 value
   differences; 6.5, 6.4.1 and 7.1 go to the export with the reason code.
+## Modified single-source terrains are built on the stored-map basis
+
+RAS Mapper's terrain export and RAS Mapper's stored maps read different terrains: the export
+leaves each source's last cell row and column nodata (it samples render blocks between cell
+centres) and rounds to 1/32, while stored maps use the source's own cells with the modifications
+unrounded. On modified Helena, fast-map maps on the export-basis effective terrain therefore missed
+2,341 wet pixels of RAS Mapper's stored maps and differed on 1,461 depths (up to 1/64 ft).
+
+On the native route (`native-effective`), a modified **single-source** terrain is now built with
+`RasFim.build_effective_terrain(..., basis="stored_map")` (Fast-Map rule
+`rasmapper-stored-map-terrain/1`) when ras-commander takes `basis` and the engine advertises the
+stored-map basis. With it, Helena's Depth/WSE match RAS Mapper's stored maps in every pixel's mask
+(0 differences; 1 value at 3.05e-5 ft, as on the unmodified source-TIFF route). Multi-source
+terrains, older ras-commander or engines, and a refused stored-map build keep the export basis, as
+before. The route record names `effective_terrain_basis` and `effective_terrain_basis_reason`.
+`TerrainResolver(stored_map_basis=False)` keeps the export basis.
 
 ## Modified terrains can use the native effective terrain (`rasmapper-effective-terrain/2`)
 
