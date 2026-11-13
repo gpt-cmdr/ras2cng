@@ -848,7 +848,7 @@ def terrain_crs_route(terrain_hdf: Optional[Path]) -> tuple[Optional[str], dict[
 
     The native route needs the terrain CRS to have an EPSG code, unless the
     engine's ``effective_terrain`` and ``sloping`` records advertise
-    ``crs_any`` (ras-commander-fast-map 0.19+) and Commander passes it on
+    ``crs_any`` (ras-commander-fast-map 0.20+) and Commander passes it on
     (``ras_commander.fim._engine.crs_any``). Such engines take the CRS as
     verbatim GeoKey tags, so a terrain in, for example, ESRI:102630 (NAD83 /
     Alabama West, US survey feet; Helena) is built and mapped natively with
@@ -887,7 +887,7 @@ def terrain_crs_route(terrain_hdf: Optional[Path]) -> tuple[Optional[str], dict[
     if missing:
         return (
             f"the terrain CRS {shown} has no EPSG code and the engine's {' and '.join(missing)} "
-            "method(s) do not advertise crs_any (needs ras-commander-fast-map 0.19 or later)",
+            "method(s) do not advertise crs_any (needs ras-commander-fast-map 0.20 or later)",
             details,
         )
     if not commander_crs_any():
