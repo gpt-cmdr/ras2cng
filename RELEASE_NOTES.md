@@ -10,6 +10,17 @@
   still goes to RAS Mapper and the reason names which gate failed.
 - Helena (ESRI:102630, HEC-RAS 7.0.1, Max) with two polygon modifications that cross the wet
   edge: 0 ft² symmetric difference from RAS Mapper 7.0.1's horizontal and sloping boundaries.
+## Modified multi-source terrains on the stored-map basis
+
+- A modified terrain with several sources now takes the stored-map basis when ras-commander and
+  its engine compose them (`fast_map.commander_composes_stored_map_sources()`, rule
+  `rasmapper-stored-map-composition/1`); the route records the reason
+  `modified N-source terrain (stored-map composition)`. Sources the engine cannot compose (other
+  cell sizes or origins off one lattice) are refused by the engine and the export basis is built,
+  as before.
+- Helena split into three aligned sources, with two polygon modifications on the seams (HEC-RAS
+  7.0.1, Max, horizontal): Depth against RAS Mapper's composed stored maps differs on 66 mask and
+  2 value pixels, all on source seams; on the export basis it was 2,143 mask and 4,795 values.
 
 ## Unmodified terrains: the native effective terrain only on HEC-RAS 6.6 to 7.0.2
 

@@ -2131,6 +2131,11 @@ class TerrainResolver:
             return EFFECTIVE_BASIS_EXPORT, f"stored-map basis not checked: {exc}"
         count = info.get("source_count")
         if count != 1:
+            # Several sources: the engine composes them when they share one
+            # lattice (rasmapper-stored-map-composition/1) and refuses other
+            # layouts, which falls back to the export basis in _effective.
+            if count and commander_composes_stored_map_sources():
+                return EFFECTIVE_BASIS_STORED_MAP, f"modified {count}-source terrain (stored-map composition)"
             return EFFECTIVE_BASIS_EXPORT, f"stored-map basis needs one terrain source, not {count}"
         return EFFECTIVE_BASIS_STORED_MAP, "modified single-source terrain"
 
@@ -2303,6 +2308,22 @@ def _effective_receipt(effective: Path) -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def commander_composes_stored_map_sources(engine_path: Optional[Path] = None) -> bool:
+    """True when ras-commander and its engine build the stored-map basis for
+    several sources on one lattice (``rasmapper-stored-map-composition/1``)."""
+    try:
+        from ras_commander.fim import _effective_terrain, _engine
+    except Exception:
+        return False
+    probe = getattr(_effective_terrain, "engine_composes_stored_map_sources", None)
+    if not callable(probe):
+        return False
+    try:
+        return bool(probe(_engine.find_engine(engine_path)))
+    except Exception:
+        return False
 
 
 def native_primary_source(terrain_hdf: Path) -> Path:
