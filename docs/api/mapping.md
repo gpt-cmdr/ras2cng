@@ -192,7 +192,21 @@ it. ras2cng then:
    values differ, all in stitch-TIN corners where RAS Mapper's own exports
    disagree (max 1.53 ft); it took 7.0 s and 1.4 GB, against about 190 s
    for the export. Terrains with modifications only on the conditions
-   below;
+   below. An unmodified terrain also needs a qualified HEC-RAS release
+   (`QUALIFIED_EFFECTIVE_RUNTIMES`: 6.6, 6.7 Beta 4/5, 7.0, 7.0.1, 7.0.2;
+   the 2026-11-12 qualification found base terrains on 6.5 and earlier
+   differ from RAS Mapper, and later releases are unqualified): the run's
+   release (`--ras-version`, else ras-commander's detection) or, when no
+   installed HEC-RAS resolves one (Linux), the newest `Program Version` of
+   the project's plan and geometry files. Any other release skips this step
+   with `reason_code: "hecras_version_unqualified"`, and a release that does
+   not resolve with `"hecras_version_unresolved"` (pass `--ras-version`).
+   The decision is recorded under `effective_terrain` in
+   `MapResult.fast_map_terrain_route` (`route` `native-effective` or
+   `rasmapper-export`, `reason`, `reason_code`, `hecras_release`,
+   `hecras_release_basis`) and in the route manifest's `effective_terrain`
+   list (`TerrainResolver.effective_route`). The priority-1 source TIFF
+   path above builds no effective terrain and is used on any release;
 3. otherwise exports the plan's terrain once per run through RAS Mapper
    (`RasTerrain.export_rasmapper_terrain`, HEC-RAS 6.4.1/6.5/6.6/7.0.1/7.1;
    pass `--ras-version`).
@@ -232,18 +246,26 @@ one of these holds (`TerrainResolver.modified_route`):
   only in the `.rasmap`), HEC-RAS 6.6 projects have an engine that
   advertises `hecras_version`, and the effective terrain is enabled
   (`--fast-map-effective-terrain`, the default) and supported by RasFim;
-- the HEC-RAS release of the RAS Mapper export resolves to 6.6 or 7.0.1,
-  the releases the engine's modification rules are qualified against.
-  ras2cng resolves **one** release per run (`TerrainResolver.hecras_runtime`):
-  `--ras-version` when given, else the release ras-commander's
-  `init_ras_project` detects from the project's plan files, which is what the
-  export uses. The export, Commander's reader and the native build all take
-  it, so the two routes never follow different releases. A release the export
-  does not support (for example 7.0, with its known modification-export
-  defect, or a 5.x plan file) or that cannot be resolved keeps the terrain on
-  the export, and the export then fails as it always did: pass
-  `--ras-version`. Releases the export supports but the engine is not
-  qualified against (6.4.1, 6.5, 7.0.2, 7.1) also stay on the export.
+- the HEC-RAS release of the run resolves to one the engine's modification
+  rules are qualified against: **6.6, 6.7 (Beta 4/5), 7.0, 7.0.1 or 7.0.2**
+  (`QUALIFIED_MODIFICATION_RUNTIMES`; per-release qualification 2026-11-12,
+  0 mask and 0 value differences on every accepted layer). ras2cng resolves
+  **one** release per run (`TerrainResolver.hecras_runtime`): `--ras-version`
+  when given, else the release ras-commander's `init_ras_project` detects from
+  the project's plan files, which is what the export uses. The export,
+  Commander's reader and the native build all take it, so the two routes
+  never follow different releases. Commander is given the release when it
+  maps releases itself (ras-commander after 0.119.0, which picks the rule from
+  the engine's advertised table), else the engine rule
+  (`MODIFICATION_RELEASE_RULES`: 6.7 -> `6.6`, 7.0.x -> `7.0.1`), never a
+  label that 0.119.0 or Fast-Map 0.18.0 would map wrongly or refuse. A
+  release before 6.6 or after 7.0.2 (for example 6.5, 6.4.1, 7.1) keeps the
+  terrain on the export with `reason_code: "hecras_version_unqualified"`; one
+  that cannot be resolved also stays there. The 6.7 betas and 7.0.0 take the
+  native route although the export refuses them (prerelease; 7.0.0's known
+  modification-export defect), recorded as `export_problem`; if the engine
+  then refuses the terrain, the export fallback fails as it always did for
+  those releases.
 
 Otherwise RAS Mapper's export builds the terrain (step 3), exactly as before,
 and the reason is recorded. An engine refusal on the native route (at build

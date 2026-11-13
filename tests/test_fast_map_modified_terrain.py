@@ -146,9 +146,11 @@ def _runtime(detected="7.0.1"):
             return fast_map.HecRasRuntime(None, "project plan files", None, "no release found")
         else:
             label, basis = detected, f"detected from the project's plan files ({detected})"
-        if label in ("6.6", "6.5", "6.4.1", "7.0.1", "7.0.2"):
-            return fast_map.HecRasRuntime(label, basis, label)
-        return fast_map.HecRasRuntime(label, basis, None, f"HEC-RAS {label!r} is unsupported")
+        release = fast_map.hecras_release(label)
+        if label in ("6.6", "6.5", "6.4.1", "7.0.1", "7.0.2", "7.1"):
+            return fast_map.HecRasRuntime(label, basis, label, release=release)
+        return fast_map.HecRasRuntime(label, basis, None, f"HEC-RAS {label!r} is unsupported",
+                                      release=release)
 
     resolve.calls = calls
     return resolve
@@ -524,11 +526,13 @@ def test_an_unresolved_export_release_keeps_the_terrain_on_rasmapper(tmp_path, m
 
 
 @pytest.mark.parametrize("detected, fragment", [
-    ("7.0", "unsupported"),          # 7.0.0: the export refuses it (known modification defect)
-    ("6.5", "HEC-RAS 6.5"),          # exported by 6.5; the engine's rules are 6.6 and 7.0.1
-    ("7.0.2", "HEC-RAS 7.0.2"),
+    ("6.5", "HEC-RAS 6.5"),          # 6.5 and earlier match neither engine rule
+    ("6.4.1", "HEC-RAS 6.4.1"),
+    ("6.3.1", "HEC-RAS 6.3.1"),      # the export does not support it either
+    ("5.0.7", "HEC-RAS 5.0.7"),
+    ("7.1", "HEC-RAS 7.1"),          # after the latest qualified release (7.0.2)
 ])
-def test_an_unqualified_export_release_keeps_the_terrain_on_rasmapper(
+def test_an_unqualified_release_keeps_the_terrain_on_rasmapper(
     tmp_path, monkeypatch, detected, fragment
 ):
     public = _public_reader([LEVEE])
@@ -538,7 +542,65 @@ def test_an_unqualified_export_release_keeps_the_terrain_on_rasmapper(
     route = resolver.modified_route(tmp_path / "a.p01.hdf")
     assert route["route"] == fast_map.MODIFIED_ROUTE_RASMAPPER
     assert fragment in route["reason"]
-    assert route["hecras_runtime"] == detected
+    assert route["reason_code"] == fast_map.HECRAS_VERSION_UNQUALIFIED
+    assert fast_map.HECRAS_VERSION_UNQUALIFIED in route["reason"]
+    assert route["hecras_runtime"] == fast_map.hecras_release(detected)
+    manifest = _manifest(tmp_path)["routes"][0]
+    assert manifest["reason_code"] == fast_map.HECRAS_VERSION_UNQUALIFIED
+
+
+@pytest.mark.parametrize("maps_releases", [True, False])
+@pytest.mark.parametrize("detected, release, rule", [
+    ("6.6", "6.6", "6.6"),
+    ("6.7 Beta 4", "6.7", "6.6"),
+    ("6.7 Beta 5", "6.7", "6.6"),
+    ("7.0", "7.0", "7.0.1"),          # the export refuses 7.0.0; the native route does not need it
+    ("7.0.1", "7.0.1", "7.0.1"),
+    ("7.0.2", "7.0.2", "7.0.1"),
+])
+@patch("ras_commander.RasFim")
+def test_every_qualified_release_takes_the_native_route(
+    fim, tmp_path, monkeypatch, detected, release, rule, maps_releases
+):
+    """6.6 to 7.0.2 take the native route. Commander is given the release when
+    it maps releases itself, else the engine rule (0.119.0 maps 6.7 to 7.0.1)."""
+    monkeypatch.setattr(fast_map, "_commander_maps_releases", lambda: maps_releases)
+    public = _public_reader([LEVEE])
+    resolver, built = _setup(tmp_path, monkeypatch, ENGINE_V2, None, public=public, detected=detected)
+    monkeypatch.setattr(resolver, "_effective", fast_map.TerrainResolver._effective.__get__(resolver))
+    monkeypatch.setattr(fast_map, "_has_kwargs", lambda function, *names: True)
+    kind, kinds = _run(resolver, tmp_path)
+    assert kind == fast_map.TERRAIN_EFFECTIVE and kinds == ["effective"]
+    expected = release if maps_releases else rule
+    assert public.calls[0][2] == expected
+    assert fim.build_effective_terrain.call_args.kwargs["hecras_version"] == expected
+    route = resolver.modified_route(tmp_path / "a.p01.hdf")
+    assert route["route"] == fast_map.MODIFIED_ROUTE_NATIVE and route["reason"] is None
+    assert route["hecras_runtime"] == release
+    assert "reason_code" not in route
+    assert ("export_problem" in route) == (release in ("6.7", "7.0"))
+
+
+def test_modification_hecras_version_never_passes_an_unqualified_label(monkeypatch):
+    for maps in (True, False):
+        monkeypatch.setattr(fast_map, "_commander_maps_releases", lambda: maps)
+        for release in ("6.5", "6.4.1", "7.1", "7.0.3", None):
+            assert fast_map.modification_hecras_version(release) is None
+    monkeypatch.setattr(fast_map, "_commander_maps_releases", lambda: False)
+    assert {r: fast_map.modification_hecras_version(r)
+            for r in fast_map.QUALIFIED_MODIFICATION_RUNTIMES} == fast_map.MODIFICATION_RELEASE_RULES
+    assert set(fast_map.MODIFICATION_RELEASE_RULES.values()) <= {"6.6", "7.0.1"}
+
+
+@pytest.mark.parametrize("label, release", [
+    ("6.6", "6.6"), ("6.60", "6.6"), ("6.7 Beta 5", "6.7"), ("6.70", "6.7"),
+    (r"C:\Program Files (x86)\HEC\HEC-RAS\6.7 Beta 4\Ras.exe", "6.7"),
+    ("7.0", "7.0"), ("7.00", "7.0"), ("7.0.0", "7.0"), ("7.01", "7.0.1"), ("7.00.0002", "7.0.2"),
+    ("6.4.1", "6.4.1"), ("6.41", "6.4.1"), ("5.07", "5.0.7"), ("7.1", "7.1"), ("7.10", "7.1"),
+    ("unknown", None), (None, None),
+])
+def test_hecras_release_reads_every_label_form(label, release):
+    assert fast_map.hecras_release(label) == release
 
 
 def test_resolve_hecras_runtime(monkeypatch):
@@ -549,6 +611,9 @@ def test_resolve_hecras_runtime(monkeypatch):
     assert fast_map.resolve_hecras_runtime("x.prj", "6.6").canonical == "6.6"
     refused = fast_map.resolve_hecras_runtime("x.prj", "7.0")
     assert refused.canonical is None and "7.0.0" in refused.problem
+    assert refused.release == "7.0"  # the native route is decided on the release
+    beta = fast_map.resolve_hecras_runtime("x.prj", "6.7 Beta 5")
+    assert beta.canonical is None and beta.release == "6.7"
 
     import ras_commander
 
