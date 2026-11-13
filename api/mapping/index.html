@@ -2849,8 +2849,10 @@ project engineer confirmed the reversal on 2026-11-11, now that the native
 route is implemented. Before any of the steps above, ras2cng
 reads the terrain HDF's <code>/Modifications</code> group and the <code>.rasmap</code>'s
 modification layers (<code>ras2cng.terrain.terrain_modifications</code>). If it finds
-any, or cannot read the terrain HDF, the source TIFF (and step 1) is skipped
-and the inundation boundary is drawn by RAS Mapper. Step 2 then builds the
+any, or cannot read the terrain HDF, the source TIFF (and step 1) is skipped.
+The inundation boundary is drawn in Rust on the stored-map effective terrain
+when step 2 builds one (a single-source terrain, see below), and by RAS Mapper
+otherwise. Step 2 then builds the
 native effective terrain <strong>with the modifications applied</strong> only when every
 one of these holds (<code>TerrainResolver.modified_route</code>):</p>
 <ul>
@@ -3106,6 +3108,15 @@ identical exports, so the two are close but not equal. On Davis Max the Rust
 contour had 66 holes and 47,426 vertices, against RAS Mapper's 65 and 47,396.
 Almost all of the 7,423 ft² difference was one hole that RAS Mapper filled.
 The Depth/WSE rasters are unaffected; they still match RAS Mapper bit for bit.</p>
+<p><strong>Modified terrains.</strong> A modified single-source terrain on the native route is
+contoured on the same stored-map effective terrain its rasters use (both
+methods). Tile masks come from the terrain HDF; tile-edge samples that a
+modification changed come from the effective terrain. This needs a
+ras-commander with that support (<code>fast_map.commander_stored_map_boundaries</code>);
+otherwise, and for an export-basis effective terrain or a terrain routed to the
+RAS Mapper export, the boundary goes to RAS Mapper with the reason. On Helena
+with two polygon modifications crossing the wet edge, the Rust boundaries equal
+RAS Mapper 7.0.1's (0 ft² difference, horizontal and sloping).</p>
 <h3 id="the-native-serial-method-opt-in">The native-serial method (opt-in)<a class="headerlink" href="#the-native-serial-method-opt-in" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ras2cng<span class="w"> </span>map<span class="w"> </span>/path/to/project<span class="w"> </span>/output/maps<span class="w"> </span>--inundation-boundary<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--fast-map-boundary-method<span class="w"> </span>native-serial
@@ -5830,7 +5841,7 @@ failed), render it through RAS Mapper instead. False raises.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 12, 2026 22:06:33 UTC">November 12, 2026</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="November 13, 2026 02:53:37 UTC">November 13, 2026</span>
   </span>
 
     
