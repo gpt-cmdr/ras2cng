@@ -220,3 +220,45 @@ def test_inspect_reports_active_and_stored(tmp_path):
     assert _modification_cell(_terrain_modification_record(hdf, None)) == (
         "2/2 (no .rasmap entry: all counted)"
     )
+
+
+def _modified_resolver(tmp_path, monkeypatch, basis, route=None):
+    import json as _json
+
+    hdf = _terrain(tmp_path / "Terrain" / "T.hdf", modifications=["HighGround"])
+    (tmp_path / "Terrain" / "T.a.tif").touch()
+    _rasmap(tmp_path / "m.rasmap", listed=["HighGround"])
+    resolver = fast_map.TerrainResolver(tmp_path / "m.prj", tmp_path / "w", terrain_hdf=hdf)
+    effective = tmp_path / "w" / "T.effective.tif"
+    effective.parent.mkdir(parents=True)
+    effective.touch()
+    (tmp_path / "w" / "T.effective.tif.json").write_text(_json.dumps({"basis": basis}))
+    monkeypatch.setattr(resolver, "modified_route", lambda plan: route or {"route": fast_map.MODIFIED_ROUTE_NATIVE})
+    monkeypatch.setattr(resolver, "_effective", lambda plan: effective)
+    return resolver, hdf, effective
+
+
+def test_modified_boundary_terrain_is_the_stored_map_effective_terrain(tmp_path, monkeypatch):
+    monkeypatch.setattr(fast_map, "commander_stored_map_boundaries", lambda: True)
+    resolver, hdf, effective = _modified_resolver(tmp_path, monkeypatch, "stored_map")
+    for method in (fast_map.BOUNDARY_DETERMINISTIC, fast_map.BOUNDARY_NATIVE_SERIAL):
+        assert resolver.boundary_terrain(tmp_path / "m.p01.hdf", method) == (effective, hdf)
+
+
+@pytest.mark.parametrize("case", ["export_basis", "rasmapper_route", "old_commander"])
+def test_modified_boundary_terrain_refusals_name_the_gate(tmp_path, monkeypatch, case):
+    monkeypatch.setattr(fast_map, "commander_stored_map_boundaries", lambda: case != "old_commander")
+    route = ({"route": fast_map.MODIFIED_ROUTE_RASMAPPER, "reason": "unqualified form"}
+             if case == "rasmapper_route" else None)
+    resolver, _, _ = _modified_resolver(
+        tmp_path, monkeypatch, "export" if case == "export_basis" else "stored_map", route)
+    expected = {"export_basis": "stored-map basis", "rasmapper_route": "unqualified form",
+                "old_commander": "ras-commander does not map boundaries"}[case]
+    with pytest.raises(fast_map.FastMapUnavailable, match=expected):
+        resolver.boundary_terrain(tmp_path / "m.p01.hdf")
+
+
+def test_commander_stored_map_boundaries_probe():
+    from ras_commander.fim import _boundary_inputs
+    assert fast_map.commander_stored_map_boundaries() is callable(
+        getattr(_boundary_inputs, "stored_map_terrain", None))

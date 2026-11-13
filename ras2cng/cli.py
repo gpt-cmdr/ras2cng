@@ -1553,7 +1553,8 @@ def map_command(
     With --engine fast-map and --inundation-boundary, the boundary is also
     mapped in Rust (recommended: RAS Mapper's boundary export is very slow).
     It is a deterministic contour method whose polygons are close to, not
-    identical with, RAS Mapper's. Needs a single-source, unmodified terrain.
+    identical with, RAS Mapper's. Needs a single-source terrain; a modified
+    one is contoured on its stored-map effective terrain.
     """
 
     from ras2cng.mapping import generate_result_maps

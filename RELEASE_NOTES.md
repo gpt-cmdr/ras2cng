@@ -1,5 +1,16 @@
 # ras2cng (unreleased)
 
+## Rust inundation boundaries on modified terrains
+
+- `--inundation-boundary` on a modified single-source terrain that takes the native route is
+  now mapped in Rust, on the stored-map effective terrain the rasters use
+  (`TerrainResolver.boundary_terrain`), for both boundary methods. It needs ras-commander with
+  stored-map boundary ground (`fast_map.commander_stored_map_boundaries()`); without it, for an
+  export-basis effective terrain, or for a terrain on the RAS Mapper export route, the boundary
+  still goes to RAS Mapper and the reason names which gate failed.
+- Helena (ESRI:102630, HEC-RAS 7.0.1, Max) with two polygon modifications that cross the wet
+  edge: 0 ft² symmetric difference from RAS Mapper 7.0.1's horizontal and sloping boundaries.
+
 ## Unmodified terrains: the native effective terrain only on HEC-RAS 6.6 to 7.0.2
 
 - The per-release qualification (2026-11-12) found that base (unmodified) terrains on HEC-RAS
