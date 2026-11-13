@@ -222,7 +222,7 @@ def test_inspect_reports_active_and_stored(tmp_path):
     )
 
 
-def _modified_resolver(tmp_path, monkeypatch, basis, route=None):
+def _modified_resolver(tmp_path, monkeypatch, basis, route=None, sources=("T.a.tif",)):
     import json as _json
 
     hdf = _terrain(tmp_path / "Terrain" / "T.hdf", modifications=["HighGround"])
@@ -232,7 +232,8 @@ def _modified_resolver(tmp_path, monkeypatch, basis, route=None):
     effective = tmp_path / "w" / "T.effective.tif"
     effective.parent.mkdir(parents=True)
     effective.touch()
-    (tmp_path / "w" / "T.effective.tif.json").write_text(_json.dumps({"basis": basis}))
+    (tmp_path / "w" / "T.effective.tif.json").write_text(
+        _json.dumps({"basis": basis, "sources_in_priority_order": list(sources)}))
     monkeypatch.setattr(resolver, "modified_route", lambda plan: route or {"route": fast_map.MODIFIED_ROUTE_NATIVE})
     monkeypatch.setattr(resolver, "_effective", lambda plan: effective)
     return resolver, hdf, effective
@@ -262,3 +263,13 @@ def test_commander_stored_map_boundaries_probe():
     from ras_commander.fim import _boundary_inputs
     assert fast_map.commander_stored_map_boundaries() is callable(
         getattr(_boundary_inputs, "stored_map_terrain", None))
+
+
+def test_modified_multi_source_boundary_goes_to_rasmapper(tmp_path, monkeypatch):
+    """A composed (multi-source) stored-map terrain is not boundary ground: the
+    boundary goes to RAS Mapper with the reason, before ras-commander refuses it."""
+    monkeypatch.setattr(fast_map, "commander_stored_map_boundaries", lambda: True)
+    resolver, _, _ = _modified_resolver(tmp_path, monkeypatch, "stored_map",
+                                        sources=("T.a.tif", "T.b.tif"))
+    with pytest.raises(fast_map.FastMapUnavailable, match="one terrain source, not 2"):
+        resolver.boundary_terrain(tmp_path / "m.p01.hdf")

@@ -2267,9 +2267,14 @@ class TerrainResolver:
                 why = "the modified terrain goes to RAS Mapper's export" + (f" ({reason})" if reason else "")
             else:
                 effective = self._effective(plan_hdf)
-                basis = _effective_receipt_basis(effective) if effective is not None else None
+                receipt = _effective_receipt(effective) if effective is not None else {}
+                basis = receipt.get("basis", EFFECTIVE_BASIS_EXPORT) if receipt else None
+                sources = receipt.get("sources_in_priority_order") or []
                 if effective is None:
                     why = "the native effective terrain was not built"
+                elif basis == EFFECTIVE_BASIS_STORED_MAP and len(sources) != 1:
+                    why = (f"Rust boundaries on modified terrains need one terrain source, "
+                           f"not {len(sources)}")
                 elif basis != EFFECTIVE_BASIS_STORED_MAP:
                     why = (f"the effective terrain is on the {basis or 'unknown'!s} basis; "
                            "boundaries need the stored-map basis (single-source terrains)")
@@ -2290,16 +2295,14 @@ def commander_stored_map_boundaries() -> bool:
     return callable(getattr(_boundary_inputs, "stored_map_terrain", None))
 
 
-def _effective_receipt_basis(effective: Path) -> Optional[str]:
-    """The ``basis`` recorded in an effective terrain's receipt, or None."""
+def _effective_receipt(effective: Path) -> dict[str, Any]:
+    """An effective terrain's receipt (``<tif>.json``), or ``{}``."""
     receipt = Path(effective).with_name(Path(effective).name + ".json")
     try:
         data = json.loads(receipt.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    return data.get("basis", EFFECTIVE_BASIS_EXPORT)
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def native_primary_source(terrain_hdf: Path) -> Path:
