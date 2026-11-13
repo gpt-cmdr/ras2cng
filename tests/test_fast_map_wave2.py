@@ -434,6 +434,18 @@ def test_whole_simulation_maps_duration_and_level_pools(fim, tmp_path, new_engin
     kwargs = fim.map_whole_simulation.call_args.kwargs
     assert kwargs["storage_areas"] is True and kwargs["products"] == ("arrival_time",)
 
+    # An engine that maps duration on level pools keeps duration in Rust.
+    monkeypatch.setattr(fast_map, "storage_area_duration_supported", lambda: True)
+    out = tmp_path / "p08"
+    result = fast_map.map_whole_simulation(
+        tmp_path / "x.p08.hdf", tmp_path / "t.tif", out,
+        map_types=["arrival_time", "duration"], threshold=0.5, render=_SLOPING,
+    )
+    assert result["duration"] == [out / "Duration (0.5ft hrs).tif"]
+    kwargs = fim.map_whole_simulation.call_args.kwargs
+    assert kwargs["storage_areas"] is True
+    assert kwargs["products"] == ("arrival_time", "duration")
+
 
 # ---------------------------------------------------------------------------
 # Native effective terrain
