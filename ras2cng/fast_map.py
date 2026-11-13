@@ -750,6 +750,13 @@ def duration_supported() -> bool:
     return engine_method("whole_simulation").get("duration_rule") == DURATION_RULE
 
 
+def storage_area_duration_supported() -> bool:
+    """True when the engine maps duration on storage-area level pools too
+    (``duration`` in its whole-simulation ``storage_area_products``)."""
+    products = engine_method("whole_simulation").get("storage_area_products") or ()
+    return FAST_MAP_DURATION in products
+
+
 def resolve_storage_areas(value: Optional[bool] = None) -> bool:
     """Whether fast-map may draw storage areas; ``None`` reads the env var.
 
@@ -3057,8 +3064,8 @@ def whole_simulation_types(map_types: list[str], render: dict[str, Any]) -> tupl
             )
         return [], notes
     if FAST_MAP_DURATION in map_types:
-        if render.get("storage_areas"):
-            notes.append("duration is not implemented with storage-area surfaces")
+        if render.get("storage_areas") and not storage_area_duration_supported():
+            notes.append("the installed fast-map does not map duration on storage-area surfaces")
         elif not duration_supported():
             notes.append(
                 f"the installed fast-map does not qualify duration ({DURATION_RULE})"
@@ -3126,8 +3133,8 @@ def map_whole_simulation(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     storage_areas = _check_scope(RasFim, plan_hdf, _render_storage_areas(render))
-    if storage_areas and want_duration:
-        # The engine refuses duration with level pools; RAS Mapper maps it.
+    if storage_areas and want_duration and not storage_area_duration_supported():
+        # Older engines refuse duration with level pools; RAS Mapper maps it.
         requested.remove(FAST_MAP_DURATION)
         if not requested:
             return {}

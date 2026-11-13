@@ -21,6 +21,13 @@
 - Helena split into three aligned sources, with two polygon modifications on the seams (HEC-RAS
   7.0.1, Max, horizontal): Depth against RAS Mapper's composed stored maps differs on 66 mask and
   2 value pixels, all on source seams; on the export basis it was 2,143 mask and 4,795 values.
+## Duration in Rust with storage areas
+
+- With storage areas drawn by fast-map (`RAS2CNG_FAST_MAP_STORAGE_AREAS`), `--duration` is now
+  mapped in Rust when the engine lists `duration` in its whole-simulation
+  `storage_area_products` (`fast_map.storage_area_duration_supported()`); older engines keep
+  sending duration to RAS Mapper. Bald Eagle dam-break p02 (HEC-RAS 7.0.1): equal to RAS Mapper's
+  duration on 463,882 of 464,445 storage-area pixels, the rest one 5-minute interval apart.
 
 ## Unmodified terrains: the native effective terrain only on HEC-RAS 6.6 to 7.0.2
 

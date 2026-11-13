@@ -382,6 +382,15 @@ def test_whole_simulation_types(new_engine, monkeypatch):
         ["arrival_time", "duration"], {**_SLOPING, "storage_areas": 1}
     )
     assert types == ["arrival_time"] and "storage-area" in notes[0]
+    # An engine that maps duration on level pools (storage_area_products).
+    record = fast_map.engine_method("whole_simulation")
+    monkeypatch.setattr(fast_map, "engine_method", lambda kind: dict(
+        record, storage_area_products=["arrival_time", "duration", "percent_inundated"])
+        if kind == "whole_simulation" else {})
+    types, notes = fast_map.whole_simulation_types(
+        ["arrival_time", "duration"], {**_SLOPING, "storage_areas": 1}
+    )
+    assert types == ["arrival_time", "duration"] and notes == []
     monkeypatch.setattr(fast_map, "engine_method", lambda kind: {})
     types, notes = fast_map.whole_simulation_types(["duration"], _SLOPING)
     assert types == [] and "duration" in notes[0]
