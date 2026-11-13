@@ -382,6 +382,15 @@ def test_whole_simulation_types(new_engine, monkeypatch):
         ["arrival_time", "duration"], {**_SLOPING, "storage_areas": 1}
     )
     assert types == ["arrival_time"] and "storage-area" in notes[0]
+    # An engine that maps duration on level pools (storage_area_products).
+    record = fast_map.engine_method("whole_simulation")
+    monkeypatch.setattr(fast_map, "engine_method", lambda kind: dict(
+        record, storage_area_products=["arrival_time", "duration", "percent_inundated"])
+        if kind == "whole_simulation" else {})
+    types, notes = fast_map.whole_simulation_types(
+        ["arrival_time", "duration"], {**_SLOPING, "storage_areas": 1}
+    )
+    assert types == ["arrival_time", "duration"] and notes == []
     monkeypatch.setattr(fast_map, "engine_method", lambda kind: {})
     types, notes = fast_map.whole_simulation_types(["duration"], _SLOPING)
     assert types == [] and "duration" in notes[0]
@@ -424,6 +433,18 @@ def test_whole_simulation_maps_duration_and_level_pools(fim, tmp_path, new_engin
     assert set(result) == {"arrival_time"}, "duration is refused with level pools"
     kwargs = fim.map_whole_simulation.call_args.kwargs
     assert kwargs["storage_areas"] is True and kwargs["products"] == ("arrival_time",)
+
+    # An engine that maps duration on level pools keeps duration in Rust.
+    monkeypatch.setattr(fast_map, "storage_area_duration_supported", lambda: True)
+    out = tmp_path / "p08"
+    result = fast_map.map_whole_simulation(
+        tmp_path / "x.p08.hdf", tmp_path / "t.tif", out,
+        map_types=["arrival_time", "duration"], threshold=0.5, render=_SLOPING,
+    )
+    assert result["duration"] == [out / "Duration (0.5ft hrs).tif"]
+    kwargs = fim.map_whole_simulation.call_args.kwargs
+    assert kwargs["storage_areas"] is True
+    assert kwargs["products"] == ("arrival_time", "duration")
 
 
 # ---------------------------------------------------------------------------

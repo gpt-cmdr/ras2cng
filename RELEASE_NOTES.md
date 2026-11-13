@@ -10,6 +10,7 @@
   still goes to RAS Mapper and the reason names which gate failed.
 - Helena (ESRI:102630, HEC-RAS 7.0.1, Max) with two polygon modifications that cross the wet
   edge: 0 ft² symmetric difference from RAS Mapper 7.0.1's horizontal and sloping boundaries.
+
 ## Modified multi-source terrains on the stored-map basis
 
 - A modified terrain with several sources now takes the stored-map basis when ras-commander and
@@ -21,6 +22,14 @@
 - Helena split into three aligned sources, with two polygon modifications on the seams (HEC-RAS
   7.0.1, Max, horizontal): Depth against RAS Mapper's composed stored maps differs on 66 mask and
   2 value pixels, all on source seams; on the export basis it was 2,143 mask and 4,795 values.
+
+## Duration in Rust with storage areas
+
+- With storage areas drawn by fast-map (`RAS2CNG_FAST_MAP_STORAGE_AREAS`), `--duration` is now
+  mapped in Rust when the engine lists `duration` in its whole-simulation
+  `storage_area_products` (`fast_map.storage_area_duration_supported()`); older engines keep
+  sending duration to RAS Mapper. Bald Eagle dam-break p02 (HEC-RAS 7.0.1): equal to RAS Mapper's
+  duration on 463,882 of 464,445 storage-area pixels, the rest one 5-minute interval apart.
 
 ## Unmodified terrains: the native effective terrain only on HEC-RAS 6.6 to 7.0.2
 
@@ -58,6 +67,7 @@
   control-point lines, writer-authored perimeter polygons) and notebook-321 Terrain50 cases
   route natively and match both RAS Mapper exports of each release with 0 mask and 0 value
   differences; 6.5, 6.4.1 and 7.1 go to the export with the reason code.
+
 ## Modified single-source terrains are built on the stored-map basis
 
 RAS Mapper's terrain export and RAS Mapper's stored maps read different terrains: the export
