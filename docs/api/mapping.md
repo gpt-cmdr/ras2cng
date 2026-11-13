@@ -306,8 +306,10 @@ modified area and in WSE, Depth and Velocity (Max) against two repeat RAS
 Mapper exports; the only whole-terrain differences are a few base-terrain
 stitch-TIN pixels that the unmodified native build shows too. Multi-ring
 polygons go to RAS Mapper with `refusal_reason: "multi_ring_polygon"`. A
-terrain whose CRS has no EPSG code (for example ESRI:102630) is refused by
-ras-commander's native build and falls back to the export (Fast-Map's own
+terrain whose CRS has no EPSG code (for example ESRI:102630) takes the native
+route only when the engine's `effective_terrain` and `sloping` records advertise
+`crs_any` (Fast-Map 0.19+) and ras-commander passes it on; otherwise it goes to
+the export with the reason recorded (`terrain_crs` in the route record; Fast-Map's own
 qualification is in its
 `feature_dev_notes/effective_terrain_modifications/modification_rules.md`).
 **Effective-terrain values change with `/2` for unmodified terrains too:**
@@ -457,6 +459,16 @@ between identical exports. On bridges p05 and p07 the ordinary export happened
 to equal the serial one; that is an observation on two plans, not a claim that
 the method reproduces every RAS Mapper shapefile. Other models, other
 profiles, modified terrains and other platforms are not covered.
+
+**A terrain CRS without an EPSG code** (for example ESRI:102630, whose RAS
+Mapper source TIFFs carry no CRS tags) takes both boundary methods when the
+engine's boundary methods advertise `crs_any` (Fast-Map 0.19+) and
+ras-commander reads the terrain HDF `Projection` for the untagged source (the
+release after 0.119.0). The GeoJSON carries GDAL's WKT of that CRS and reads
+back exactly. On unmodified Helena (Middle Cahaba p01 Max, 7.0.1) the
+native-serial boundary equals RAS Mapper's ordinary export (821 polygons, 320
+holes, 712,847 vertices). With older engines or Commander releases the boundary
+goes to RAS Mapper with the refusal recorded.
 
 Scope in ras2cng: the Max profile, plain sloping, unmodified terrains. A
 terrain with several source TIFFs is accepted (ras2cng passes the first one in

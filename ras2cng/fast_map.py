@@ -833,6 +833,72 @@ def modified_terrain_capability() -> tuple[Optional[dict], Optional[str]]:
     return modifications, None
 
 
+def commander_crs_any() -> bool:
+    """True when ras-commander passes a CRS without an EPSG code to the engine
+    (``ras_commander.fim._engine.crs_any``). Never raises."""
+    try:
+        from ras_commander.fim import _engine
+    except ImportError:
+        return False
+    return callable(getattr(_engine, "crs_any", None)) and callable(getattr(_engine, "request_crs", None))
+
+
+def terrain_crs_route(terrain_hdf: Optional[Path]) -> tuple[Optional[str], dict[str, Any]]:
+    """``(reason for the RAS Mapper route or None, details)`` for the terrain CRS.
+
+    The native route needs the terrain CRS to have an EPSG code, unless the
+    engine's ``effective_terrain`` and ``sloping`` records advertise
+    ``crs_any`` (ras-commander-fast-map 0.20+) and Commander passes it on
+    (``ras_commander.fim._engine.crs_any``). Such engines take the CRS as
+    verbatim GeoKey tags, so a terrain in, for example, ESRI:102630 (NAD83 /
+    Alabama West, US survey feet; Helena) is built and mapped natively with
+    its output CRS read back exactly. The CRS is the terrain HDF's
+    ``Projection``; when it cannot be read, Commander's own checks decide.
+    ``details["terrain_crs"]`` records the CRS, its authority code and the
+    request form (``epsg`` or ``geokeys``). Never raises.
+    """
+    if terrain_hdf is None:
+        return None, {}
+    try:
+        import h5py
+        from pyproj import CRS
+
+        with h5py.File(terrain_hdf, "r") as hdf:
+            value = hdf.attrs.get("Projection")
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        crs = CRS.from_wkt(value.strip())
+    except Exception:
+        return None, {}
+    epsg = crs.to_epsg()
+    authority = crs.to_authority()
+    record: dict[str, Any] = {
+        "name": crs.name,
+        "authority": ":".join(authority) if authority else None,
+        "epsg": epsg,
+        "request": "epsg" if epsg is not None else "geokeys",
+    }
+    details = {"terrain_crs": record}
+    if epsg is not None:
+        return None, details
+    shown = record["authority"] or crs.name
+    missing = [kind for kind in ("effective_terrain", "sloping")
+               if engine_method(kind).get("crs_any") is not True]
+    if missing:
+        return (
+            f"the terrain CRS {shown} has no EPSG code and the engine's {' and '.join(missing)} "
+            "method(s) do not advertise crs_any (needs ras-commander-fast-map 0.20 or later)",
+            details,
+        )
+    if not commander_crs_any():
+        return (
+            f"the terrain CRS {shown} has no EPSG code and ras-commander does not pass "
+            "crs_any to the engine (needs a ras-commander release with crs_any support)",
+            details,
+        )
+    return None, details
+
+
 def unqualified_modification_forms(layers: list, record: dict) -> list[str]:
     """Forms in Commander's staged ``layers`` the engine does not qualify.
 
@@ -1792,6 +1858,11 @@ class TerrainResolver:
         record, reason = modified_terrain_capability()
         if record is None:
             return reason, {}
+        # A terrain CRS without an EPSG code takes the native route only with
+        # an engine that advertises crs_any (see terrain_crs_route).
+        reason, crs_details = terrain_crs_route(hdf)
+        if reason is not None:
+            return reason, crs_details
         reader = _modification_reader()
         if reader is None:
             return (
@@ -1802,6 +1873,7 @@ class TerrainResolver:
         rasmap_path = rasmap if rasmap.is_file() else None
         details: dict[str, Any] = {
             "method_id": EFFECTIVE_TERRAIN_V2, "modification_reader": reader.name,
+            **crs_details,
         }
         # One release for both routes: the one the RAS Mapper export uses.
         runtime = self.hecras_runtime()
