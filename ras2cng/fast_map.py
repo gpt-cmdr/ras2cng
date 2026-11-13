@@ -131,8 +131,9 @@ produced each map type and ``MapResult.fast_map_terrain`` the terrain used.
   :func:`ras2cng.terrain.active_terrain_modifications` finds any modification
   RAS Mapper applies (every terrain-HDF layer when the ``.rasmap`` terrain
   layer has a ``Modifications`` group; every stored layer when the
-  ``.rasmap`` cannot tell), the unmodified source TIFF is skipped and Rust
-  boundaries are refused (RAS Mapper draws them). The terrain is
+  ``.rasmap`` cannot tell), the unmodified source TIFF is skipped. Rust
+  boundaries are drawn on the stored-map effective terrain of a
+  native-routed single-source terrain, and by RAS Mapper otherwise. The terrain is
   built by the native effective terrain *with modifications* only when the
   engine advertises ``rasmapper-effective-terrain/2`` (Fast-Map 0.18+) with a
   ``modifications`` record, ras-commander's modification reader
@@ -1714,7 +1715,8 @@ class TerrainResolver:
         layer when the ``.rasmap`` terrain layer has a ``Modifications``
         group, none without one); stored but inactive layers are noted and
         ignored. Any active modification skips
-        the unmodified source TIFF and refuses Rust boundaries. The terrain goes to RAS Mapper's export unless
+        the unmodified source TIFF; Rust boundaries need its stored-map effective terrain
+        (:meth:`boundary_terrain`). The terrain goes to RAS Mapper's export unless
         :meth:`modified_route` qualifies the native effective terrain with
         modifications. A terrain whose HDF cannot be found or read counts as
         unknown, which also keeps it on RAS Mapper. A terrain whose HDF layers
@@ -2203,7 +2205,14 @@ class TerrainResolver:
         TIFF. The native-serial method takes every original source and is
         given the first one in the terrain HDF's priority order
         (:func:`native_primary_source`); the engine checks that choice and
-        refuses a wrong one. Terrain modifications are refused for both.
+        refuses a wrong one.
+
+        A modified terrain is contoured on its stored-map effective terrain
+        (the one the raster products map on, see :meth:`_effective`) when the
+        modified route is native, the terrain has one source, the effective
+        terrain was built on the ``stored_map`` basis and ras-commander maps
+        boundaries on it (:func:`commander_stored_map_boundaries`). Any other
+        modified terrain is refused, with the reason.
         """
         from ras2cng.terrain import _discover_tifs_for_hdf, discover_terrains
 
@@ -2230,10 +2239,7 @@ class TerrainResolver:
         except Exception as exc:
             mods = [f"unreadable terrain HDF ({exc})"]
         if mods:
-            raise FastMapUnavailable(
-                f"terrain {Path(hdf).name} has {len(mods)} active modification(s); "
-                "Rust boundaries are only used on unmodified terrains"
-            )
+            return self._modified_boundary_terrain(plan_hdf, Path(hdf), len(mods)), Path(hdf)
         tifs = _discover_tifs_for_hdf(Path(hdf))
         if method == BOUNDARY_NATIVE_SERIAL and len(tifs) > 1:
             return native_primary_source(Path(hdf)), Path(hdf)
@@ -2247,6 +2253,56 @@ class TerrainResolver:
                 )
             )
         return tifs[0], Path(hdf)
+
+
+    def _modified_boundary_terrain(self, plan_hdf: Path, hdf: Path, count: int) -> Path:
+        """The stored-map effective terrain for a modified terrain's boundaries."""
+        why = None
+        if not commander_stored_map_boundaries():
+            why = "ras-commander does not map boundaries on a stored-map effective terrain"
+        else:
+            route = self.modified_route(plan_hdf)
+            if route is None or route.get("route") != MODIFIED_ROUTE_NATIVE:
+                reason = (route or {}).get("reason")
+                why = "the modified terrain goes to RAS Mapper's export" + (f" ({reason})" if reason else "")
+            else:
+                effective = self._effective(plan_hdf)
+                receipt = _effective_receipt(effective) if effective is not None else {}
+                basis = receipt.get("basis", EFFECTIVE_BASIS_EXPORT) if receipt else None
+                sources = receipt.get("sources_in_priority_order") or []
+                if effective is None:
+                    why = "the native effective terrain was not built"
+                elif basis == EFFECTIVE_BASIS_STORED_MAP and len(sources) != 1:
+                    why = (f"Rust boundaries on modified terrains need one terrain source, "
+                           f"not {len(sources)}")
+                elif basis != EFFECTIVE_BASIS_STORED_MAP:
+                    why = (f"the effective terrain is on the {basis or 'unknown'!s} basis; "
+                           "boundaries need the stored-map basis (single-source terrains)")
+                else:
+                    return effective
+        raise FastMapUnavailable(
+            f"terrain {hdf.name} has {count} active modification(s); {why}"
+        )
+
+
+def commander_stored_map_boundaries() -> bool:
+    """True when ras-commander maps inundation boundaries on a stored-map
+    effective terrain (``_boundary_inputs.stored_map_terrain``)."""
+    try:
+        from ras_commander.fim import _boundary_inputs
+    except Exception:
+        return False
+    return callable(getattr(_boundary_inputs, "stored_map_terrain", None))
+
+
+def _effective_receipt(effective: Path) -> dict[str, Any]:
+    """An effective terrain's receipt (``<tif>.json``), or ``{}``."""
+    receipt = Path(effective).with_name(Path(effective).name + ".json")
+    try:
+        data = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def native_primary_source(terrain_hdf: Path) -> Path:

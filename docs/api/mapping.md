@@ -221,8 +221,10 @@ project engineer confirmed the reversal on 2026-11-11, now that the native
 route is implemented. Before any of the steps above, ras2cng
 reads the terrain HDF's `/Modifications` group and the `.rasmap`'s
 modification layers (`ras2cng.terrain.terrain_modifications`). If it finds
-any, or cannot read the terrain HDF, the source TIFF (and step 1) is skipped
-and the inundation boundary is drawn by RAS Mapper. Step 2 then builds the
+any, or cannot read the terrain HDF, the source TIFF (and step 1) is skipped.
+The inundation boundary is drawn in Rust on the stored-map effective terrain
+when step 2 builds one (a single-source terrain, see below), and by RAS Mapper
+otherwise. Step 2 then builds the
 native effective terrain **with the modifications applied** only when every
 one of these holds (`TerrainResolver.modified_route`):
 
@@ -424,6 +426,16 @@ identical exports, so the two are close but not equal. On Davis Max the Rust
 contour had 66 holes and 47,426 vertices, against RAS Mapper's 65 and 47,396.
 Almost all of the 7,423 ft² difference was one hole that RAS Mapper filled.
 The Depth/WSE rasters are unaffected; they still match RAS Mapper bit for bit.
+
+**Modified terrains.** A modified single-source terrain on the native route is
+contoured on the same stored-map effective terrain its rasters use (both
+methods). Tile masks come from the terrain HDF; tile-edge samples that a
+modification changed come from the effective terrain. This needs a
+ras-commander with that support (`fast_map.commander_stored_map_boundaries`);
+otherwise, and for an export-basis effective terrain or a terrain routed to the
+RAS Mapper export, the boundary goes to RAS Mapper with the reason. On Helena
+with two polygon modifications crossing the wet edge, the Rust boundaries equal
+RAS Mapper 7.0.1's (0 ft² difference, horizontal and sloping).
 
 ### The native-serial method (opt-in)
 
