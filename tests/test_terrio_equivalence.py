@@ -287,6 +287,39 @@ def test_explicit_terrio_engine_requires_the_writer(tmp_path, monkeypatch):
         cog.area_matched_cog(source, tmp_path / "out.tif", blocksize=128)
 
 
+class _CapturedWrite(Exception):
+    pass
+
+
+def _recording_terrio(writes_report: bool):
+    """A stand-in terrio whose ``Raster.write`` records its options and stops."""
+
+    def write(self, path, **kwargs):
+        raise _CapturedWrite(kwargs)
+
+    write.__text_signature__ = (
+        "($self, path, /, *, options=None, metadata=None, overview_resampling=None"
+        + (", report_metadata=None, area_matched_nan_valid=False" if writes_report else "")
+        + ")"
+    )
+    raster = type("Raster", (), {"write": write})
+    return type("terrio", (), {"Raster": raster, "open": staticmethod(lambda path: raster())})
+
+
+@pytest.mark.parametrize("writes_report", [False, True])
+def test_terrio_writes_with_the_source_overview_policy(tmp_path, monkeypatch, writes_report):
+    """terrio >= 0.9.0 refuses area-matched levels unless COG_OVERVIEW_POLICY=SOURCE."""
+    source = _write(tmp_path / "flood.tif", _flood(shape=(301, 257), nodata=-9999.0), nodata=-9999.0)
+    monkeypatch.setenv(cog.COG_ENGINE_ENV, "terrio")
+    fake = _recording_terrio(writes_report)
+    monkeypatch.setattr(cog, "terrio_cog_writer", lambda: fake)
+    with pytest.raises(_CapturedWrite) as written:
+        cog.area_matched_cog(source, tmp_path / "out.tif", blocksize=128)
+    kwargs = written.value.args[0]
+    assert kwargs["overview_resampling"] == "area_matched"
+    assert kwargs["options"]["COG_OVERVIEW_POLICY"] == "SOURCE"
+
+
 def test_gdal_engine_disables_terrio(monkeypatch):
     monkeypatch.setenv(cog.COG_ENGINE_ENV, "gdal")
     assert cog.terrio_cog_writer() is None
