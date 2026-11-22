@@ -1,5 +1,13 @@
 # ras2cng (unreleased)
 
+## terrio COGs: the SOURCE overview policy
+
+- The terrio COG writer now passes `COG_OVERVIEW_POLICY=SOURCE`. From terrio 0.9.0 (CLB fork,
+  CLB-Engineering-Corporation/terrio#45) the default policy is `GDAL_3_13`, which refuses
+  area-matched overviews, so every terrio write failed and, with `RAS2CNG_COG_ENGINE=auto`,
+  went to GDAL with a warning. Every terrio with area-matched overviews accepts `SOURCE`
+  (checked with 0.5.0.4 and 0.6.1+clb9c644f4.1), so the files they write are unchanged.
+
 ## Rust inundation boundaries on modified terrains
 
 - `--inundation-boundary` on a modified single-source terrain that takes the native route is

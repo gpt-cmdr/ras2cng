@@ -1435,6 +1435,11 @@ def _terrio_area_matched_cog(
         # Stated explicitly as everywhere else: the pyramid is computed here,
         # never inherited from the source's internal overviews.
         "OVERVIEWS": "IGNORE_EXISTING",
+        # terrio builds area-matched levels only under its SOURCE overview
+        # policy (ceil-sized, as GDAL's builder sizes them); from terrio 0.9.0
+        # the default is GDAL_3_13, which refuses them.  Every terrio with
+        # area-matched overviews accepts SOURCE.
+        "COG_OVERVIEW_POLICY": "SOURCE",
     }
     for key, value in options.items():
         creation[key] = f"{value:g}" if isinstance(value, float) else str(value)
