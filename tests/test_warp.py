@@ -171,8 +171,30 @@ def test_terrio_and_rasterio_reprojections_agree(tmp_path):
         assert np.allclose(np.array(a.transform), np.array(b.transform), rtol=0, atol=1e-12)
         assert a.crs == b.crs and a.dtypes == b.dtypes and a.nodata == b.nodata
         left, right = a.read(1, masked=True), b.read(1, masked=True)
+        exact = _exact_reprojection(source, b)
     assert np.array_equal(np.ma.getmaskarray(left), np.ma.getmaskarray(right))
-    assert np.allclose(left.filled(0.0), right.filled(0.0), rtol=0, atol=1e-3)
+    valid = ~np.ma.getmaskarray(left) & (exact != b.nodata)
+    # Both engines use an approximate transform (0.125-pixel error threshold),
+    # so judge each against GDAL's exact one rather than against each other.
+    # terrio 0.9's default world-lattice sampling is up to 0.007 ft off here;
+    # GDAL's own per-row sampling about 0.001 ft.
+    for got in (left, right):
+        assert np.allclose(got.filled(0.0)[valid], exact[valid], rtol=0, atol=1e-2)
+
+
+def _exact_reprojection(source: Path, like) -> np.ndarray:
+    """``source`` reprojected onto ``like``'s grid with an exact transform."""
+    from rasterio.warp import Resampling, reproject
+
+    out = np.full((like.height, like.width), like.nodata, dtype="float32")
+    with rasterio.open(source) as src:
+        reproject(
+            source=rasterio.band(src, 1), destination=out,
+            src_transform=src.transform, src_crs=src.crs, src_nodata=src.nodata,
+            dst_transform=like.transform, dst_crs=like.crs, dst_nodata=like.nodata,
+            resampling=Resampling.bilinear, tolerance=0,
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------

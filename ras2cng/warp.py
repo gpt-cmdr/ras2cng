@@ -15,7 +15,14 @@ Engines (``RAS2CNG_REPROJECT_ENGINE`` = ``auto`` | ``terrio`` | ``rasterio``):
     EPSG:4326 (17,367 x 10,487): 7.8 s against 30.3 s, reprojection peak 1,033
     against 1,682 MiB; 876 of 182 M pixels differ from rasterio's by at most
     2.4e-4 ft (float rounding), with equal masks
-    (``feature_dev_notes/rust_engines/T31.md``).
+    (``feature_dev_notes/rust_engines/T31.md``). That was terrio 0.6.
+
+    terrio 0.9 samples the approximate transform on a fixed world lattice by
+    default (upstream #847), so a warp's pixels no longer depend on how its
+    output is tiled or chunked. Values then differ from rasterio's by more
+    than float rounding: up to 0.007 ft on the 160-pixel test surface, still
+    inside the 0.125-pixel error threshold. ``TERRIO_WARP_GRID=GDAL`` restores
+    GDAL's sampling for a whole process; ras2cng keeps terrio's default.
 
     ``overview="NONE"`` is always passed. terrio's default is gdalwarp's
     ``-ovr AUTO``, which reads a source overview when the output is coarser
@@ -154,8 +161,8 @@ def reproject_path(
     """Reproject ``src`` to ``dst`` in ``dst_crs``; return the engine used.
 
     The grid is GDAL's suggested warp output in both engines, the data type,
-    band count and nodata are the source's, and values agree to float
-    rounding. ``engine`` (``None`` reads ``RAS2CNG_REPROJECT_ENGINE``):
+    band count and nodata are the source's, and values agree within the
+    approximate transform's error (see the module notes). ``engine`` (``None`` reads ``RAS2CNG_REPROJECT_ENGINE``):
     ``auto`` uses terrio when it has the streaming warp and falls back to
     rasterio, with a warning, when terrio refuses the file; ``terrio`` is
     strict; ``rasterio`` never tries terrio. A source without a CRS raises.
