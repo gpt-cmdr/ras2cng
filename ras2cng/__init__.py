@@ -32,6 +32,7 @@ from ras2cng.cog import (
     resolve_crs_authority,
     validate_cog,
 )
+from ras2cng.display import DisplayCogResult, publish_display_cog
 from ras2cng.geometry import (
     export_geometry_layers,
     export_all_hdf_layers,
@@ -188,6 +189,8 @@ __all__ = [
     "resolve_compression",
     "resolve_crs_authority",
     "validate_cog",
+    "DisplayCogResult",
+    "publish_display_cog",
     # Geometry
     "export_geometry_layers",
     "export_all_hdf_layers",

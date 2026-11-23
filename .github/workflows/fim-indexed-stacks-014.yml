@@ -1,0 +1,20 @@
+name: FIM indexed stacks on 0.14
+on:
+  pull_request:
+    branches: [release/0.14-fim]
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, clb-ci-linux]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-extras
+      - run: >-
+          uv run --no-sync pytest -rs
+          tests/test_depth_stack.py tests/test_depth_stack_ranges.py
+          tests/test_display_cog.py tests/test_rate_stack.py
+          tests/test_cog_engine_context.py

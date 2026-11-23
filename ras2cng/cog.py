@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 import math
 import os
@@ -151,6 +152,7 @@ TERRAIN_CREATION_OPTIONS: dict[str, Any] = {"LEVEL": 9, "SPARSE_OK": "YES"}
 #: exactly, ``terrio`` requires it, ``gdal`` keeps the rasterio/GDAL path and
 #: ``rio-cogeo``.  See :func:`terrio_cog_writer` and :func:`area_matched_cog`.
 COG_ENGINE_ENV = "RAS2CNG_COG_ENGINE"
+_COG_ENGINE_OVERRIDE: ContextVar[str | None] = ContextVar("cog_engine_override", default=None)
 
 #: Creation options terrio's COG writer acts on (GDAL's COG driver names).  An
 #: option outside this set sends the write down the GDAL path rather than
@@ -165,10 +167,26 @@ _TERRIO_COG_OPTIONS = frozenset({
 def cog_engine() -> str:
     """Return the requested COG engine: ``auto``, ``terrio`` or ``gdal``."""
 
-    value = os.environ.get(COG_ENGINE_ENV, "auto").strip().lower() or "auto"
+    value = _COG_ENGINE_OVERRIDE.get()
+    if value is None:
+        value = os.environ.get(COG_ENGINE_ENV, "auto").strip().lower() or "auto"
     if value not in {"auto", "terrio", "gdal"}:
         raise ValueError(f"{COG_ENGINE_ENV} must be one of auto, terrio, gdal; got {value!r}")
     return value
+
+
+@contextmanager
+def using_cog_engine(engine: str) -> Iterator[None]:
+    """Select the COG writer and validator for calls in the current context.
+
+    Restores the previous choice on exit without modifying process settings.
+    """
+    token = _COG_ENGINE_OVERRIDE.set(engine)
+    try:
+        cog_engine()
+        yield
+    finally:
+        _COG_ENGINE_OVERRIDE.reset(token)
 
 
 def _terrio_signature_has(function: Any, *names: str) -> bool:
