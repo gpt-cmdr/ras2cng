@@ -88,6 +88,20 @@ def test_feature_ids_default_off_env_and_context(monkeypatch):
         vector_tiles.feature_ids_enabled()
 
 
+def test_backend_and_input_options_override_environment(monkeypatch):
+    monkeypatch.setenv("RAS2CNG_VECTOR_TILER", "tippecanoe")
+    monkeypatch.setenv(vector_tiles.INPUT_ENV, "invalid")
+    with vector_tiles.vector_tile_options(backend="freestiler", input_mode="geojson"):
+        assert vector_tiles.vector_tiler_backend() == "freestiler"
+        assert vector_tiles.arrow_input_enabled() is False
+        with vector_tiles.vector_tile_options(backend="tippecanoe"):
+            assert vector_tiles.vector_tiler_backend() == "tippecanoe"
+        assert vector_tiles.vector_tiler_backend() == "freestiler"
+    assert vector_tiles.vector_tiler_backend() == "tippecanoe"
+    with pytest.raises(ValueError, match=vector_tiles.INPUT_ENV):
+        vector_tiles.arrow_input_enabled()
+
+
 def test_gzip_level_default_env_and_validation(monkeypatch):
     monkeypatch.delenv(vector_tiles.GZIP_LEVEL_ENV, raising=False)
     assert vector_tiles.gzip_level() == 6
