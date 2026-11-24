@@ -171,8 +171,10 @@ def test_terrio_and_rasterio_reprojections_agree(tmp_path):
         assert np.allclose(np.array(a.transform), np.array(b.transform), rtol=0, atol=1e-12)
         assert a.crs == b.crs and a.dtypes == b.dtypes and a.nodata == b.nodata
         left, right = a.read(1, masked=True), b.read(1, masked=True)
-        exact = _exact_reprojection(source, b)
+        exact = _exact_reprojection(source, b) if _HONOURS_TOLERANCE else None
     assert np.array_equal(np.ma.getmaskarray(left), np.ma.getmaskarray(right))
+    if exact is None:
+        pytest.skip("rasterio < 1.5 fixes the warp transform tolerance at 0.125 px; no exact reference")
     valid = ~np.ma.getmaskarray(left) & (exact != b.nodata)
     # Both engines use an approximate transform (0.125-pixel error threshold),
     # so judge each against GDAL's exact one rather than against each other.
@@ -180,6 +182,11 @@ def test_terrio_and_rasterio_reprojections_agree(tmp_path):
     # GDAL's own per-row sampling about 0.001 ft.
     for got in (left, right):
         assert np.allclose(got.filled(0.0)[valid], exact[valid], rtol=0, atol=1e-2)
+
+
+# rasterio 1.3 and 1.4 accept `tolerance` through `**kwargs` but warp with a fixed 0.125 px;
+# 1.5.0 is the first release whose `reproject` passes it to GDAL's approximate transformer.
+_HONOURS_TOLERANCE = tuple(int(p) for p in rasterio.__version__.split(".")[:2]) >= (1, 5)
 
 
 def _exact_reprojection(source: Path, like) -> np.ndarray:
