@@ -131,9 +131,13 @@ _FALSE = {"0", "false", "no", "off"}
 
 @contextlib.contextmanager
 def vector_tile_options(
-    *, feature_ids: Optional[bool] = None, gzip_level: Optional[int] = None
+    *,
+    feature_ids: Optional[bool] = None,
+    gzip_level: Optional[int] = None,
+    backend: Optional[str] = None,
+    input_mode: Optional[str] = None,
 ) -> Iterator[None]:
-    """Override the freestiler tile options for the enclosed calls.
+    """Override vector tiling options for the enclosed calls.
 
     ``None`` leaves a setting to its environment variable or default.
     """
@@ -143,6 +147,14 @@ def vector_tile_options(
         current["feature_ids"] = bool(feature_ids)
     if gzip_level is not None:
         current["gzip_level"] = _checked_gzip_level(gzip_level, "gzip_level")
+    if backend is not None:
+        if backend not in (*_CHOICES, "auto"):
+            raise ValueError(f"unknown vector tile backend {backend!r}")
+        current["backend"] = backend
+    if input_mode is not None:
+        if input_mode not in ("auto", ARROW, GEOJSON):
+            raise ValueError(f"unknown freestiler input mode {input_mode!r}")
+        current["input_mode"] = input_mode
     token = _OPTIONS.set(current)
     try:
         yield
@@ -233,7 +245,9 @@ def vector_tiler_backend(required_commands: Sequence[str] | None = None) -> str:
     then tippecanoe when all of its CLIs are on PATH, then any freestiler.
     """
 
-    choice = os.environ.get("RAS2CNG_VECTOR_TILER", "").strip().lower() or "auto"
+    choice = _OPTIONS.get().get("backend")
+    if choice is None:
+        choice = os.environ.get("RAS2CNG_VECTOR_TILER", "").strip().lower() or "auto"
     if choice in _CHOICES:
         return choice
     if choice != "auto":
@@ -260,7 +274,9 @@ def polygon_simplify_available() -> bool:
 def arrow_input_enabled() -> bool:
     """Whether freestiler layers go in as Arrow (``RAS2CNG_FREESTILER_INPUT``)."""
 
-    choice = os.environ.get(INPUT_ENV, "").strip().lower() or "auto"
+    choice = _OPTIONS.get().get("input_mode")
+    if choice is None:
+        choice = os.environ.get(INPUT_ENV, "").strip().lower() or "auto"
     if choice not in ("auto", ARROW, GEOJSON):
         raise ValueError(f"{INPUT_ENV} must be one of auto, arrow, geojson; got {choice!r}")
     if choice == GEOJSON:

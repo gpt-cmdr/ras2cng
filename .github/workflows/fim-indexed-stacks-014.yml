@@ -1,0 +1,30 @@
+name: FIM indexed stacks on 0.14
+on:
+  pull_request:
+    branches: [release/0.14-fim]
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, clb-ci-linux]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --all-extras
+      - run: >-
+          uv run --no-sync pytest -rs
+          tests/test_depth_stack.py tests/test_depth_stack_ranges.py
+          tests/test_display_cog.py tests/test_rate_stack.py
+          tests/test_cog_engine_context.py tests/test_vector_tile_options.py
+      - name: Test the FIM display writer with the pinned CLB terrio wheel
+        env:
+          RAS2CNG_COG_ENGINE: gdal
+        run: |
+          cat > "$RUNNER_TEMP/terrio-fim.txt" <<'EOF'
+          terrio @ https://github.com/CLB-Engineering-Corporation/terrio-clb/releases/download/gpt-cmdr-v0.5.0.2/terrio-0.5.0.2-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl --hash=sha256:edd5dc40c153c4e8d8e2ecd6ca5611c41ed45be8f7c605de18ab8ecab8bd0500
+          EOF
+          uv pip install --no-deps --reinstall --require-hashes -r "$RUNNER_TEMP/terrio-fim.txt"
+          uv run --no-sync python -c 'import importlib.metadata as m; assert m.version("ras2cng") == "0.14.0+fim.1"; assert m.version("terrio") == "0.5.0.2"; from ras2cng.cog import cog_engine; assert cog_engine() == "gdal"'
+          uv run --no-sync pytest -rs tests/test_display_cog.py tests/test_cog.py
