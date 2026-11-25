@@ -1,5 +1,13 @@
 # ras2cng (unreleased)
 
+## terrio 0.9 reprojection
+
+- terrio 0.9.0 samples its approximate warp transform on a fixed world lattice by default
+  (upstream #847), so its reprojected values are no longer rasterio's to float rounding: up to
+  0.007 ft on the test surface, inside the 0.125-pixel error threshold. ras2cng keeps that
+  default. `test_terrio_and_rasterio_reprojections_agree` now checks both engines against an
+  exact-transform GDAL reprojection within 0.01 ft instead of against each other within 0.001.
+
 ## terrio COGs: the SOURCE overview policy
 
 - The terrio COG writer now passes `COG_OVERVIEW_POLICY=SOURCE`. From terrio 0.9.0 (CLB fork,
